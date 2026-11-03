@@ -110,6 +110,10 @@ A virtual key's old secret after its grace period has ended. It no longer works,
 
 ### Detection
 
+**Event**:
+The record of one request or realtime session through kman: which key sent it, from where, what it was allowed to do, and what it cost. Never its content.
+_Avoid_: Log line, request log
+
 **Baseline**:
 What normal use of one virtual key looks like: its usual request rate, spend, and the places it is used from.
 

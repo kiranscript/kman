@@ -8,6 +8,7 @@ kman refuses to start when its master key sits inside the data directory, unless
 
 - **Warn instead of refusing.** Rejected. A warning on every start gets ignored, and that would leave keman's weakness as kman's default.
 - **The macOS keychain as a key source.** Rejected for v1 after testing on macOS 15.8.2 and 26.6.2 (*Verify macOS keychain protection for the master key*, #14). Pure-Go access goes through `/usr/bin/security`, so the item has to trust that tool, and then any same-user process that runs `security find-generic-password` reads the key with no prompt. An item that trusts nothing blocks kman itself behind a GUI prompt, which is useless for a service. The keychain is therefore no better than a 0600 key file. A future adapter could return behind the same seam: a signed helper, or a CGO build using the Security framework directly.
+- **Windows DPAPI as a key source.** Left for later, behind the same seam. With the macOS keychain gone, v1 has no OS-keystore source on any platform, and Windows installs use a key file or a passphrase.
 
 ## Consequences
 
