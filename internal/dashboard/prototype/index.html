@@ -1,0 +1,763 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not production code. Never merge to main.
+  Question (kman "Dashboard look and flows"): what should the dashboard's main screens
+  look like and how should they behave?
+  Plan: three structurally different dashboards, switchable via ?variant=A|B|C,
+  over one shared in-memory mock state. Routes (#/keys/ci-deploy, #/incidents/INC-0141, ...)
+  are shared so every variant has the same stable URLs. Mutations are stubs that
+  change in-memory state only. Open this file directly in a browser; no server, no CDN.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>kman dashboard: PROTOTYPE</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --sev-critical:#b3261e; --sev-high:#d9480f; --sev-medium:#b08800; --sev-low:#5c6b7a; --ok:#2b8a3e; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color:#1d2329; background:#f6f7f9; }
+  button { font: inherit; cursor: pointer; }
+  input, select { font: inherit; }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; }
+  a { color: inherit; }
+  .sev { display:inline-block; padding:0 7px; border-radius:9px; font-size:11.5px; font-weight:600; color:#fff; text-transform:uppercase; letter-spacing:.03em; }
+  .sev.critical{background:var(--sev-critical)} .sev.high{background:var(--sev-high)} .sev.medium{background:var(--sev-medium)} .sev.low{background:var(--sev-low)}
+  .pill { display:inline-block; padding:0 7px; border-radius:9px; font-size:11.5px; border:1px solid #c9d0d8; background:#fff; white-space:nowrap; }
+  .pill.bad { border-color:#f1b9b5; background:#fdecea; color:#8a1c14; }
+  .pill.warn { border-color:#f0d79a; background:#fff7e0; color:#6b5200; }
+  .pill.good { border-color:#b8dfc1; background:#ebf7ee; color:#1e5e2c; }
+  .bar { position:relative; height:8px; background:#e6e9ee; border-radius:4px; overflow:hidden; min-width:90px; }
+  .bar > i { position:absolute; left:0; top:0; bottom:0; background:#4c6ef5; }
+  .bar > i.hot { background:#e8590c; } .bar > i.over { background:#c92a2a; }
+  .bar > b { position:absolute; top:0; bottom:0; width:1px; background:#0006; }
+  .cli { display:block; background:#111820; color:#d5e3f0; padding:6px 9px; border-radius:6px; font-family: ui-monospace, Menlo, monospace; font-size:12px; white-space:pre-wrap; word-break:break-all; }
+  .cli::before { content:"$ "; color:#7d93a8; }
+  .muted { color:#66717d; } .small { font-size:12px; }
+  .btn { border:1px solid #c3cad2; background:#fff; border-radius:6px; padding:4px 10px; }
+  .btn:hover { background:#f0f3f6; }
+  .btn.primary { background:#1d4ed8; border-color:#1d4ed8; color:#fff; }
+  .btn.danger { background:#fff; border-color:#e03131; color:#c92a2a; }
+  .btn.danger.solid { background:#c92a2a; color:#fff; }
+  table { border-collapse: collapse; width:100%; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid #e6e9ee; vertical-align:middle; }
+  th { font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#66717d; font-weight:600; }
+  tr.click:hover td { background:#f2f5fa; cursor:pointer; }
+  .field { display:flex; flex-direction:column; gap:3px; margin:8px 0; }
+  .field label { font-size:12px; color:#4a545e; font-weight:600; }
+  .field input, .field select { padding:5px 8px; border:1px solid #c3cad2; border-radius:6px; background:#fff; }
+  .confirm { border:1px solid #d6dbe1; background:#fff; border-radius:8px; padding:12px 14px; margin:10px 0; }
+  .confirm h4 { margin:0 0 6px; }
+  .confirm ul { margin:6px 0 10px 18px; padding:0; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .grow { flex:1; }
+  .toast { position:fixed; top:14px; left:50%; transform:translateX(-50%); background:#1d2329; color:#fff; padding:8px 14px; border-radius:8px; z-index:60; box-shadow:0 4px 16px #0004; }
+  .overlay { position:fixed; inset:0; background:#0007; display:flex; align-items:center; justify-content:center; z-index:50; }
+  .dialog { background:#fff; border-radius:10px; padding:18px 20px; width:min(620px, 92vw); max-height:86vh; overflow:auto; box-shadow:0 10px 40px #0005; }
+  .secret { font-family: ui-monospace, Menlo, monospace; background:#fff7e0; border:1px dashed #d9a400; padding:6px 8px; border-radius:6px; word-break:break-all; font-size:12px; }
+  /* prototype chrome: deliberately not part of the design */
+  #switcher { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:70; display:flex; align-items:center; gap:6px; background:#ff0; color:#000; border:2px solid #000; border-radius:999px; padding:4px 8px; font:600 13px system-ui; box-shadow:0 4px 18px #0006; }
+  #switcher button { background:#000; color:#ff0; border:0; border-radius:999px; width:28px; height:28px; font-weight:700; }
+  #statebox { position:fixed; right:10px; bottom:64px; z-index:69; width:330px; max-height:46vh; overflow:auto; background:#fffde0; border:2px solid #000; border-radius:8px; font:12px ui-monospace, Menlo, monospace; padding:8px 10px; box-shadow:0 4px 18px #0004; }
+  #statebox.collapsed { width:auto; max-height:none; }
+  #statebox h5 { margin:0 0 4px; font:700 12px system-ui; display:flex; justify-content:space-between; gap:10px; }
+
+  /* ---------- Variant A: sidebar console ---------- */
+  .A { display:grid; grid-template-columns: 210px 1fr; min-height:100vh; }
+  .A nav { background:#1b2430; color:#c8d3df; padding:14px 10px; }
+  .A nav .brand { font-weight:800; color:#fff; font-size:18px; padding:4px 10px 14px; }
+  .A nav a { display:flex; justify-content:space-between; padding:7px 10px; border-radius:6px; text-decoration:none; color:#c8d3df; }
+  .A nav a.on { background:#2e3c4f; color:#fff; }
+  .A nav a .n { background:#c92a2a; color:#fff; border-radius:9px; padding:0 7px; font-size:11.5px; }
+  .A nav .foot { margin-top:24px; padding:10px; font-size:12px; color:#8796a8; border-top:1px solid #2e3c4f; }
+  .A main { padding:18px 26px 120px; }
+  .A h1 { font-size:20px; margin:0 0 12px; }
+  .A .banners { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+  .A .banner { background:#fff7e0; border:1px solid #f0d79a; border-radius:8px; padding:7px 12px; display:flex; justify-content:space-between; align-items:center; }
+  .A .banner.crit { background:#fdecea; border-color:#f1b9b5; }
+  .A .card { background:#fff; border:1px solid #e1e5ea; border-radius:10px; padding:4px 0; }
+  .A .tabs { display:flex; gap:2px; border-bottom:1px solid #d6dbe1; margin:14px 0; }
+  .A .tabs a { padding:7px 12px; text-decoration:none; border-bottom:2px solid transparent; color:#4a545e; }
+  .A .tabs a.on { border-color:#1d4ed8; color:#1d4ed8; font-weight:600; }
+  .A .split { display:grid; grid-template-columns: 1fr 320px; gap:18px; }
+  .A .panel { background:#fff; border:1px solid #e1e5ea; border-radius:10px; padding:12px 14px; }
+  .A .panel h3 { margin:0 0 8px; font-size:14px; }
+  .A .actions { display:flex; flex-direction:column; gap:6px; }
+  .A .actions .btn { text-align:left; }
+  .A .steps { display:flex; gap:8px; margin:6px 0 14px; } .A .steps span { padding:3px 10px; border-radius:9px; background:#e6e9ee; } .A .steps span.on { background:#1d4ed8; color:#fff; }
+
+  /* ---------- Variant B: triage inbox ---------- */
+  .B { display:grid; grid-template-columns: 170px 380px 1fr; height:100vh; background:#fff; }
+  .B .rail { background:#f1f3f6; border-right:1px solid #e1e5ea; padding:12px 8px; display:flex; flex-direction:column; gap:2px; }
+  .B .rail .brand { font-weight:800; font-size:17px; padding:2px 10px 12px; }
+  .B .rail a { padding:7px 10px; border-radius:6px; text-decoration:none; display:flex; justify-content:space-between; }
+  .B .rail a.on { background:#dde6f7; font-weight:600; }
+  .B .rail .n { font-size:11.5px; background:#1d2329; color:#fff; border-radius:9px; padding:0 7px; }
+  .B .list { border-right:1px solid #e1e5ea; overflow:auto; }
+  .B .list .head { padding:12px 14px 8px; font-weight:700; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e1e5ea; position:sticky; top:0; background:#fff; }
+  .B .item { padding:10px 14px; border-bottom:1px solid #eef0f3; cursor:pointer; border-left:3px solid transparent; }
+  .B .item:hover { background:#f6f8fb; }
+  .B .item.on { background:#eef3fd; border-left-color:#1d4ed8; }
+  .B .item .t { display:flex; justify-content:space-between; gap:8px; }
+  .B .item .s { font-size:12.5px; color:#5a6570; margin-top:2px; }
+  .B .item.critical { border-left-color: var(--sev-critical); } .B .item.high { border-left-color: var(--sev-high); }
+  .B .pane { overflow:auto; padding:18px 26px 120px; }
+  .B .pane h1 { font-size:20px; margin:0 0 4px; }
+  .B .play { counter-reset: step; margin:16px 0; padding:0; list-style:none; }
+  .B .play > li { position:relative; padding:10px 12px 10px 44px; border:1px solid #e1e5ea; border-radius:8px; margin-bottom:8px; }
+  .B .play > li::before { counter-increment: step; content: counter(step); position:absolute; left:12px; top:10px; width:22px; height:22px; border-radius:50%; background:#e6e9ee; text-align:center; font-weight:700; font-size:12px; line-height:22px; }
+  .B .play > li.done { background:#f3faf4; border-color:#b8dfc1; } .B .play > li.done::before { content:"✓"; background:var(--ok); color:#fff; }
+  .B .play > li.skip { opacity:.55; }
+  .B .play h4 { margin:0 0 4px; font-size:14px; }
+  .B .gauges { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin:14px 0; }
+  .B .gauge { border:1px solid #e1e5ea; border-radius:8px; padding:9px 11px; }
+  .B .gauge .v { font-size:18px; font-weight:700; }
+  .B section { margin:20px 0; } .B section h3 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:#66717d; margin:0 0 6px; }
+
+  /* ---------- Variant C: command board ---------- */
+  .C { background:#0d1117; color:#c9d1d9; min-height:100vh; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size:13px; padding-bottom:120px; }
+  .C .top { position:sticky; top:0; z-index:5; background:#0d1117; border-bottom:1px solid #30363d; padding:10px 16px; }
+  .C .cmd { display:flex; gap:8px; align-items:center; }
+  .C .cmd .p { color:#7ee787; font-weight:700; }
+  .C .cmd input { flex:1; background:#161b22; border:1px solid #30363d; color:#e6edf3; padding:7px 10px; border-radius:6px; font: 13px ui-monospace, Menlo, monospace; }
+  .C .cmd input:focus { outline:1px solid #58a6ff; }
+  .C .sugg { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  .C .sugg button, .C .act { background:#161b22; color:#79c0ff; border:1px solid #30363d; border-radius:5px; padding:2px 8px; font: 12px ui-monospace, Menlo, monospace; }
+  .C .sugg button:hover, .C .act:hover { border-color:#58a6ff; }
+  .C .act.red { color:#ff7b72; }
+  .C .strip { display:flex; gap:22px; margin-top:8px; color:#8b949e; }
+  .C .strip b { color:#e6edf3; } .C .strip .r { color:#ff7b72; }
+  .C .cols { display:grid; grid-template-columns: 1.5fr 1fr; gap:0; }
+  .C .colL { border-right:1px solid #30363d; }
+  .C h2 { font-size:12px; color:#8b949e; text-transform:uppercase; letter-spacing:.08em; margin:0; padding:10px 16px 6px; border-bottom:1px solid #21262d; display:flex; justify-content:space-between; }
+  .C .krow { display:grid; grid-template-columns: 16px 150px 74px 1fr 120px 70px; gap:10px; padding:5px 16px; border-bottom:1px solid #161b22; cursor:pointer; align-items:center; }
+  .C .krow:hover { background:#161b22; }
+  .C .krow.open { background:#161b22; }
+  .C .expand { background:#11161d; border-bottom:1px solid #30363d; padding:10px 16px 14px 42px; }
+  .C .expand .kv { display:grid; grid-template-columns: 150px 1fr; gap:3px 12px; margin:8px 0; }
+  .C .expand .kv div:nth-child(odd) { color:#8b949e; }
+  .C .feed { padding:4px 0; max-height:50vh; overflow:auto; }
+  .C .feed div { padding:2px 16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .C .feed div.fresh { background:#1f2a1f; }
+  .C .s-critical { color:#ff7b72; font-weight:700; } .C .s-high { color:#ffa657; } .C .s-medium { color:#e3b341; } .C .s-low { color:#8b949e; }
+  .C .ok { color:#7ee787; } .C .bad { color:#ff7b72; } .C .warn { color:#e3b341; } .C .dim { color:#6e7681; }
+  .C .ascii { color:#79c0ff; letter-spacing:-1px; }
+  .C .focus { margin:12px 16px; border:1px solid #f85149; border-radius:8px; padding:12px 14px; background:#160b0b; }
+  .C .focus.acked { border-color:#e3b341; background:#161208; }
+  .C .focus.resolved { border-color:#30363d; background:#11161d; }
+  .C .confirm, .C .panelc { background:#161b22; border-color:#30363d; color:#c9d1d9; }
+  .C .field input, .C .field select { background:#0d1117; color:#e6edf3; border-color:#30363d; }
+  .C .field label { color:#8b949e; }
+  .C .btn { background:#21262d; color:#c9d1d9; border-color:#30363d; } .C .btn.primary { background:#238636; border-color:#238636; color:#fff; } .C .btn.danger.solid { background:#da3633; border-color:#da3633; color:#fff; }
+  .C .cli { background:#010409; }
+  .C table td, .C table th { border-color:#21262d; padding:4px 16px; }
+  .C .pill { background:#161b22; border-color:#30363d; color:#c9d1d9; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="statebox" class="collapsed"></div>
+<div id="switcher"></div>
+<div id="overlays"></div>
+<script>
+"use strict";
+// ======================================================================
+// Shared mock state (in memory only; reload resets it)
+// ======================================================================
+const BASE = new Date("2026-11-03T14:20:00Z").getTime();
+let tick = 0; // seconds of simulated time since BASE
+const clock = (offsetMin = 0) => new Date(BASE + tick * 1000 + offsetMin * 60000).toISOString().slice(11, 19);
+
+const PRESETS = ["openai","anthropic","gemini","azure-openai","bedrock","mistral","groq","together","fireworks","deepseek","xai","cohere","perplexity","openrouter","replicate","huggingface","stripe","github","twilio","sendgrid","generic"];
+
+const S = {
+  live: true,
+  upstreams: [
+    { id:"openai", preset:"openai", base:"https://api.openai.com", profile:"openai" },
+    { id:"anthropic", preset:"anthropic", base:"https://api.anthropic.com", profile:"anthropic" },
+    { id:"stripe", preset:"stripe", base:"https://api.stripe.com", profile:"generic" },
+  ],
+  credentials: [
+    { id:"openai-prod", upstream:"openai", hint:"sk-…Qx3f", added:"2026-09-14", replaced:null },
+    { id:"anthropic-main", upstream:"anthropic", hint:"sk-ant-…9KcA", added:"2026-10-02", replaced:null },
+    { id:"stripe-live", upstream:"stripe", hint:"sk_live_…u81B", added:"2026-08-21", replaced:null },
+  ],
+  keys: [
+    { name:"ci-deploy", id:"k7Qm2xPa", cred:"openai-prod", kind:"standard", status:"active",
+      lock:{ cidr:["140.82.112.0/20"], countries:[] }, expires:23, lastSeen:"2 min ago",
+      spend:{ day:4.12, dayCap:10, month:61.40, monthCap:150, soft:[50,80,100] }, rpm:120, models:["gpt-5-mini"],
+      auto:"dry-run", grace:null,
+      rotations:[{ at:"2026-10-01 09:12", by:"owner", grace:"1h" }],
+      callers:[{ ip:"140.82.114.3", where:"US · AS36459 GitHub", reqs:1840, ua:"openai-python/2.4" },{ ip:"128.199.40.17", where:"SG · AS14061 DigitalOcean", reqs:212, ua:"python-requests/2.32" }],
+      known:[{ what:"140.82.112.0/20", label:"GitHub Actions", scope:"install" }] },
+    { name:"web-chat-prod", id:"Hc91LwZe", cred:"anthropic-main", kind:"standard", status:"active",
+      lock:{ cidr:[], countries:["US","DE"] }, expires:81, lastSeen:"just now",
+      spend:{ day:7.90, dayCap:20, month:212.30, monthCap:300, soft:[50,80,100] }, rpm:600, models:["claude-sonnet-5-5","claude-haiku-5-5"],
+      auto:"on", grace:null, rotations:[], projected:347,
+      callers:[{ ip:"52.14.90.8", where:"US · AS16509 Amazon", reqs:40211, ua:"anthropic-node/1.9" },{ ip:"177.71.2.44", where:"BR · AS16509 Amazon", reqs:96, ua:"anthropic-node/1.9" }],
+      known:[] },
+    { name:"notebook-kiran", id:"pX0aN3vt", cred:"openai-prod", kind:"standard", status:"active",
+      lock:null, expires:6, lastSeen:"3 h ago",
+      spend:{ day:0.80, dayCap:null, month:9.10, monthCap:null, soft:[] }, rpm:60, models:[],
+      auto:"dry-run", grace:null, rotations:[],
+      callers:[{ ip:"81.2.69.160", where:"GB · AS20712 Andrews & Arnold", reqs:412, ua:"openai-python/2.4" }], known:[] },
+    { name:"staging-batch", id:"Zr4e8Kd2", cred:"openai-prod", kind:"standard", status:"disabled", disabledBy:"system:detect",
+      lock:{ cidr:["10.20.0.0/16"], countries:[] }, expires:40, lastSeen:"18 min ago",
+      spend:{ day:2.00, dayCap:5, month:20.10, monthCap:60, soft:[80] }, rpm:30, models:["gpt-5-mini"],
+      auto:"on", grace:null, rotations:[],
+      callers:[{ ip:"10.20.4.9", where:"private", reqs:3022, ua:"curl/8.9" }], known:[] },
+    { name:"payments-worker", id:"Ys2b0Qa7", cred:"stripe-live", kind:"standard", status:"active",
+      lock:{ cidr:["10.20.0.0/16"], countries:[] }, expires:12, lastSeen:"40 s ago",
+      spend:null, rpm:300, models:[], auto:"dry-run",
+      grace:{ until:"in 21 h" }, rotations:[{ at:"2026-11-03 13:05", by:"owner", grace:"24h" }],
+      callers:[{ ip:"10.20.7.31", where:"private", reqs:9120, ua:"stripe-go/82" }], known:[] },
+    { name:"voice-agent", id:"Vq7Tn1Lm", cred:"openai-prod", kind:"standard", status:"active", realtime:{ sessions:2, children:3 },
+      lock:{ cidr:[], countries:["US"] }, expires:55, lastSeen:"live",
+      spend:{ day:3.30, dayCap:15, month:88.00, monthCap:200, soft:[50,80,100] }, rpm:60, models:["gpt-realtime"],
+      auto:"dry-run", grace:null, rotations:[],
+      callers:[{ ip:"52.14.90.8", where:"US · AS16509 Amazon", reqs:330, ua:"openai-agents-js/1.2 (browser via child key)" }], known:[] },
+    { name:"canary-mcp-config", id:"Wm3cD8ur", cred:"openai-prod", kind:"canary", status:"active",
+      canary:{ format:"MCP server config", planted:"~/.config/claude/mcp.json on laptop", tags:["laptop","agent-bait"] },
+      lock:null, expires:365, lastSeen:"6 min ago", spend:null, rpm:0, models:[], auto:"off", grace:null, rotations:[],
+      callers:[{ ip:"203.0.113.9", where:"NL · AS14061 DigitalOcean", reqs:3, ua:"node-fetch/3.3" }], known:[] },
+    { name:"canary-dotenv", id:"Tb6fR2qs", cred:"anthropic-main", kind:"canary", status:"active",
+      canary:{ format:".env", planted:"repo old-landing/.env (deleted 2025)", tags:["github"] },
+      lock:null, expires:365, lastSeen:"never", spend:null, rpm:0, models:[], auto:"off", grace:null, rotations:[], callers:[], known:[] },
+  ],
+  incidents: [
+    { id:"INC-0142", key:"canary-mcp-config", sev:"critical", state:"open", opened:"14:14:02", quiet:false,
+      rules:["Canary used"], dets:3, dry:null, timeline:[{ t:"14:14:02", what:"Opened: Canary used (critical). Alert sent to slack, ntfy." },{ t:"14:15:40", what:"Repeat: Canary used ×2 (no new alert)" }],
+      evidence:"3 requests with canary key from 203.0.113.9 (NL, AS14061 DigitalOcean), UA node-fetch/3.3. Answered with a fake 401." },
+    { id:"INC-0141", key:"ci-deploy", sev:"high", state:"open", opened:"13:58:30", quiet:false,
+      rules:["New country","Rate spike","Spend spike"], dets:5, dry:{ at:"14:02:11", blocked:37 },
+      timeline:[{ t:"13:58:30", what:"Opened: New country SG (medium). Alert sent." },{ t:"14:01:05", what:"Escalated: Rate spike (medium): 5-min count 412 vs median 31" },{ t:"14:02:11", what:"Escalated: Spend spike (high): $3.90 last hour vs p95 $0.40. Dry-run: would have auto-disabled here." }],
+      evidence:"212 requests from 128.199.40.17 (SG, AS14061 DigitalOcean), UA python-requests/2.32. Baseline: GitHub Actions only." },
+    { id:"INC-0139", key:"web-chat-prod", sev:"medium", state:"acknowledged", opened:"09:41:12", quiet:true,
+      rules:["New country"], dets:4, dry:null, timeline:[{ t:"09:41:12", what:"Opened: New country BR (medium). Alert sent." },{ t:"10:02:00", what:"Acknowledged by owner" },{ t:"11:02:00", what:"Quiet: no firing for 1 h" }],
+      evidence:"96 requests from 177.71.2.44 (BR, AS16509 Amazon). Key country lock is US, DE: requests were refused." },
+    { id:"INC-0138", key:"staging-batch", sev:"high", state:"open", opened:"14:01:47", quiet:false,
+      rules:["Spend spike","Repeated allowlist violations"], dets:4, dry:null,
+      timeline:[{ t:"14:01:47", what:"Opened: Repeated allowlist violations (medium)" },{ t:"14:02:30", what:"Escalated: Spend spike (high)" },{ t:"14:02:31", what:"Auto-disabled by system:detect (3 detections from 2 rules in 15 min)" }],
+      evidence:"Spend $2.00 in 20 min vs p95 $0.15/h. 9 blocked requests from 10.99.1.4 (outside 10.20.0.0/16)." },
+    { id:"INC-0135", key:"notebook-kiran", sev:"low", state:"resolved", resolution:"false positive", opened:"Nov 01", quiet:true,
+      rules:["New ASN"], dets:1, dry:null, timeline:[{ t:"Nov 01", what:"Opened: New ASN AS20712 (low). Not alerted (below min_severity)." },{ t:"Nov 01", what:"Resolved as false positive by owner. AS20712 added as known source for notebook-kiran." }],
+      evidence:"1 request from AS20712." },
+    { id:"INC-0130", key:"web-chat-prod", sev:"medium", state:"resolved", resolution:"expired", opened:"Oct 24", quiet:true,
+      rules:["Rate spike"], dets:2, dry:null, timeline:[{ t:"Oct 24", what:"Opened: Rate spike (medium)" },{ t:"Oct 31", what:"Expired: quiet 7 days, never acknowledged (system:detect). Events added to baseline." }],
+      evidence:"5-min count 2,400 vs median 180." },
+  ],
+  detections: [
+    { t:"14:15:40", key:"canary-mcp-config", rule:"Canary used", sev:"critical", ev:"203.0.113.9 NL AS14061", inc:"INC-0142" },
+    { t:"14:14:02", key:"canary-mcp-config", rule:"Canary used", sev:"critical", ev:"203.0.113.9 NL AS14061", inc:"INC-0142" },
+    { t:"14:02:30", key:"staging-batch", rule:"Spend spike", sev:"high", ev:"$2.00/20 min vs p95 $0.15/h", inc:"INC-0138" },
+    { t:"14:02:11", key:"ci-deploy", rule:"Spend spike", sev:"high", ev:"$3.90/h vs p95 $0.40", inc:"INC-0141" },
+    { t:"14:01:47", key:"staging-batch", rule:"Repeated allowlist violations", sev:"medium", ev:"9 blocked from 10.99.1.4", inc:"INC-0138" },
+    { t:"14:01:05", key:"ci-deploy", rule:"Rate spike", sev:"medium", ev:"412 / 5 min vs median 31", inc:"INC-0141" },
+    { t:"13:58:30", key:"ci-deploy", rule:"New country", sev:"medium", ev:"SG via 128.199.40.17", inc:"INC-0141" },
+  ],
+  audit: [
+    { t:"14:02:31", actor:"system:detect", what:"key disable staging-batch (INC-0138)" },
+    { t:"13:05:10", actor:"owner", what:"key rotate payments-worker --grace 24h" },
+    { t:"10:02:00", actor:"owner", what:"incident ack INC-0139" },
+    { t:"Nov 01", actor:"owner", what:"incident this-was-me INC-0135" },
+  ],
+  lastCli: null, toast: null, reveal: null, panel: null, // panel = {type, keyName?, incId?, cred?}
+  ui: { tab:"overview", expanded:null, wizard:1, wizardPreset:"openai", incFilter:"open", cmd:"" },
+};
+
+const SEV_RANK = { critical:4, high:3, medium:2, low:1 };
+const key = n => S.keys.find(k => k.name === n);
+const inc = id => S.incidents.find(i => i.id === id);
+const incOfKey = n => S.incidents.find(i => i.key === n && i.state !== "resolved");
+const openIncs = () => S.incidents.filter(i => i.state !== "resolved").sort((a,b) => SEV_RANK[b.sev]-SEV_RANK[a.sev]);
+const keysOnCred = c => S.keys.filter(k => k.cred === c && k.status !== "revoked");
+const credOf = k => S.credentials.find(c => c.id === k.cred);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+const money = v => v == null ? "–" : "$" + v.toFixed(2);
+const rnd = n => { const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"; let s=""; for (let i=0;i<n;i++) s += a[Math.floor(Math.random()*a.length)]; return s; };
+const newSecret = k => `kmn_${k.id}_${rnd(43)}${rnd(6)}`;
+
+function risks(k) {
+  const r = [];
+  const i = incOfKey(k.name);
+  if (i) r.push({ t:`${i.sev} incident ${i.id}`, cls: i.sev === "critical" || i.sev === "high" ? "bad" : "warn" });
+  if (k.status === "disabled") r.push({ t:`disabled${k.disabledBy ? " by " + k.disabledBy : ""}`, cls:"bad" });
+  if (k.status === "revoked") r.push({ t:"revoked", cls:"bad" });
+  if (!k.lock && k.kind !== "canary") r.push({ t:"open to any address", cls:"warn" });
+  if (k.expires <= 7) r.push({ t:`expires in ${k.expires} d`, cls:"warn" });
+  if (k.spend && k.spend.monthCap && k.spend.month / k.spend.monthCap >= 0.8) r.push({ t:`${Math.round(100*k.spend.month/k.spend.monthCap)}% of monthly cap`, cls:"warn" });
+  if (k.projected && k.spend.monthCap && k.projected > k.spend.monthCap) r.push({ t:`projected ${money(k.projected)} > cap`, cls:"warn" });
+  if (k.spend && !k.spend.dayCap && !k.spend.monthCap) r.push({ t:"no spend cap", cls:"warn" });
+  if (k.grace) r.push({ t:`previous secret valid ${k.grace.until}`, cls:"" });
+  return r;
+}
+function lockText(k) {
+  if (k.kind === "canary") return "canary";
+  if (!k.lock) return "open";
+  return [...k.lock.cidr, ...k.lock.countries].join(", ");
+}
+function bar(spent, cap, soft) {
+  if (!cap) return `<span class="muted small">no cap</span>`;
+  const pct = Math.min(100, 100*spent/cap);
+  const cls = pct >= 100 ? "over" : pct >= 80 ? "hot" : "";
+  return `<div class="bar" title="${money(spent)} of ${money(cap)}"><i class="${cls}" style="width:${pct}%"></i>${(soft||[]).filter(s=>s<100).map(s=>`<b style="left:${s}%"></b>`).join("")}</div>`;
+}
+function spendCell(k) {
+  if (k.kind === "canary") return `<span class="muted small">n/a</span>`;
+  if (!k.spend) return `<span class="muted small">unmetered (generic)</span>`;
+  return `<div class="row" style="gap:6px"><div style="width:110px">${bar(k.spend.month, k.spend.monthCap, k.spend.soft)}</div><span class="small">${money(k.spend.month)}${k.spend.monthCap ? " / " + money(k.spend.monthCap) : ""}</span></div>`;
+}
+const sev = s => `<span class="sev ${s}">${s}</span>`;
+const pills = rs => rs.map(r => `<span class="pill ${r.cls}">${esc(r.t)}</span>`).join(" ");
+const statePill = i => i.state === "resolved" ? `<span class="pill">resolved: ${i.resolution}</span>` : i.state === "acknowledged" ? `<span class="pill warn">acknowledged${i.quiet ? " · quiet" : ""}</span>` : `<span class="pill bad">open${i.quiet ? " · quiet" : ""}</span>`;
+
+// ======================================================================
+// CLI equivalents (everything the dashboard does is a CLI command; ADR 0004)
+// ======================================================================
+const CLI = {
+  ack: i => `kman incident ack ${i}`,
+  thiswasme: (i, wide) => `kman incident this-was-me ${i}${wide ? " --install-wide" : ""}`,
+  resolve: (i, as) => `kman incident resolve ${i} --as ${as}`,
+  disable: (k, i) => `kman key disable ${k}${i ? " --incident " + i : ""}`,
+  enable: k => `kman key enable ${k}`,
+  rotate: (k, g, i) => `kman key rotate ${k} --grace ${g}${i ? " --incident " + i : ""}`,
+  revoke: (k, i) => `kman key revoke ${k}${i ? " --incident " + i : ""}`,
+  compromise: (c, i) => `kman credential compromise ${c} --secret-stdin${i ? " --incident " + i : ""}`,
+  knownAdd: (w, l, k) => `kman known-source add ${w} --label "${l}"${k ? " --key " + k : ""}`,
+  upstreamAdd: (p, n, b) => `kman upstream add ${n} --preset ${p}${b ? " --base-url " + b : ""}`,
+  credAdd: (n, u) => `kman credential add ${n} --upstream ${u} --secret-stdin`,
+  keyCreate: (n, c) => `kman key create ${n} --credential ${c}`,
+};
+
+// ======================================================================
+// Actions (stubs over in-memory state; each records audit + CLI line)
+// ======================================================================
+function record(cmd, actor = "owner") { S.lastCli = cmd; S.audit.unshift({ t: clock(), actor, what: cmd.replace(/^kman /, "") }); }
+function toast(msg) { S.toast = msg; render(); setTimeout(() => { if (S.toast === msg) { S.toast = null; render(); } }, 2600); }
+function tl(i, what) { i.timeline.push({ t: clock(), what }); }
+const A = {
+  ack(id) { const i = inc(id); i.state = "acknowledged"; tl(i, "Acknowledged by owner. Repeats stop alerting; escalations still alert."); record(CLI.ack(id)); toast(`${id} acknowledged`); },
+  thiswasme(id, wide) {
+    const i = inc(id), k = key(i.key);
+    const src = k.callers.filter(c => !k.known.some(n => c.where.includes(n.what))).slice(-1)[0];
+    if (src) k.known.push({ what: src.where.split(" · ")[1] ? src.where.split(" · ")[1].split(" ")[0] : src.ip, label: "added from " + id, scope: wide ? "install" : "key" });
+    i.state = "resolved"; i.resolution = "false positive"; tl(i, `Resolved as false positive by owner. Source added as known source (${wide ? "install-wide" : "this key"}). Held-out events added to baseline.`);
+    record(CLI.thiswasme(id, wide)); S.panel = null; toast(`${id} resolved: false positive`);
+  },
+  resolve(id, as) { const i = inc(id); i.state = "resolved"; i.resolution = as; tl(i, `Resolved as ${as} by owner.${as === "confirmed" ? " Held-out events discarded from baseline." : ""}`); record(CLI.resolve(id, as)); S.panel = null; toast(`${id} resolved: ${as}`); },
+  disable(name, id) { const k = key(name); k.status = "disabled"; k.disabledBy = "owner"; if (id) tl(inc(id), "Key disabled by owner. Incident stays open."); record(CLI.disable(name, id)); S.panel = null; toast(`${name} disabled. Takes effect on the next request.`); },
+  enable(name) { const k = key(name); k.status = "active"; k.disabledBy = null; const i = incOfKey(name); if (i) tl(i, "Key re-enabled by owner. Auto-disable paused for 1 h."); record(CLI.enable(name)); toast(`${name} re-enabled. Auto-disable paused 1 h.`); },
+  rotate(name, grace, id) {
+    const k = key(name); const s = newSecret(k);
+    k.rotations.unshift({ at: "2026-11-03 " + clock(), by: "owner", grace }); k.grace = grace === "0" ? null : { until: "in " + grace };
+    if (id) { const i = inc(id); i.state = "resolved"; i.resolution = "confirmed"; tl(i, `Key rotated (grace ${grace}). Resolved as confirmed. The old secret will be watched as a retired secret for 30 days.`); }
+    record(CLI.rotate(name, grace, id)); S.panel = null;
+    S.reveal = { title: `New secret for ${name}`, note: grace === "0" ? "The previous secret stopped working immediately." : `The previous secret keeps working ${"for " + grace}, then becomes a retired secret.`, items: [{ name, secret: s }] };
+    render();
+  },
+  revoke(name, id) { const k = key(name); k.status = "revoked"; if (id) { const i = inc(id); i.state = "resolved"; i.resolution = "confirmed"; tl(i, "Key revoked. Resolved as confirmed."); } record(CLI.revoke(name, id)); S.panel = null; toast(`${name} revoked permanently`); },
+  compromise(credId, id) {
+    const c = S.credentials.find(x => x.id === credId); c.replaced = clock(); c.hint = c.hint.split("…")[0] + "…" + rnd(4);
+    const ks = keysOnCred(credId).filter(k => k.kind !== "canary");
+    const items = ks.map(k => { k.rotations.unshift({ at: "2026-11-03 " + clock(), by: "owner", grace: "0 (compromise)" }); k.grace = null; return { name: k.name, secret: newSecret(k), apps: k.callers.map(x => x.ua).join(", ") }; });
+    S.incidents.filter(i => i.state !== "resolved" && ks.some(k => k.name === i.key)).forEach(i => { i.state = "resolved"; i.resolution = "confirmed"; tl(i, `Credential ${credId} compromised: credential replaced, key rotated with no grace. Resolved as confirmed.`); });
+    record(CLI.compromise(credId, id)); S.panel = null;
+    S.reveal = { title: `Credential ${credId} replaced`, note: `${ks.length} virtual keys were rotated with no grace period. Canaries on this credential keep their secrets. Give each app its new key:`, items };
+    render();
+  },
+  addUpstream(preset, name, base) { S.upstreams.push({ id: name, preset, base, profile: ["openai","anthropic","gemini"].includes(preset) ? preset : "generic" }); record(CLI.upstreamAdd(preset, name, base)); S.ui.wizard = 2; render(); },
+  addCred(name, up) { S.credentials.push({ id: name, upstream: up, hint: "…" + rnd(4), added: "2026-11-03", replaced: null }); record(CLI.credAdd(name, up)); S.ui.wizard = 3; render(); },
+  knownAdd(what, label, k) { const t = k ? key(k) : null; if (t) t.known.push({ what, label, scope: "key" }); else S.keys.forEach(x => x.known.push({ what, label, scope: "install" })); record(CLI.knownAdd(what, label, k)); toast(`known source ${what} added`); },
+};
+
+// ======================================================================
+// Live feed (stands in for SSE)
+// ======================================================================
+const FEED = [
+  { key:"ci-deploy", rule:"Spend spike", sev:"high", ev:"$4.40/h vs p95 $0.40" },
+  { key:"web-chat-prod", rule:"New ASN", sev:"low", ev:"AS7922 Comcast" },
+  { key:"staging-batch", rule:"Disabled or revoked key used", sev:"high", ev:"from 10.99.1.4" },
+  { key:"canary-mcp-config", rule:"Canary used", sev:"critical", ev:"203.0.113.9 NL AS14061" },
+  { key:"voice-agent", rule:"Rate spike", sev:"medium", ev:"88 sessions / 5 min vs median 4" },
+  { key:"payments-worker", rule:"Retired secret used", sev:"high", ev:"old secret of 2026-10-01 from 10.20.7.31" },
+];
+let feedIdx = 0;
+function feedTick() {
+  tick += 7;
+  if (!S.live) return;
+  const f = FEED[feedIdx++ % FEED.length]; const k = key(f.key);
+  if (k.status === "revoked") return;
+  let i = incOfKey(f.key), note;
+  if (!i) {
+    i = { id: "INC-0" + (143 + S.incidents.length - 6), key: f.key, sev: f.sev, state: "open", opened: clock(), quiet: false, rules: [f.rule], dets: 0, dry: null, timeline: [], evidence: f.ev };
+    S.incidents.unshift(i); tl(i, `Opened: ${f.rule} (${f.sev}).${SEV_RANK[f.sev] >= 2 ? " Alert sent." : " Not alerted (below min_severity)."}`); note = `new incident ${i.id}`;
+  } else if (!i.rules.includes(f.rule) || SEV_RANK[f.sev] > SEV_RANK[i.sev]) {
+    i.rules.push(f.rule); if (SEV_RANK[f.sev] > SEV_RANK[i.sev]) i.sev = f.sev; i.quiet = false; tl(i, `Escalated: ${f.rule} (${f.sev}). Alert sent.`); note = `${i.id} escalated`;
+  } else { i.quiet = false; tl(i, `Repeat: ${f.rule} (no new alert)`); }
+  i.dets++;
+  S.detections.unshift({ t: clock(), key: f.key, rule: f.rule, sev: f.sev, ev: f.ev, inc: i.id, fresh: true });
+  setTimeout(() => { S.detections.forEach(d => d.fresh = false); }, 2500);
+  if (note) S.toast = note, setTimeout(() => { S.toast = null; render(); }, 2600);
+  render();
+}
+setInterval(feedTick, 7000);
+
+// ======================================================================
+// Routing: shared hash routes == the real /ui/ paths
+// ======================================================================
+let curRoute = location.hash.replace(/^#\/?/, "");
+function nav(path) { curRoute = path.replace(/^#\/?/, ""); try { history.replaceState(null, "", "#/" + curRoute); } catch (e) {} S.panel = null; S.ui.tab = "overview"; render(); }
+function route() {
+  const h = curRoute;
+  const [sec, id] = h.split("/");
+  return { sec: sec || "", id: id ? decodeURIComponent(id) : null };
+}
+const go = path => `#/${path}`;
+const realPath = () => { const r = route(); return "/ui/" + (r.sec || "") + (r.id ? "/" + r.id : ""); };
+
+// ======================================================================
+// Shared confirm panels (where they appear differs per variant)
+// ======================================================================
+function confirmPanel(p) {
+  const i = p.incId ? inc(p.incId) : null;
+  const k = p.keyName ? key(p.keyName) : null;
+  const wrap = (title, body, cmd, btn) => `<div class="confirm"><h4>${title}</h4>${body}<code class="cli">${esc(cmd)}</code><div class="row" style="margin-top:10px">${btn}<button class="btn" data-act="closePanel">Cancel</button></div></div>`;
+  switch (p.type) {
+    case "disable": return wrap(`Disable ${k.name}?`, `<ul><li>Every request with this key is refused from the next request on.</li><li>The key, its policy, spend and baseline are kept. You can re-enable it.</li>${i ? `<li>${i.id} stays open: disabling can be undone, so you may still be investigating.</li>` : ""}</ul>`, CLI.disable(k.name, i && i.id), `<button class="btn danger solid" data-act="disable" data-k="${k.name}" data-i="${i ? i.id : ""}">Disable key</button>`);
+    case "rotate": return wrap(`Rotate ${k.name}?`, `<ul><li>Same key id <code>${k.id}</code>; spend, baseline, incidents and history stay.</li><li>The new secret is shown once.</li><li>After the grace period the old secret becomes a <b>retired secret</b>: refused, and any use raises a high detection.</li>${i ? `<li>Resolves ${i.id} as confirmed.</li>` : ""}</ul><div class="field"><label>Grace period for the previous secret</label><select id="grace"><option value="0">0: stop it now (suspected leak)</option><option value="1h">1 hour</option><option value="24h" selected>24 hours</option></select></div>`, CLI.rotate(k.name, "24h", i && i.id), `<button class="btn primary" data-act="rotate" data-k="${k.name}" data-i="${i ? i.id : ""}">Rotate</button>`);
+    case "revoke": return wrap(`Revoke ${k.name}?`, `<ul><li><b>Permanent.</b> The key can never be used again; history is kept.</li><li>Apps using it need a new key.</li>${i ? `<li>Resolves ${i.id} as confirmed.</li>` : ""}</ul>`, CLI.revoke(k.name, i && i.id), `<button class="btn danger solid" data-act="revoke" data-k="${k.name}" data-i="${i ? i.id : ""}">Revoke permanently</button>`);
+    case "compromise": {
+      const c = p.cred || credOf(k).id; const ks = keysOnCred(c).filter(x => x.kind !== "canary");
+      return wrap(`Credential compromise: ${c}`, `<p class="small">Use this when the <b>real</b> ${esc(S.credentials.find(x => x.id === c).upstream)} key itself leaked. First revoke it at the provider and create a new one.</p><div class="field"><label>New ${esc(S.credentials.find(x => x.id === c).upstream)} secret (masked, never shown back)</label><input type="password" id="newsecret" placeholder="paste the new provider key" autocomplete="off"></div><ul><li>Replaces the credential in one step.</li><li>Rotates these ${ks.length} virtual keys with <b>no grace</b>: ${ks.map(x => `<code>${x.name}</code>`).join(", ")}.</li><li>Lists the apps that need their new key.</li></ul>`, CLI.compromise(c, i && i.id), `<button class="btn danger solid" data-act="compromise" data-c="${c}" data-i="${i ? i.id : ""}">Replace credential and rotate ${ks.length} keys</button>`);
+    }
+    case "thiswasme": {
+      const src = k.callers.slice(-1)[0];
+      return wrap(`This was me (${i.id})`, `<ul><li>Resolves ${i.id} as a <b>false positive</b>.</li><li>Adds the source as a known source: <code>${esc(src ? src.where : "?")}</code>. Known sources never count as a new location, but spike rules still apply.</li><li>The incident's held-out events join ${k.name}'s baseline.</li></ul><label class="row small"><input type="checkbox" id="wide"> Make it install-wide (every key), not just ${k.name}</label>`, CLI.thiswasme(i.id, false), `<button class="btn primary" data-act="thiswasme" data-i="${i.id}">Resolve as false positive</button>`);
+    }
+    case "resolve": return wrap(`Resolve ${i.id}`, `<div class="field"><label>Resolution</label><select id="as"><option value="confirmed">confirmed: it was an attack; discard its events from the baseline</option><option value="false-positive">false positive: add its events to the baseline</option></select></div>`, CLI.resolve(i.id, "confirmed"), `<button class="btn primary" data-act="resolve" data-i="${i.id}">Resolve</button>`);
+  }
+  return "";
+}
+
+// Shared bits of content (not layout)
+function policyBlock(k) {
+  if (k.kind === "canary") return `<p>Canary: format <b>${esc(k.canary.format)}</b>, planted at <code>${esc(k.canary.planted)}</code>, tags ${k.canary.tags.map(t => `<span class="pill">${t}</span>`).join(" ")}. Any use answers with a fake 401 and raises a critical alert. Install-wide known sources never silence it.</p>`;
+  const rows = [
+    ["Upstream / credential", `${credOf(k).upstream} / ${k.cred}`],
+    ["Network lock", k.lock ? lockText(k) : `<span class="pill warn">open to any address</span>`],
+    ["Models", k.models.length ? k.models.join(", ") : "any"],
+    ["Rate limit", k.rpm + " req/min"],
+    ["Spend caps", k.spend ? `daily ${k.spend.dayCap ? money(k.spend.dayCap) : "none"} · monthly ${k.spend.monthCap ? money(k.spend.monthCap) : "none"}` : "unmetered upstream"],
+    ["Soft budget", k.spend && k.spend.soft.length ? k.spend.soft.map(s => s + "%").join(" / ") : "none"],
+    ["Expiry", `in ${k.expires} days (install max lifetime 365 d)`],
+    ["Auto-disable", k.auto === "dry-run" ? `dry-run <span class="muted small">(records only)</span>` : k.auto],
+    ["Detection overrides", k.name === "ci-deploy" ? "Rate spike floor 300 (default 100)" : "none"],
+  ];
+  return `<table>${rows.map(r => `<tr><td class="muted" style="width:190px">${r[0]}</td><td>${r[1]}</td></tr>`).join("")}</table>`;
+}
+function callersTable(k) {
+  if (!k.callers.length) return `<p class="muted">No requests yet.</p>`;
+  return `<table><tr><th>Source</th><th>Where</th><th>Requests 7 d</th><th>Client</th><th></th></tr>${k.callers.map(c => { const known = k.known.some(n => c.where.includes(n.what.split("/")[0].slice(0, 6)) || c.ip.startsWith(n.what.split(".").slice(0, 2).join("."))); return `<tr><td class="mono">${c.ip}</td><td>${esc(c.where)}</td><td>${c.reqs.toLocaleString()}</td><td class="mono small">${esc(c.ua)}</td><td>${known ? `<span class="pill good">known</span>` : ""}</td></tr>`; }).join("")}</table>`;
+}
+function knownBlock(k) {
+  return `${k.known.length ? `<table><tr><th>Source</th><th>Label</th><th>Scope</th></tr>${k.known.map(n => `<tr><td class="mono">${esc(n.what)}</td><td>${esc(n.label)}</td><td>${n.scope === "install" ? "install-wide" : "this key"}</td></tr>`).join("")}</table>` : `<p class="muted">No known sources.</p>`}
+  <p class="small muted">Requests from a known source never count as a new country or network. Spike rules still apply, and canaries are never silenced.</p>`;
+}
+function rotationBlock(k) {
+  return `<p class="small">Key id <code>${k.id}</code> never changes. ${k.grace ? `<span class="pill">previous secret valid ${k.grace.until}</span>` : ""}</p>
+  ${k.rotations.length ? `<table><tr><th>Rotated</th><th>By</th><th>Grace</th><th>Retired secret watched until</th></tr>${k.rotations.map(r => `<tr><td>${r.at}</td><td>${r.by}</td><td>${r.grace}</td><td class="muted">+30 d after grace</td></tr>`).join("")}</table>` : `<p class="muted">Never rotated.</p>`}`;
+}
+function timelineList(i) { return `<ol style="margin:6px 0 0 18px;padding:0">${i.timeline.map(e => `<li><span class="mono small muted">${e.t}</span> ${esc(e.what)}</li>`).join("")}</ol>`; }
+function dryRunNote(i) { return i.dry ? `<div class="confirm" style="border-color:#f0d79a;background:#fffbea"><b>Dry-run:</b> auto-disable would have disabled <b>${i.key}</b> at ${i.dry.at}; ${i.dry.blocked} requests since would have been blocked. <span class="small muted">Switch this key to auto-disable: <code>kman key set ${i.key} --auto-disable on</code></span></div>` : ""; }
+
+// ======================================================================
+// Variant A: sidebar console (tables, tabbed detail, modal confirms)
+// ======================================================================
+const VariantA = { name: "Sidebar console", render(r) {
+  const oi = openIncs();
+  const nav = [["keys","Keys",""],["incidents","Incidents",oi.length],["feed","Live feed",""],["upstreams","Upstreams & credentials",""],["audit","Audit log",""]];
+  const sec = r.sec || "keys";
+  const crit = oi.filter(i => i.sev === "critical" || i.sev === "high");
+  const banners = `<div class="banners">${crit.map(i => `<div class="banner crit"><span>${sev(i.sev)} <b>${i.key}</b>: ${i.rules.join(", ")} <span class="muted small">${i.id} · opened ${i.opened}</span></span><a class="btn" href="${go("incidents/" + i.id)}">Respond</a></div>`).join("")}
+    ${S.keys.filter(k => risks(k).some(x => x.cls === "warn") && !incOfKey(k.name)).slice(0,3).map(k => `<div class="banner"><span><b>${k.name}</b>: ${pills(risks(k).filter(x => x.cls === "warn"))}</span><a class="btn" href="${go("keys/" + k.name)}">Review</a></div>`).join("")}</div>`;
+  let body = "";
+  if (sec === "keys" && !r.id) {
+    body = `<div class="row"><h1 class="grow">Keys</h1><button class="btn primary" data-act="todo" data-what="${CLI.keyCreate("&lt;name&gt;", "&lt;credential&gt;")}">+ New key</button><button class="btn" data-act="todo" data-what="kman canary create --format env">+ Canary</button></div>${banners}
+    <div class="card"><table><tr><th>Name</th><th>Upstream</th><th>Lock</th><th>Expires</th><th>Last seen</th><th>Spend this month</th><th>Status</th></tr>
+    ${S.keys.map(k => `<tr class="click" data-go="${go("keys/" + k.name)}"><td><b>${k.name}</b><div class="mono small muted">${k.id}${k.kind === "canary" ? " · canary" : ""}</div></td><td>${credOf(k).upstream}</td><td class="small">${k.lock || k.kind === "canary" ? esc(lockText(k)) : `<span class="pill warn">open</span>`}</td><td>${k.expires <= 7 ? `<span class="pill warn">${k.expires} d</span>` : k.expires + " d"}</td><td class="small">${k.lastSeen}</td><td>${spendCell(k)}</td><td>${pills(risks(k).filter(x => x.cls === "bad" || x.t.startsWith("previous")))}${k.status === "active" && !risks(k).some(x => x.cls === "bad") ? `<span class="pill good">active</span>` : ""}</td></tr>`).join("")}</table></div>`;
+  } else if (sec === "keys") {
+    const k = key(r.id); const t = S.ui.tab;
+    const tabs = [["overview","Overview"],["callers","Callers"],["incidents","Incidents"],["policy","Policy"],["known","Known sources"],["rotation","Rotation"]];
+    const kincs = S.incidents.filter(i => i.key === k.name);
+    let tb = "";
+    if (t === "overview") tb = `<div class="split"><div class="panel"><h3>Spend</h3>${k.spend ? `<p>Today ${money(k.spend.day)} ${k.spend.dayCap ? "of " + money(k.spend.dayCap) : ""}</p>${bar(k.spend.day, k.spend.dayCap, k.spend.soft)}<p>This month ${money(k.spend.month)} ${k.spend.monthCap ? "of " + money(k.spend.monthCap) : ""} ${k.projected ? `<span class="pill warn">projected ${money(k.projected)}</span>` : ""}</p>${bar(k.spend.month, k.spend.monthCap, k.spend.soft)}<p class="small muted">Ticks mark the soft-budget thresholds.</p>` : `<p class="muted">Not metered.</p>`}<h3 style="margin-top:14px">Recent detections</h3>${S.detections.filter(d => d.key === k.name).slice(0,5).map(d => `<div class="small">${d.t} ${sev(d.sev)} ${d.rule}: ${esc(d.ev)}</div>`).join("") || `<p class="muted">None.</p>`}</div><div class="panel"><h3>At a glance</h3>${pills(risks(k)) || `<span class="pill good">nothing at risk</span>`}<p class="small">Last seen ${k.lastSeen}${k.realtime ? ` · ${k.realtime.sessions} live realtime sessions, ${k.realtime.children} child keys` : ""}</p></div></div>`;
+    if (t === "callers") tb = `<div class="card">${callersTable(k)}</div>`;
+    if (t === "incidents") tb = `<div class="card"><table><tr><th>Incident</th><th>Severity</th><th>Rules</th><th>State</th></tr>${kincs.map(i => `<tr class="click" data-go="${go("incidents/" + i.id)}"><td>${i.id}</td><td>${sev(i.sev)}</td><td>${i.rules.join(", ")}</td><td>${statePill(i)}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">No incidents.</td></tr>`}</table></div>`;
+    if (t === "policy") tb = `<div class="card">${policyBlock(k)}</div><p class="small muted">Edit opens a form; every field maps to <code>kman key set ${k.name} …</code></p>`;
+    if (t === "known") tb = `<div class="card" style="padding:8px 12px">${knownBlock(k)}</div>`;
+    if (t === "rotation") tb = `<div class="card" style="padding:8px 12px">${rotationBlock(k)}</div>`;
+    body = `<div class="small"><a href="${go("keys")}">Keys</a> /</div><div class="row"><h1 class="grow">${k.name} <span class="mono small muted">${k.id}</span></h1>
+      ${k.status === "disabled" ? `<button class="btn" data-act="enable" data-k="${k.name}">Enable</button>` : k.status === "active" ? `<button class="btn danger" data-panel="disable" data-k="${k.name}">Disable</button>` : ""}
+      ${k.status !== "revoked" ? `<button class="btn" data-panel="rotate" data-k="${k.name}">Rotate</button><button class="btn danger" data-panel="revoke" data-k="${k.name}">Revoke</button>` : ""}</div>
+      <div class="tabs">${tabs.map(x => `<a href="javascript:void 0" data-tab="${x[0]}" class="${t === x[0] ? "on" : ""}">${x[1]}${x[0] === "incidents" && kincs.some(i => i.state !== "resolved") ? " •" : ""}</a>`).join("")}</div>${tb}`;
+  } else if (sec === "incidents" && !r.id) {
+    const f = S.ui.incFilter; const list = f === "open" ? oi : S.incidents;
+    body = `<div class="row"><h1 class="grow">Incidents</h1><select data-filter="1"><option value="open" ${f === "open" ? "selected" : ""}>Open and acknowledged</option><option value="all" ${f === "all" ? "selected" : ""}>All</option></select></div>
+      <div class="card"><table><tr><th>Incident</th><th>Key</th><th>Severity</th><th>Rules</th><th>Detections</th><th>Opened</th><th>State</th></tr>${list.map(i => `<tr class="click" data-go="${go("incidents/" + i.id)}"><td class="mono">${i.id}</td><td><b>${i.key}</b></td><td>${sev(i.sev)}</td><td class="small">${i.rules.join(", ")}</td><td>${i.dets}</td><td class="small">${i.opened}</td><td>${statePill(i)}</td></tr>`).join("")}</table></div>`;
+  } else if (sec === "incidents") {
+    const i = inc(r.id); const k = key(i.key); const done = i.state === "resolved";
+    body = `<div class="small"><a href="${go("incidents")}">Incidents</a> /</div><div class="row"><h1 class="grow">${sev(i.sev)} ${i.id}: <a href="${go("keys/" + k.name)}">${k.name}</a></h1>${statePill(i)}</div>
+    <div class="split"><div><div class="panel"><h3>Evidence</h3><p>${esc(i.evidence)}</p><p class="small">Rules: ${i.rules.map(x => `<span class="pill">${x}</span>`).join(" ")} · ${i.dets} detections · key is <b>${k.status}</b></p></div>${dryRunNote(i)}<div class="panel" style="margin-top:12px"><h3>Timeline</h3>${timelineList(i)}</div></div>
+    <div class="panel"><h3>Respond</h3>${done ? `<p class="muted">Resolved: ${i.resolution}.</p>` : `<div class="actions">
+      ${i.state === "open" ? `<button class="btn" data-act="ack" data-i="${i.id}">Acknowledge <span class="muted small">· stop repeat alerts</span></button>` : ""}
+      ${k.kind !== "canary" ? `<button class="btn" data-panel="thiswasme" data-k="${k.name}" data-i="${i.id}">This was me…</button>` : ""}
+      ${k.status === "active" ? `<button class="btn danger" data-panel="disable" data-k="${k.name}" data-i="${i.id}">Disable key…</button>` : `<button class="btn" data-act="enable" data-k="${k.name}">Re-enable key</button>`}
+      <button class="btn" data-panel="rotate" data-k="${k.name}" data-i="${i.id}">Rotate key…</button>
+      <button class="btn danger" data-panel="revoke" data-k="${k.name}" data-i="${i.id}">Revoke key…</button>
+      <button class="btn danger" data-panel="compromise" data-k="${k.name}" data-i="${i.id}">Credential compromise…</button>
+      <button class="btn" data-panel="resolve" data-i="${i.id}">Resolve…</button></div>`}
+      <p class="small muted" style="margin-top:12px">Stable link used in alerts: <code>${realPath()}</code></p></div></div>`;
+  } else if (sec === "feed") {
+    body = `<div class="row"><h1 class="grow">Live feed</h1><span class="small muted">${S.live ? "● streaming (SSE)" : "paused"}</span><button class="btn" data-act="live">${S.live ? "Pause" : "Resume"}</button></div><p class="small muted">Same stream as <code>kman detections --follow</code>. Low severity is shown here but not sent to channels.</p>
+    <div class="card"><table><tr><th>Time</th><th>Severity</th><th>Key</th><th>Rule</th><th>Evidence</th><th>Incident</th></tr>${S.detections.slice(0, 30).map(d => `<tr class="click" data-go="${go("incidents/" + d.inc)}" style="${d.fresh ? "background:#eef7ee" : ""}"><td class="mono small">${d.t}</td><td>${sev(d.sev)}</td><td>${d.key}</td><td>${d.rule}</td><td class="small">${esc(d.ev)}</td><td class="mono small">${d.inc}</td></tr>`).join("")}</table></div>`;
+  } else if (sec === "upstreams" && r.id === "new") {
+    const w = S.ui.wizard;
+    body = `<div class="small"><a href="${go("upstreams")}">Upstreams</a> /</div><h1>Add an upstream and credential</h1><div class="steps"><span class="${w === 1 ? "on" : ""}">1 · Upstream</span><span class="${w === 2 ? "on" : ""}">2 · Credential</span><span class="${w === 3 ? "on" : ""}">3 · First key</span></div>
+    <div class="panel" style="max-width:560px">${w === 1 ? `<form data-form="upstream"><div class="field"><label>Preset (21)</label><select name="preset">${PRESETS.map(p => `<option ${p === S.ui.wizardPreset ? "selected" : ""}>${p}</option>`).join("")}</select></div><div class="field"><label>Name</label><input name="name" value="openai-eu"></div><div class="field"><label>Base URL (fixed by the preset; change only for proxies or regions)</label><input name="base" value="https://eu.api.openai.com"></div><button class="btn primary">Add upstream</button></form>`
+      : w === 2 ? `<form data-form="cred"><input type="hidden" name="up" value="${S.upstreams.slice(-1)[0].id}"><div class="field"><label>Credential name</label><input name="name" value="${S.upstreams.slice(-1)[0].id}-main"></div><div class="field"><label>Secret: masked, encrypted at rest, never shown again</label><input type="password" name="secret" placeholder="sk-…" autocomplete="off"></div><button class="btn primary">Save credential</button></form>`
+      : `<p>✓ Upstream and credential saved.</p><p>Next: create a virtual key for your app.</p><code class="cli">${esc(CLI.keyCreate("my-app", S.credentials.slice(-1)[0].id))}</code><div class="row" style="margin-top:10px"><a class="btn" href="${go("upstreams")}" data-act="wizardReset">Done</a></div>`}
+      <p class="small muted" style="margin-top:10px">Last command: <code>${esc(S.lastCli || "")}</code></p></div>`;
+  } else if (sec === "upstreams") {
+    body = `<div class="row"><h1 class="grow">Upstreams & credentials</h1><a class="btn primary" href="${go("upstreams/new")}" data-act="wizardReset">+ Add upstream</a></div>
+    <div class="card"><table><tr><th>Upstream</th><th>Base URL</th><th>Credential</th><th>Secret</th><th>Keys</th><th></th></tr>${S.credentials.map(c => { const u = S.upstreams.find(x => x.id === c.upstream); return `<tr><td><b>${u.id}</b> <span class="muted small">${u.preset}</span></td><td class="mono small">${u.base}</td><td>${c.id}</td><td class="mono small">${c.hint}${c.replaced ? ` <span class="pill good">replaced ${c.replaced}</span>` : ""}</td><td>${keysOnCred(c.id).length}</td><td><button class="btn danger" data-panel="compromise" data-c="${c.id}">Compromised…</button></td></tr>`; }).join("")}</table></div>`;
+  } else if (sec === "audit") {
+    body = `<h1>Audit log</h1><p class="small muted">Same as <code>kman audit --follow</code>.</p><div class="card"><table><tr><th>Time</th><th>Actor</th><th>Change</th></tr>${S.audit.map(a => `<tr><td class="mono small">${a.t}</td><td>${a.actor}</td><td class="mono small">${esc(a.what)}</td></tr>`).join("")}</table></div>`;
+  }
+  return `<div class="A"><nav><div class="brand">kman</div>${nav.map(n => `<a href="${go(n[0])}" class="${sec === n[0] ? "on" : ""}">${n[1]}${n[2] ? `<span class="n">${n[2]}</span>` : ""}</a>`).join("")}<div class="foot">owner · 127.0.0.1:8081<br>v0.3.0 · 8 keys · 3 upstreams</div></nav><main>${body}</main></div>${S.panel ? `<div class="overlay" data-act="closePanel"><div class="dialog" data-stop="1">${confirmPanel(S.panel)}</div></div>` : ""}`;
+}};
+
+// ======================================================================
+// Variant B: triage inbox (attention list + detail pane, guided playbook)
+// ======================================================================
+const VariantB = { name: "Triage inbox", render(r) {
+  const oi = openIncs();
+  const attention = [
+    ...oi.map(i => ({ kind: "inc", sev: i.sev, href: go("incidents/" + i.id), id: i.id, title: `${i.key}`, sub: `${i.rules.join(" + ")} · ${i.dets} detections`, right: statePill(i) })),
+    ...S.keys.filter(k => !incOfKey(k.name) && risks(k).some(x => x.cls)).map(k => ({ kind: "key", sev: "", href: go("keys/" + k.name), id: k.name, title: k.name, sub: risks(k).filter(x => x.cls).map(x => x.t).join(" · "), right: "" })),
+  ];
+  const sec = r.sec || "attention";
+  const listSec = sec === "incidents" || sec === "attention" ? "attention" : sec === "keys" ? "keys" : sec === "upstreams" ? "upstreams" : sec;
+  const rail = [["attention","Needs attention",attention.length],["keys","Keys",S.keys.length],["upstreams","Upstreams",S.upstreams.length],["feed","Live feed",""],["audit","Audit log",""]];
+  let list = "";
+  const sel = r.id;
+  if (listSec === "attention") list = `<div class="head"><span>Needs attention</span><span class="small muted">most severe first</span></div>${attention.map(a => `<div class="item ${a.sev} ${sel === a.id ? "on" : ""}" data-go="${a.href}"><div class="t"><span>${a.sev ? sev(a.sev) + " " : ""}<b>${a.title}</b></span>${a.right}</div><div class="s">${esc(a.sub)}</div></div>`).join("")}
+    <div class="head" style="position:static"><span class="small muted">Recently resolved</span></div>${S.incidents.filter(i => i.state === "resolved").map(i => `<div class="item ${sel === i.id ? "on" : ""}" data-go="${go("incidents/" + i.id)}"><div class="t"><span class="muted">${i.key}</span><span class="small muted">${i.resolution}</span></div><div class="s">${i.rules.join(", ")}</div></div>`).join("")}`;
+  if (listSec === "keys") list = `<div class="head"><span>Keys</span><button class="btn" data-act="todo" data-what="${CLI.keyCreate("&lt;name&gt;", "&lt;credential&gt;")}">+ New</button></div>${S.keys.map(k => `<div class="item ${sel === k.name ? "on" : ""}" data-go="${go("keys/" + k.name)}"><div class="t"><b>${k.name}</b><span class="small muted">${k.lastSeen}</span></div><div class="s">${esc(lockText(k))} · ${k.spend && k.spend.monthCap ? `${money(k.spend.month)} of ${money(k.spend.monthCap)}` : k.kind === "canary" ? "canary" : "no cap"}</div>${risks(k).length ? `<div style="margin-top:4px">${pills(risks(k))}</div>` : ""}</div>`).join("")}`;
+  if (listSec === "upstreams") list = `<div class="head"><span>Upstreams</span><a class="btn" href="${go("upstreams/new")}" data-act="wizardReset">+ Add</a></div>${S.credentials.map(c => `<div class="item ${sel === c.id ? "on" : ""}" data-go="${go("upstreams/" + c.id)}"><div class="t"><b>${c.upstream}</b><span class="mono small">${c.hint}</span></div><div class="s">credential ${c.id} · ${keysOnCred(c.id).length} keys</div></div>`).join("")}`;
+  if (listSec === "feed" || listSec === "audit") list = `<div class="head"><span>${listSec === "feed" ? "Live feed" : "Audit log"}</span></div><div class="item"><div class="s">Shown full-width on the right.</div></div>`;
+
+  let pane = "";
+  const inline = (t) => S.panel && S.panel.type === t ? confirmPanel(S.panel) : "";
+  if (sec === "incidents" && sel) {
+    const i = inc(sel); const k = key(i.key); const c = credOf(k);
+    const done = i.state === "resolved";
+    const step = (cls, title, body) => `<li class="${cls}"><h4>${title}</h4>${body}</li>`;
+    pane = `<div class="row"><h1 class="grow">${sev(i.sev)} ${k.name}</h1>${statePill(i)}</div><div class="muted small">${i.id} · opened ${i.opened} · ${i.rules.join(", ")} · ${i.dets} detections · link in alerts: <code>${realPath()}</code></div>
+    <p>${esc(i.evidence)}</p>${dryRunNote(i)}
+    ${done ? `<div class="confirm">Resolved: <b>${i.resolution}</b>.</div>` : `<ol class="play">
+      ${step(i.state !== "open" ? "done" : "", "Seen it", i.state === "open" ? `<p class="small">Acknowledge to stop repeat alerts. Escalations still alert.</p><button class="btn" data-act="ack" data-i="${i.id}">Acknowledge</button>` : `<p class="small muted">Acknowledged.</p>`)}
+      ${k.kind === "canary" ? step("", "This is a canary", `<p class="small">Nobody legitimate uses a canary. Whoever used it read <code>${esc(k.canary.planted)}</code>. Find what else lived there.</p>`) : step("", "Was this you?", `<p class="small">A new CI runner, VPN or office?</p><button class="btn" data-panel="thiswasme" data-k="${k.name}" data-i="${i.id}">Yes, this was me</button>${inline("thiswasme")}`)}
+      ${k.kind === "canary" ? "" : step(k.status !== "active" ? "done" : "", "Contain: stop the key now", k.status === "active" ? `<p class="small">Reversible. The incident stays open.</p><button class="btn danger" data-panel="disable" data-k="${k.name}" data-i="${i.id}">Disable ${k.name}</button>${inline("disable")}` : `<p class="small muted">${k.name} is ${k.status}. <button class="btn" data-act="enable" data-k="${k.name}">Re-enable</button></p>`)}
+      ${step("", "Replace the secret", `<p class="small">Rotate keeps the key and its history; revoke ends it. Either resolves the incident as confirmed.</p><div class="row"><button class="btn primary" data-panel="rotate" data-k="${k.name}" data-i="${i.id}">Rotate</button><button class="btn danger" data-panel="revoke" data-k="${k.name}" data-i="${i.id}">Revoke</button></div>${inline("rotate")}${inline("revoke")}`)}
+      ${step("", `Did the real ${c.upstream} key leak too?`, `<p class="small">Only if the attacker could have read kman's data or the provider key itself. Replaces <code>${c.id}</code> and rotates all ${keysOnCred(c.id).filter(x => x.kind !== "canary").length} keys on it.</p><button class="btn danger" data-panel="compromise" data-k="${k.name}" data-i="${i.id}">Credential compromise</button>${inline("compromise")}`)}
+      ${step("", "Close it", `<button class="btn" data-panel="resolve" data-i="${i.id}">Resolve…</button>${inline("resolve")}`)}
+    </ol>`}
+    <section><h3>Timeline</h3>${timelineList(i)}</section>`;
+  } else if (sec === "keys" && sel) {
+    const k = key(sel); const ki = incOfKey(k.name);
+    pane = `<div class="row"><h1 class="grow">${k.name}</h1>${k.status === "disabled" ? `<button class="btn" data-act="enable" data-k="${k.name}">Enable</button>` : k.status === "active" ? `<button class="btn danger" data-panel="disable" data-k="${k.name}">Disable</button>` : ""}${k.status !== "revoked" ? `<button class="btn" data-panel="rotate" data-k="${k.name}">Rotate</button><button class="btn danger" data-panel="revoke" data-k="${k.name}">Revoke</button>` : ""}</div>
+    <div class="mono small muted">${k.id} · ${credOf(k).upstream} / ${k.cred} · last seen ${k.lastSeen}</div>
+    ${["disable","rotate","revoke"].map(inline).join("")}
+    ${ki ? `<div class="confirm" style="border-color:#f1b9b5;background:#fdecea">${sev(ki.sev)} Open incident <a href="${go("incidents/" + ki.id)}">${ki.id}</a>: ${ki.rules.join(", ")}</div>` : ""}
+    <div class="gauges"><div class="gauge"><div class="small muted">Today</div><div class="v">${k.spend ? money(k.spend.day) : "–"}</div>${k.spend ? bar(k.spend.day, k.spend.dayCap, k.spend.soft) : ""}</div><div class="gauge"><div class="small muted">This month</div><div class="v">${k.spend ? money(k.spend.month) : "–"}</div>${k.spend ? bar(k.spend.month, k.spend.monthCap, k.spend.soft) : ""}</div><div class="gauge"><div class="small muted">Expires</div><div class="v">${k.expires} d</div><div class="small">${k.lock ? "locked to " + esc(lockText(k)) : k.kind === "canary" ? "canary" : `<span class="pill warn">open to any address</span>`}</div></div></div>
+    <section><h3>Callers, last 7 days</h3>${callersTable(k)}</section>
+    <section><h3>Incidents</h3>${S.incidents.filter(i => i.key === k.name).map(i => `<div class="row" style="padding:3px 0"><a href="${go("incidents/" + i.id)}" class="mono">${i.id}</a>${sev(i.sev)}<span class="small">${i.rules.join(", ")}</span>${statePill(i)}</div>`).join("") || `<p class="muted">None.</p>`}</section>
+    <section><h3>Policy</h3>${policyBlock(k)}</section>
+    <section><h3>Known sources</h3>${knownBlock(k)}</section>
+    <section><h3>Rotation history</h3>${rotationBlock(k)}</section>`;
+  } else if (sec === "upstreams" && sel === "new") {
+    const w = S.ui.wizard;
+    pane = `<h1>Add an upstream</h1><p class="muted small">One page, top to bottom. Each part saves on its own.</p>
+    <section><h3>1 · Upstream ${w > 1 ? "✓" : ""}</h3>${w === 1 ? `<form data-form="upstream"><div class="field"><label>What are you connecting?</label><select name="preset">${PRESETS.map(p => `<option>${p}</option>`).join("")}</select></div><div class="field"><label>Name</label><input name="name" value="groq"></div><div class="field"><label>Base URL</label><input name="base" value="https://api.groq.com/openai"></div><button class="btn primary">Continue</button></form>` : `<p>${S.upstreams.slice(-1)[0].id} → <code>${S.upstreams.slice(-1)[0].base}</code></p>`}</section>
+    <section style="${w < 2 ? "opacity:.4" : ""}"><h3>2 · Credential ${w > 2 ? "✓" : ""}</h3>${w === 2 ? `<form data-form="cred"><input type="hidden" name="up" value="${S.upstreams.slice(-1)[0].id}"><div class="field"><label>Name</label><input name="name" value="${S.upstreams.slice(-1)[0].id}-main"></div><div class="field"><label>Secret (masked, never shown back)</label><input type="password" name="secret" autocomplete="off"></div><button class="btn primary">Save</button></form>` : w > 2 ? `<p>${S.credentials.slice(-1)[0].id} <span class="mono">${S.credentials.slice(-1)[0].hint}</span></p>` : ""}</section>
+    <section style="${w < 3 ? "opacity:.4" : ""}"><h3>3 · First key</h3>${w === 3 ? `<code class="cli">${esc(CLI.keyCreate("my-app", S.credentials.slice(-1)[0].id))}</code>` : ""}</section>`;
+  } else if (sec === "upstreams" && sel) {
+    const c = S.credentials.find(x => x.id === sel); const u = S.upstreams.find(x => x.id === c.upstream);
+    pane = `<h1>${u.id}</h1><div class="mono small muted">${u.base} · preset ${u.preset} · profile ${u.profile}</div><section><h3>Credential</h3><p>${c.id} <span class="mono">${c.hint}</span> · added ${c.added}${c.replaced ? ` · <span class="pill good">replaced ${c.replaced}</span>` : ""}</p><button class="btn danger" data-panel="compromise" data-c="${c.id}">This credential leaked…</button>${inline("compromise")}</section><section><h3>Virtual keys using it</h3>${keysOnCred(c.id).map(k => `<div><a href="${go("keys/" + k.name)}">${k.name}</a> ${pills(risks(k))}</div>`).join("")}</section>`;
+  } else if (sec === "feed") {
+    pane = `<div class="row"><h1 class="grow">Live feed</h1><button class="btn" data-act="live">${S.live ? "Pause" : "Resume"}</button></div><p class="small muted">${S.live ? "● streaming" : "paused"} · same as <code>kman detections --follow</code></p>${S.detections.slice(0, 40).map(d => `<div class="row" data-go="${go("incidents/" + d.inc)}" style="cursor:pointer;padding:5px 0;border-bottom:1px solid #eef0f3;${d.fresh ? "background:#eef7ee" : ""}"><span class="mono small muted">${d.t}</span>${sev(d.sev)}<b>${d.key}</b><span>${d.rule}</span><span class="small muted grow">${esc(d.ev)}</span><span class="mono small">${d.inc}</span></div>`).join("")}`;
+  } else if (sec === "audit") {
+    pane = `<h1>Audit log</h1>${S.audit.map(a => `<div style="padding:4px 0;border-bottom:1px solid #eef0f3"><span class="mono small muted">${a.t}</span> <b>${a.actor}</b> <span class="mono small">${esc(a.what)}</span></div>`).join("")}`;
+  } else {
+    pane = `<h1>${attention.length ? `${attention.length} things need you` : "All clear"}</h1><p class="muted">Pick one on the left. Critical and high incidents are first; then keys at risk (open to any address, near a cap, expiring).</p>
+    <div class="gauges"><div class="gauge"><div class="small muted">Spend today</div><div class="v">${money(S.keys.reduce((a, k) => a + (k.spend ? k.spend.day : 0), 0))}</div></div><div class="gauge"><div class="small muted">Open incidents</div><div class="v">${oi.length}</div></div><div class="gauge"><div class="small muted">Active keys</div><div class="v">${S.keys.filter(k => k.status === "active").length}</div></div></div>`;
+  }
+  return `<div class="B"><div class="rail"><div class="brand">kman</div>${rail.map(x => `<a href="${go(x[0])}" class="${(listSec === x[0]) ? "on" : ""}">${x[1]}${x[2] !== "" ? `<span class="n">${x[2]}</span>` : ""}</a>`).join("")}<div class="grow"></div><div class="small muted" style="padding:8px 10px">owner · 127.0.0.1:8081</div></div><div class="list">${list}</div><div class="pane">${pane}</div></div>`;
+}};
+
+// ======================================================================
+// Variant C: command board (dark, one screen, CLI-first, inline expand)
+// ======================================================================
+const VariantC = { name: "Command board", render(r) {
+  const oi = openIncs();
+  const actBtn = (cmd, red) => `<button class="act ${red ? "red" : ""}" data-cmd="${esc(cmd)}">${esc(cmd.replace(/^kman /, ""))}</button>`;
+  const asc = (v, cap) => { if (!cap) return `<span class="dim">no cap</span>`; const n = Math.round(Math.min(1, v / cap) * 12); return `<span class="ascii ${v / cap >= .8 ? "warn" : ""}">${"█".repeat(n)}${"░".repeat(12 - n)}</span> ${Math.round(100 * v / cap)}%`; };
+  const focusInc = r.sec === "incidents" && r.id ? inc(r.id) : null;
+  const sugg = focusInc ? (() => { const k = key(focusInc.key); return [CLI.ack(focusInc.id), CLI.disable(k.name, focusInc.id), CLI.rotate(k.name, "0", focusInc.id), CLI.compromise(k.cred, focusInc.id), CLI.resolve(focusInc.id, "confirmed")]; })()
+    : ["kman incidents --open", "kman key rotate <name> --grace 24h", "kman known-source add <cidr> --label <label>", "kman upstream add <name> --preset openai"];
+  let focus = "";
+  if (focusInc) {
+    const i = focusInc, k = key(i.key);
+    focus = `<div class="focus ${i.state === "acknowledged" ? "acked" : i.state === "resolved" ? "resolved" : ""}"><div class="row"><span class="s-${i.sev}">[${i.sev.toUpperCase()}]</span><b>${i.id}</b><span>key ${k.name} (${k.id}, ${k.status})</span><span class="grow"></span><span class="dim">${i.state}${i.resolution ? ": " + i.resolution : ""}</span><a class="act" href="${go("")}">close ✕</a></div>
+      <div style="margin:8px 0">${esc(i.evidence)}</div>${i.dry ? `<div class="warn">dry-run: would have auto-disabled at ${i.dry.at}; ${i.dry.blocked} requests would have been blocked</div>` : ""}
+      <div class="dim" style="margin:8px 0 4px">timeline</div>${i.timeline.map(e => `<div><span class="dim">${e.t}</span> ${esc(e.what)}</div>`).join("")}
+      ${i.state !== "resolved" ? `<div class="dim" style="margin:10px 0 4px">respond (click to load into the command line, Enter to run)</div><div class="row">${i.state === "open" ? actBtn(CLI.ack(i.id)) : ""}${k.kind !== "canary" ? actBtn(CLI.thiswasme(i.id)) + actBtn(CLI.thiswasme(i.id, true)) : ""}${k.status === "active" ? actBtn(CLI.disable(k.name, i.id), 1) : actBtn(CLI.enable(k.name))}${actBtn(CLI.rotate(k.name, "0", i.id))}${actBtn(CLI.revoke(k.name, i.id), 1)}${actBtn(CLI.compromise(k.cred, i.id), 1)}${actBtn(CLI.resolve(i.id, "confirmed"))}${actBtn(CLI.resolve(i.id, "false-positive"))}</div>` : ""}
+      <div class="dim small" style="margin-top:8px">link in alerts: ${realPath()}</div></div>`;
+  }
+  const panel = S.panel ? `<div style="margin:10px 16px">${confirmPanel(S.panel)}</div>` : "";
+  let wizard = "";
+  if (r.sec === "upstreams" && r.id === "new") {
+    const w = S.ui.wizard;
+    wizard = `<div class="focus resolved"><div class="row"><b>add upstream</b><span class="grow"></span><a class="act" href="${go("")}">close ✕</a></div>${w === 1 ? `<form data-form="upstream" class="row" style="align-items:end"><div class="field"><label>--preset</label><select name="preset">${PRESETS.map(p => `<option>${p}</option>`).join("")}</select></div><div class="field"><label>name</label><input name="name" value="mistral"></div><div class="field grow"><label>--base-url</label><input name="base" value="https://api.mistral.ai"></div><button class="btn primary">run</button></form>` : w === 2 ? `<form data-form="cred" class="row" style="align-items:end"><input type="hidden" name="up" value="${S.upstreams.slice(-1)[0].id}"><div class="field"><label>credential add</label><input name="name" value="${S.upstreams.slice(-1)[0].id}-main"></div><div class="field grow"><label>--secret-stdin (masked)</label><input type="password" name="secret" autocomplete="off"></div><button class="btn primary">run</button></form>` : `<div class="ok">✓ ${S.upstreams.slice(-1)[0].id} ready.</div><div>next: ${actBtn(CLI.keyCreate("my-app", S.credentials.slice(-1)[0].id))}</div>`}</div>`;
+  }
+  const keysRows = S.keys.map(k => {
+    const open = S.ui.expanded === k.name; const ki = incOfKey(k.name);
+    const st = k.status === "active" ? (ki ? `<span class="s-${ki.sev}">● ${ki.sev}</span>` : `<span class="ok">● ok</span>`) : `<span class="bad">● ${k.status}</span>`;
+    return `<div class="krow ${open ? "open" : ""}" data-expand="${k.name}"><span class="dim">${open ? "▾" : "▸"}</span><span>${k.name}</span><span class="dim">${k.id}</span><span>${k.kind === "canary" ? `<span class="dim">canary · ${esc(k.canary.planted).slice(0, 30)}</span>` : k.spend ? asc(k.spend.month, k.spend.monthCap) : `<span class="dim">unmetered</span>`}</span><span class="${k.lock || k.kind === "canary" ? "dim" : "warn"}">${esc(lockText(k)).slice(0, 18)}</span><span>${st}</span></div>
+    ${open ? `<div class="expand">${risks(k).length ? risks(k).map(x => `<span class="${x.cls === "bad" ? "bad" : x.cls === "warn" ? "warn" : "dim"}">⚑ ${esc(x.t)}</span>`).join("  ") : `<span class="ok">nothing at risk</span>`}
+      <div class="kv"><div>upstream</div><div>${credOf(k).upstream} / ${k.cred}</div><div>lock</div><div>${esc(lockText(k))}</div><div>caps</div><div>${k.spend ? `day ${money(k.spend.day)}/${money(k.spend.dayCap)} · month ${money(k.spend.month)}/${money(k.spend.monthCap)}${k.projected ? ` · <span class="warn">projected ${money(k.projected)}</span>` : ""}` : "–"}</div><div>expires</div><div>${k.expires} d</div><div>auto-disable</div><div>${k.auto}</div><div>last seen</div><div>${k.lastSeen}</div>
+      <div>callers 7 d</div><div>${k.callers.map(c => `${c.ip} ${esc(c.where)} ×${c.reqs}`).join("<br>") || "–"}</div><div>known sources</div><div>${k.known.map(n => `${esc(n.what)} "${esc(n.label)}" (${n.scope})`).join("<br>") || "–"}</div><div>rotations</div><div>${k.rotations.map(x => `${x.at} by ${x.by}, grace ${x.grace}`).join("<br>") || "never"}${k.grace ? ` · <span class="warn">previous secret valid ${k.grace.until}</span>` : ""}</div><div>incidents</div><div>${S.incidents.filter(i => i.key === k.name).map(i => `<a href="${go("incidents/" + i.id)}">${i.id}</a> <span class="s-${i.sev}">${i.sev}</span> ${i.state}`).join("<br>") || "–"}</div></div>
+      <div class="row">${k.status === "active" ? actBtn(CLI.disable(k.name), 1) : k.status === "disabled" ? actBtn(CLI.enable(k.name)) : ""}${k.status !== "revoked" ? actBtn(CLI.rotate(k.name, "24h")) + actBtn(CLI.revoke(k.name), 1) : ""}${actBtn(`kman key set ${k.name} --monthly-cap 200`)}${actBtn(CLI.knownAdd("<cidr>", "<label>", k.name))}</div></div>` : ""}`;
+  }).join("");
+  const spendDay = S.keys.reduce((a, k) => a + (k.spend ? k.spend.day : 0), 0);
+  return `<div class="C"><div class="top"><form class="cmd" data-form="cmd"><span class="p">kman ❯</span><input id="cmdline" name="cmd" value="${esc(S.ui.cmd)}" placeholder="type a command, or click any action below to load it" autocomplete="off"><button class="btn primary">run ⏎</button></form>
+    <div class="sugg">${sugg.map(s => `<button type="button" data-cmd="${esc(s)}">${esc(s.replace(/^kman /, ""))}</button>`).join("")}</div>
+    <div class="strip"><span><b class="${oi.length ? "r" : ""}">${oi.length}</b> open incidents</span><span><b>${S.keys.filter(k => k.status === "active").length}</b>/${S.keys.length} keys active</span><span><b>${money(spendDay)}</b> today</span><span><b>${S.keys.filter(k => risks(k).some(x => x.cls === "warn")).length}</b> keys at risk</span><span>${S.live ? `<span class="ok">● live</span>` : "paused"} <a class="act" href="javascript:void 0" data-act="live">${S.live ? "pause" : "resume"}</a></span><span class="grow"></span><a class="act" href="${go("upstreams/new")}" data-act="wizardReset">+ upstream</a><a class="act" href="${go("audit")}">audit</a></div></div>
+    ${focus}${wizard}${panel}
+    ${r.sec === "audit" ? `<div class="focus resolved"><div class="row"><b>audit log</b><span class="grow"></span><a class="act" href="${go("")}">close ✕</a></div>${S.audit.map(a => `<div><span class="dim">${a.t}</span> ${a.actor.padEnd(14, " ")} ${esc(a.what)}</div>`).join("")}</div>` : ""}
+    <div class="cols"><div class="colL"><h2><span>keys</span><span>spend this month · lock · status</span></h2>${keysRows}
+      <h2 style="margin-top:12px"><span>upstreams</span></h2><table>${S.credentials.map(c => `<tr><td>${c.upstream}</td><td class="dim">${c.id} ${c.hint}${c.replaced ? ` <span class="ok">replaced ${c.replaced}</span>` : ""}</td><td>${keysOnCred(c.id).length} keys</td><td>${actBtn(CLI.compromise(c.id), 1)}</td></tr>`).join("")}</table></div>
+    <div><h2><span>incidents</span><span>${oi.length} open</span></h2>${oi.map(i => `<div class="krow" style="grid-template-columns: 80px 74px 1fr 90px" data-go="${go("incidents/" + i.id)}"><span>${i.id}</span><span class="s-${i.sev}">${i.sev}</span><span>${i.key} <span class="dim">${i.rules.join(", ")}</span></span><span class="dim">${i.state}${i.quiet ? " · quiet" : ""}</span></div>`).join("")}
+      <h2 style="margin-top:12px"><span>detections --follow</span><span>${S.detections.length}</span></h2><div class="feed">${S.detections.slice(0, 60).map(d => `<div class="${d.fresh ? "fresh" : ""}" data-go="${go("incidents/" + d.inc)}" style="cursor:pointer"><span class="dim">${d.t}</span> <span class="s-${d.sev}">${d.sev.padEnd(8, " ").replace(/ /g, "&nbsp;")}</span> ${d.key} <span class="dim">${d.rule}: ${esc(d.ev)}</span></div>`).join("")}</div></div></div></div>`;
+}};
+
+// Tiny command parser for variant C (subset of the real CLI)
+function runCommand(line) {
+  const t = (line.match(/"[^"]*"|\S+/g) || []).map(x => x.replace(/^"|"$/g, ""));
+  if (t[0] === "kman") t.shift();
+  const flag = f => { const i = t.indexOf(f); return i >= 0 ? (t[i + 1] && !t[i + 1].startsWith("--") ? t[i + 1] : true) : null; };
+  const [a, b, c] = t;
+  try {
+    if (a === "incidents") return nav(go("incidents/" + (openIncs()[0] || {}).id));
+    if (a === "incident" && b === "ack") return A.ack(c);
+    if (a === "incident" && b === "this-was-me") return A.thiswasme(c, !!flag("--install-wide"));
+    if (a === "incident" && b === "resolve") return A.resolve(c, flag("--as") || "confirmed");
+    if (a === "key" && b === "disable") return (S.panel = { type: "disable", keyName: c, incId: flag("--incident") || null }, render());
+    if (a === "key" && b === "enable") return A.enable(c);
+    if (a === "key" && b === "rotate") return A.rotate(c, flag("--grace") || "24h", flag("--incident") || null);
+    if (a === "key" && b === "revoke") return (S.panel = { type: "revoke", keyName: c, incId: flag("--incident") || null }, render());
+    if (a === "credential" && b === "compromise") return (S.panel = { type: "compromise", cred: c, incId: flag("--incident") || null }, render());
+    if (a === "known-source" && b === "add") return A.knownAdd(c, flag("--label") || "", flag("--key"));
+    if (a === "upstream" && b === "add") { S.ui.wizard = 1; return nav(go("upstreams/new")); }
+  } catch (e) { return toast("error: " + e.message); }
+  toast(`prototype doesn't simulate: ${line}`);
+}
+
+// ======================================================================
+// Shell: render, switcher, state box, events
+// ======================================================================
+const VARIANTS = { A: VariantA, B: VariantB, C: VariantC };
+const KEYS = Object.keys(VARIANTS);
+let curVariant = (() => { try { const v = new URLSearchParams(location.search).get("variant"); return KEYS.includes(v) ? v : "A"; } catch (e) { return "A"; } })();
+const variant = () => curVariant;
+function setVariant(v) { curVariant = v; try { const u = new URL(location.href); u.searchParams.set("variant", v); history.replaceState(null, "", u); } catch (e) {} S.panel = null; render(); }
+let stateOpen = false;
+function render() {
+  const v = variant(), r = route();
+  const focused = document.activeElement && document.activeElement.id;
+  const typed = document.getElementById("cmdline"); if (typed) S.ui.cmd = typed.value;
+  // don't clobber a form the user is typing into
+  if (document.activeElement && ["INPUT","SELECT","TEXTAREA"].includes(document.activeElement.tagName) && document.activeElement.id !== "cmdline" && document.activeElement.closest("#app")) { renderChrome(v, r); return; }
+  document.getElementById("app").innerHTML = VARIANTS[v].render(r);
+  if (focused === "cmdline") { const el = document.getElementById("cmdline"); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  renderChrome(v, r);
+}
+function renderChrome(v, r) {
+  document.getElementById("switcher").innerHTML = `<button data-sw="-1" title="previous (←)">‹</button><span>PROTOTYPE · ${v} (${VARIANTS[v].name})</span><button data-sw="1" title="next (→)">›</button>`;
+  const sb = document.getElementById("statebox");
+  sb.className = stateOpen ? "" : "collapsed";
+  sb.innerHTML = `<h5><span>mock state</span><a href="javascript:void 0" data-act="statebox">${stateOpen ? "hide" : "show"}</a></h5>${stateOpen ? `
+    <div>route: ${realPath()}</div><div>last CLI: ${esc(S.lastCli || "–")}</div><div>sim clock: ${clock()}</div>
+    <div style="margin-top:6px"><b>keys</b></div>${S.keys.map(k => `<div>${k.name.padEnd(18, " ").replace(/ /g, "&nbsp;")} ${k.status}${k.grace ? " (grace)" : ""}</div>`).join("")}
+    <div style="margin-top:6px"><b>incidents</b></div>${S.incidents.map(i => `<div>${i.id} ${i.key} ${i.sev} ${i.state}${i.resolution ? ":" + i.resolution : ""}</div>`).join("")}
+    <div style="margin-top:6px"><b>audit (latest 5)</b></div>${S.audit.slice(0, 5).map(a => `<div>${a.t} ${a.actor}: ${esc(a.what)}</div>`).join("")}` : ""}`;
+  const ov = document.getElementById("overlays");
+  ov.innerHTML = (S.toast ? `<div class="toast">${esc(S.toast)}</div>` : "") + (S.reveal ? `<div class="overlay"><div class="dialog"><h3 style="margin-top:0">${esc(S.reveal.title)}</h3><p>${esc(S.reveal.note)}</p>${S.reveal.items.map(x => `<div style="margin:10px 0"><b>${x.name}</b>${x.apps ? ` <span class="small muted">used by ${esc(x.apps)}</span>` : ""}<div class="secret">${x.secret}</div></div>`).join("")}<p class="small"><b>Shown once.</b> kman keeps only a hash. Copy it now.</p><code class="cli">${esc(S.lastCli)}</code><div class="row" style="margin-top:10px"><button class="btn primary" data-act="closeReveal">I've copied it</button></div></div></div>` : "");
+}
+document.addEventListener("click", e => {
+  const link = e.target.closest('a[href^="#/"]');
+  if (link) { e.preventDefault(); if (link.dataset.act === "wizardReset") S.ui.wizard = 1; return nav(link.getAttribute("href")); }
+  const el = e.target.closest("[data-act],[data-go],[data-sw],[data-panel],[data-tab],[data-expand],[data-cmd]");
+  if (!el) return;
+  if (el.dataset.stop && !e.target.closest("[data-act]")) return;
+  const d = el.dataset;
+  if (d.sw) { const i = KEYS.indexOf(variant()); return setVariant(KEYS[(i + Number(d.sw) + KEYS.length) % KEYS.length]); }
+  if (d.go) return nav(d.go);
+  if (d.tab) { S.ui.tab = d.tab; return render(); }
+  if (d.expand) { S.ui.expanded = S.ui.expanded === d.expand ? null : d.expand; return render(); }
+  if (d.cmd) { S.ui.cmd = d.cmd; render(); const el2 = document.getElementById("cmdline"); if (el2) { el2.value = d.cmd; el2.focus(); } return; }
+  if (d.panel) { S.panel = { type: d.panel, keyName: d.k || null, incId: d.i || null, cred: d.c || null }; return render(); }
+  const i = d.i || null;
+  switch (d.act) {
+    case "closePanel": if (e.target === el || el.tagName === "BUTTON") { S.panel = null; render(); } return;
+    case "closeReveal": S.reveal = null; return render();
+    case "statebox": stateOpen = !stateOpen; return render();
+    case "live": S.live = !S.live; return render();
+    case "wizardReset": S.ui.wizard = 1; return;
+    case "todo": return toast("not prototyped; CLI: " + d.what.replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
+    case "ack": return A.ack(i);
+    case "enable": return A.enable(d.k);
+    case "disable": return A.disable(d.k, i);
+    case "revoke": return A.revoke(d.k, i);
+    case "rotate": return A.rotate(d.k, (document.getElementById("grace") || {}).value || "24h", i);
+    case "thiswasme": return A.thiswasme(i, !!(document.getElementById("wide") || {}).checked);
+    case "resolve": return A.resolve(i, (document.getElementById("as") || {}).value || "confirmed");
+    case "compromise": return A.compromise(d.c, i);
+  }
+});
+document.addEventListener("change", e => {
+  if (e.target.dataset.filter) { S.ui.incFilter = e.target.value; render(); }
+  // keep CLI previews in confirm panels honest
+  const p = S.panel; if (!p) return; const cli = e.target.closest(".confirm") && e.target.closest(".confirm").querySelector(".cli");
+  if (!cli) return;
+  if (e.target.id === "grace") cli.textContent = CLI.rotate(p.keyName, e.target.value, p.incId);
+  if (e.target.id === "wide") cli.textContent = CLI.thiswasme(p.incId, e.target.checked);
+  if (e.target.id === "as") cli.textContent = CLI.resolve(p.incId, e.target.value);
+});
+document.addEventListener("submit", e => {
+  e.preventDefault(); const f = new FormData(e.target); const t = e.target.dataset.form;
+  if (t === "upstream") return A.addUpstream(f.get("preset"), f.get("name"), f.get("base"));
+  if (t === "cred") return A.addCred(f.get("name"), f.get("up"));
+  if (t === "cmd") { const v = String(f.get("cmd") || "").trim(); S.ui.cmd = ""; if (document.activeElement) document.activeElement.blur(); if (v) runCommand(v); else render(); }
+});
+document.addEventListener("keydown", e => {
+  const a = document.activeElement;
+  if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable)) return;
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") { const i = KEYS.indexOf(variant()); setVariant(KEYS[(i + (e.key === "ArrowRight" ? 1 : -1) + KEYS.length) % KEYS.length]); }
+  if (e.key === "Escape") { S.panel = null; S.reveal = null; render(); }
+});
+window.addEventListener("hashchange", () => { if (location.hash.replace(/^#\/?/, "") !== curRoute) nav(location.hash); });
+render();
+</script>
+</body>
+</html>
