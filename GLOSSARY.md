@@ -19,7 +19,7 @@ A virtual key whose only purpose is to raise an alert when anyone uses it. Nothi
 _Avoid_: Honeytoken, decoy key, canary token
 
 **Child key**:
-A short-lived virtual key minted from another virtual key, so a less-trusted client such as a browser can open a realtime session without holding the parent. It can only narrow its parent's policy, and its spend counts against the parent.
+A short-lived virtual key minted from another virtual key, so a less-trusted client such as a browser can open a realtime session without holding the parent. It can only narrow its parent's policy, and its spend counts against the parent. Unlike other virtual keys, a child key is recognisable as one.
 _Avoid_: Ephemeral token (that is the provider's own concept)
 
 **Realtime session**:
