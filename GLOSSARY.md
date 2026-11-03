@@ -69,7 +69,7 @@ _Avoid_: Encryption key (too vague), admin token (a different secret)
 The key that encrypts credentials. It is stored only in wrapped form, encrypted under the master key.
 
 **Key source**:
-Where kman obtains the master key at startup: a file, systemd-creds, an environment variable, a passphrase, or the OS keychain.
+Where kman obtains the master key at startup: a file, systemd-creds, an environment variable, or a passphrase.
 
 **Rekey**:
 Replacing the master key and the data key together, so every credential is re-encrypted.
