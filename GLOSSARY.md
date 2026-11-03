@@ -57,6 +57,10 @@ _Avoid_: Web UI, console, TUI (the TUI no longer exists)
 The fixed service a credential's requests are forwarded to.
 _Avoid_: Provider, backend, destination
 
+**Preset**:
+A built-in template for a well-known upstream: where it is and how it authenticates. An upstream copies its preset once, when it is added, and changes only when the operator syncs it.
+_Avoid_: Provider profile
+
 **Credential**:
 The real secret for one upstream, held by kman and never shown to apps.
 _Avoid_: Real key, provider key
@@ -142,6 +146,13 @@ What a virtual key has actually been charged in the current day or month.
 **Reservation**:
 A temporary claim on a virtual key's spend, taken before a request is forwarded and replaced by the actual cost once the response ends.
 _Avoid_: Hold, pre-authorization
+
+**Price table**:
+The built-in record of what each model costs and how much it can output in one response. It changes only with a kman release.
+_Avoid_: Price list, prices file
+
+**Price override**:
+An operator's correction or addition to the price table, for the whole install or for one upstream.
 
 **Unmetered request**:
 A request whose model or price kman can't determine. Keys with a spend cap or a model allowlist refuse it.
