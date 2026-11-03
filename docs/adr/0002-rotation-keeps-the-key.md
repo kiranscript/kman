@@ -12,3 +12,4 @@ keman created a new key with a new id and copied state across. Because of that, 
 
 - The key id is not secret, so it surviving a leak costs nothing. It stays visible in logs and alerts after a rotation.
 - A key stores at most two secret hashes at a time. A second rotation inside the grace period ends the earlier previous secret immediately.
+- After the grace period, the previous secret becomes a **retired secret**. Its hash is kept for 30 days for detection only: it never authenticates, and any use of it raises a high-severity detection. Retired hashes are not counted in the two above. (Added by *Detection quality and the alert-response loop*, #15.)

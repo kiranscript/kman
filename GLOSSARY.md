@@ -91,6 +91,42 @@ The window after a rotation during which the previous secret is still accepted a
 The install-wide limit on how long any virtual key may stay valid. No key can be set to outlive it.
 _Avoid_: TTL (that is the default expiry, not the limit)
 
+**Key at risk**:
+A virtual key whose settings or state would make a leak more costly: open to any address, without a spend cap, close to its cap, or about to expire.
+
+**Retired secret**:
+A virtual key's old secret after its grace period has ended. It no longer works, but kman still recognises it so that any later use raises an alert.
+
+### Detection
+
+**Baseline**:
+What normal use of one virtual key looks like: its usual request rate, spend, and the places it is used from.
+
+**Learning period**:
+The time after a key is created during which kman builds its baseline, and the rules that compare against the baseline only record.
+
+**Detection**:
+One firing of one rule against one virtual key, with its evidence.
+_Avoid_: Alert (an alert is a message sent about an incident)
+
+**Incident**:
+The open case for one virtual key that groups its detections until someone resolves it. It is quiet when nothing has fired for a while, and it can expire if nobody acknowledges it.
+_Avoid_: Alert, event
+
+**Alert**:
+A message kman sends to a channel when an incident opens or escalates, or when a spend or lifecycle warning is due.
+_Avoid_: Notification, detection
+
+**Known source**:
+A labelled address range, country, or network that the operator has said is legitimate, either for every key or for one key. Use from a known source never counts as a new location.
+_Avoid_: Allowlist (an allowlist refuses everything else; a known source refuses nothing)
+
+**Auto-disable**:
+kman disabling a virtual key by itself when an incident looks like an attack. It never revokes. A key can have it off, on, or in dry-run.
+
+**Dry-run**:
+The auto-disable mode that only records when kman would have disabled the key and how many requests it would have blocked.
+
 ### Spend
 
 **Spend cap**:
