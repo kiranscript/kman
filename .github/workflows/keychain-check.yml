@@ -1,0 +1,26 @@
+# THROWAWAY: task "Verify macOS keychain protection for the master key".
+# Lives only on branch task/macos-keychain-check; never merged.
+name: keychain-check
+on:
+  push:
+    branches: [task/macos-keychain-check]
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - name: Environment
+        run: sw_vers; uname -m; id; security list-keychains; security default-keychain || true
+      - name: Keychain checks
+        run: bash .github/keychain-check/check.sh
