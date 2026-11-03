@@ -36,6 +36,13 @@ _Avoid_: Admin key, master key (the master key is a different secret)
 The person who runs a kman install and manages its upstreams, credentials, and virtual keys.
 _Avoid_: Admin, user (an app using a virtual key is not an operator)
 
+**Data directory**:
+Where kman keeps its database. Anything in it may end up backed up, synced, or shared, so the master key never lives there.
+_Avoid_: State dir
+
+**Config directory**:
+Where kman keeps its settings, the master key file, and the CLI's saved admin token, apart from the data directory.
+
 **Admin API**:
 The single interface through which every change to a running kman is made. The CLI and the dashboard are both clients of it.
 _Avoid_: Management API, control plane
