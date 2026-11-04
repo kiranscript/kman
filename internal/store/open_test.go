@@ -75,8 +75,14 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 	}
 }
 
+// Each of '#', '?' and '%' would end or change the path inside an SQLite
+// file: URI. Windows forbids '?' in a file name, so it is tested elsewhere.
 func TestOpenAcceptsAnAwkwardDirectoryName(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "a #b?c%20d")
+	name := "a #b?c%20d"
+	if runtime.GOOS == "windows" {
+		name = "a #b c%20d"
+	}
+	dir := filepath.Join(t.TempDir(), name)
 	openTest(t, dir)
 	if _, err := os.Stat(filepath.Join(dir, FileName+"-wal")); err != nil {
 		t.Errorf("SQLite did not open the database at the given path: %v", err)
