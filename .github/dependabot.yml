@@ -1,0 +1,23 @@
+# Version updates for every pin in the repo (SPEC §15). The cooldown holds a
+# new release back for 7 days, so a freshly compromised version has time to
+# be caught before it is proposed here.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directories: ["/", "/tools"]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
