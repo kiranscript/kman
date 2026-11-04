@@ -1,5 +1,5 @@
 # kman, as the .deb and .rpm install it (SPEC §3). Set up once with the
-# steps in docs/packages.md: encrypt a master key to
+# steps in docs/operator-guide/systemd.md: encrypt a master key to
 # /etc/kman/master.key.cred, run kman init, then enable this unit.
 #
 # systemd owns everything here: a dynamic user, /var/lib/kman for the data
