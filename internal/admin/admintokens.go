@@ -37,7 +37,7 @@ type CreateAdminTokenRequest struct {
 
 // AdminTokenName names an existing admin token.
 type AdminTokenName struct {
-	Name string `path:"name" doc:"The admin token's name."`
+	Name string `json:"-" path:"name" doc:"The admin token's name."`
 }
 
 // tokenName is the rule for admin token names. It leaves out ':', so no

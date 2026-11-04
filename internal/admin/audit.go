@@ -25,9 +25,9 @@ type AuditEntry struct {
 // AuditQuery picks a page of the audit log. Entries always come oldest
 // first.
 type AuditQuery struct {
-	After  int64 `query:"after" doc:"Return the entries after this id, from the start of the log when 0."`
-	Limit  int   `query:"limit" doc:"The most entries to return, 1 to 1000. Default 100."`
-	Latest bool  `query:"latest" doc:"Return the newest entries instead. after must then be 0."`
+	After  int64 `json:"-" query:"after" doc:"Return the entries after this id, from the start of the log when 0."`
+	Limit  int   `json:"-" query:"limit" doc:"The most entries to return, 1 to 1000. Default 100."`
+	Latest bool  `json:"-" query:"latest" doc:"Return the newest entries instead. after must then be 0."`
 }
 
 // AuditPage is a page of the audit log.

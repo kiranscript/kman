@@ -1,0 +1,585 @@
+{
+  "components": {
+    "schemas": {
+      "AdminToken": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_used_at": {
+            "description": "When the token last authenticated a request, to the minute. Absent if never.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "description": "The token's name, which is the actor of every change made with it.",
+            "type": "string"
+          },
+          "revoked_at": {
+            "description": "When the token was revoked. Absent while it is live.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "AdminTokenList": {
+        "additionalProperties": false,
+        "properties": {
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/AdminToken"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tokens"
+        ],
+        "type": "object"
+      },
+      "AuditEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "Such as admin_token.create or settings.set.",
+            "type": "string"
+          },
+          "actor": {
+            "description": "Who made the change: an admin token's name, or system:<what> for kman itself.",
+            "type": "string"
+          },
+          "after": {
+            "description": "The target after the change, where the action records it. Never a secret."
+          },
+          "before": {
+            "description": "The target before the change, where the action records it. Never a secret."
+          },
+          "client_ip": {
+            "type": "string"
+          },
+          "id": {
+            "description": "Rising with each entry; the cursor for paging.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "incident_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "target_kind": {
+            "type": "string"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "time",
+          "actor",
+          "action",
+          "target_kind",
+          "target_id"
+        ],
+        "type": "object"
+      },
+      "AuditPage": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            },
+            "type": "array"
+          },
+          "more": {
+            "description": "Whether the log holds more entries beyond this page: after it, or before it with latest.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entries",
+          "more"
+        ],
+        "type": "object"
+      },
+      "CreateAdminTokenRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit. A revoked token's name stays taken.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreatedAdminToken": {
+        "additionalProperties": false,
+        "properties": {
+          "secret": {
+            "description": "The token itself (kma_...). kman keeps only its hash, so it is shown only this once.",
+            "type": "string"
+          },
+          "token": {
+            "$ref": "#/components/schemas/AdminToken"
+          }
+        },
+        "required": [
+          "token",
+          "secret"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "invalid",
+              "not_found",
+              "conflict",
+              "unauthorized",
+              "internal"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/Error"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "Settings": {
+        "additionalProperties": false,
+        "properties": {
+          "default_key_ttl_seconds": {
+            "description": "How long a new virtual key stays valid unless told otherwise. At most the maximum key lifetime. Default 90 days.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_key_lifetime_seconds": {
+            "description": "The longest any virtual key may stay valid. No key is created or extended past it. Default 365 days.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "soft_budget_defaults": {
+            "description": "The percentages of each spend cap that warn when crossed, rising, for keys that set none. Default 50, 80, 100.",
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "spend_timezone": {
+            "description": "The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "max_key_lifetime_seconds",
+          "default_key_ttl_seconds",
+          "spend_timezone",
+          "soft_budget_defaults"
+        ],
+        "type": "object"
+      },
+      "SettingsUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "default_key_ttl_seconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_key_lifetime_seconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "soft_budget_defaults": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "spend_timezone": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "Whoami": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "The name of the admin token the request was made with.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "adminToken": {
+        "description": "An admin token (kma_...). A dashboard session cookie is never accepted here.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "The one way to change a running kman (ADR 0004). Every change is one store transaction, audited with its actor: the name of the admin token the request was made with. Generated from the Go types in internal/admin; do not edit by hand.",
+    "title": "kman admin API",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/admin/v1/admin-tokens": {
+      "get": {
+        "operationId": "listAdminTokens",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTokenList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List every admin token, live or revoked"
+      },
+      "post": {
+        "operationId": "createAdminToken",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAdminTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedAdminToken"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Create a named admin token; its secret is returned only this once"
+      }
+    },
+    "/admin/v1/admin-tokens/{name}/revoke": {
+      "post": {
+        "operationId": "revokeAdminToken",
+        "parameters": [
+          {
+            "description": "The admin token's name.",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminToken"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Revoke an admin token; the install's last live token cannot be revoked"
+      }
+    },
+    "/admin/v1/admin-tokens/{name}/rotate": {
+      "post": {
+        "operationId": "rotateAdminToken",
+        "parameters": [
+          {
+            "description": "The admin token's name.",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedAdminToken"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Give an admin token a new secret; the old one stops working at once"
+      }
+    },
+    "/admin/v1/audit": {
+      "get": {
+        "operationId": "listAudit",
+        "parameters": [
+          {
+            "description": "Return the entries after this id, from the start of the log when 0.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The most entries to return, 1 to 1000. Default 100.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Return the newest entries instead. after must then be 0.",
+            "in": "query",
+            "name": "latest",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Read a page of the audit log, oldest entry first"
+      }
+    },
+    "/admin/v1/openapi.json": {
+      "get": {
+        "operationId": "openapi",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "This document. It needs no admin token."
+      }
+    },
+    "/admin/v1/settings": {
+      "get": {
+        "operationId": "getSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Read the install's settings"
+      },
+      "patch": {
+        "operationId": "updateSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Change some settings; each change is audited"
+      }
+    },
+    "/admin/v1/whoami": {
+      "get": {
+        "operationId": "whoami",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Whoami"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Name the admin token this request is made with"
+      }
+    }
+  },
+  "security": [
+    {
+      "adminToken": []
+    }
+  ]
+}
