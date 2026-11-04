@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kirank55/kman/internal/store"
@@ -48,6 +49,29 @@ func TestGenerateWritesAnOpenableInstall(t *testing.T) {
 	err = s.Do(context.Background(), func(tx *store.Tx) error {
 		if _, err := tx.UpstreamByName("openai"); err != nil {
 			return err
+		}
+		// The admin service made these, as a real install's would be.
+		tokens, err := tx.AdminTokens()
+		if err != nil {
+			return err
+		}
+		var names []string
+		for _, tok := range tokens {
+			state := "live"
+			if !tok.RevokedAt.IsZero() {
+				state = "revoked"
+			}
+			names = append(names, tok.Name+":"+state)
+		}
+		if got := strings.Join(names, " "); got != "ci:live old:revoked owner:live" {
+			t.Errorf("admin tokens = %s, want ci:live old:revoked owner:live", got)
+		}
+		settings, err := tx.Settings()
+		if err != nil {
+			return err
+		}
+		if len(settings) != 2 {
+			t.Errorf("settings = %+v, want default_key_ttl and spend_timezone set", settings)
 		}
 		entries, err := tx.AuditEntries(0, 100)
 		if len(entries) == 0 {

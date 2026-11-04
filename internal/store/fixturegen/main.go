@@ -8,9 +8,11 @@
 // code: the clock is fixed and every random id comes from a fixed seed, so a
 // rerun writes the same bytes.
 //
-// For now it seeds the store directly. Once the admin service exists (#33),
-// it drives that instead, with sentinel credentials under a committed
-// test-only master key, so the fixture holds what a real install holds.
+// It drives the admin service where a command exists, so the fixture holds
+// what a real install holds: admin tokens and settings so far. Upstreams are
+// still seeded into the store directly until their commands land (#34),
+// which will also add sentinel credentials under a committed test-only
+// master key.
 package main
 
 import (
@@ -25,6 +27,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/store"
 )
 
@@ -70,11 +73,60 @@ func generate(ctx context.Context, dir, version string) error {
 // seedInstall creates an install in dir and fills it with one of each thing
 // the store can hold so far.
 func seedInstall(ctx context.Context, dir string) error {
-	s, err := store.Open(ctx, store.Options{Dir: dir, Now: fixedNow, Rand: rand.NewChaCha8(seed)})
+	rng := rand.NewChaCha8(seed)
+	s, err := store.Open(ctx, store.Options{Dir: dir, Now: fixedNow, Rand: rng})
 	if err != nil {
 		return err
 	}
-	err = s.Do(ctx, func(tx *store.Tx) error {
+	err = errors.Join(seedAdmin(ctx, s, rng), seedStore(ctx, s))
+	// Closing checkpoints the WAL, so the database file is complete.
+	return errors.Join(err, s.Close())
+}
+
+// seedAdmin makes what the admin commands make: the owner token as init
+// does, a live and a revoked token, a rotation, and changed settings.
+func seedAdmin(ctx context.Context, s *store.Store, rng io.Reader) error {
+	svc := admin.New(admin.Options{Store: s, Now: func() time.Time { return fixedNow }, Rand: rng})
+	as := func(actor string) context.Context {
+		return admin.WithCaller(ctx, admin.Caller{Actor: actor, ClientIP: "127.0.0.1"})
+	}
+	ttl, tz := int64(30*24*60*60), "Europe/Berlin"
+	for _, step := range []func() error{
+		func() error {
+			_, err := svc.CreateAdminToken(as("system:init"), admin.CreateAdminTokenRequest{Name: "owner"})
+			return err
+		},
+		func() error {
+			_, err := svc.CreateAdminToken(as("owner"), admin.CreateAdminTokenRequest{Name: "ci"})
+			return err
+		},
+		func() error {
+			_, err := svc.RotateAdminToken(as("owner"), admin.AdminTokenName{Name: "ci"})
+			return err
+		},
+		func() error {
+			_, err := svc.CreateAdminToken(as("owner"), admin.CreateAdminTokenRequest{Name: "old"})
+			return err
+		},
+		func() error {
+			_, err := svc.RevokeAdminToken(as("owner"), admin.AdminTokenName{Name: "old"})
+			return err
+		},
+		func() error {
+			_, err := svc.UpdateSettings(as("ci"), admin.SettingsUpdate{DefaultKeyTTLSeconds: &ttl, SpendTimezone: &tz})
+			return err
+		},
+	} {
+		if err := step(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// seedStore writes what has no admin command yet.
+func seedStore(ctx context.Context, s *store.Store) error {
+	return s.Do(ctx, func(tx *store.Tx) error {
 		u, err := tx.CreateUpstream(store.Upstream{
 			Name: "openai", Preset: "openai", PresetVersion: 1, Profile: "openai",
 			Host: "api.openai.com", Port: 443, TLS: true, PathAllowlistJSON: `["/v1/"]`,
@@ -89,8 +141,6 @@ func seedInstall(ctx context.Context, dir string) error {
 		})
 		return err
 	})
-	// Closing checkpoints the WAL, so the database file is complete.
-	return errors.Join(err, s.Close())
 }
 
 // copyNew copies src to dst, which must not exist.
