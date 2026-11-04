@@ -17,3 +17,6 @@ All notable changes to kman are recorded here. The format follows
 - `kman audit` lists the newest audit entries with their actor; `kman audit export` writes every entry as JSON Lines.
 - `kman login --admin-url <url>` checks a token with the server and saves both to the credentials file; `kman logout` removes it. `KMAN_ADMIN_TOKEN` and `KMAN_ADMIN_URL` override the file.
 - Every read command takes `--json`. Exit codes are 0 OK, 1 error (usage errors included), 3 findings.
+- `kman init --proxy-listen`, `--admin-listen` and `--allow-plain-http`, each also read from `KMAN_PROXY_LISTEN`, `KMAN_ADMIN_LISTEN` and `KMAN_ALLOW_PLAIN_HTTP`. init now refuses, before writing anything, a config that serve would refuse.
+- Best-effort packages: a `.deb` and an `.rpm` for amd64 and arm64 with a sandboxed `kman.service` (`DynamicUser=yes`, `StateDirectory=kman`, `ConfigurationDirectory=kman`, the master key through `LoadCredentialEncrypted=`), and a Homebrew formula in `kirank55/homebrew-tap` for stable releases (`brew install kirank55/tap/kman`). See `docs/operator-guide/systemd.md`.
+- A Compose example, `examples/compose/compose.yaml`: the key as a secret, the data on a volume, a read-only root filesystem, and both listeners published on host loopback only. See `docs/operator-guide/docker.md`.

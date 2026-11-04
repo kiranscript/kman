@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/kirank55/kman/internal/admin"
@@ -41,15 +42,25 @@ func cmdInit(args []string, s *sys) int {
 	source := fs.String("key-source", "", "where the master key comes from: file, systemd-creds, passphrase or env (default file)")
 	noSave := fs.Bool("no-save-token", false, "print the owner admin token without saving it to the credentials file")
 	allowDebug := fs.Bool("allow-debug", false, "skip the process hardening that keeps the master key out of core dumps and debuggers")
+	proxyListen := fs.String("proxy-listen", "", "the proxy listener, host:port (default $"+proxyListenEnv+", else "+defaultProxyListen+")")
+	adminListen := fs.String("admin-listen", "", "the admin listener, host:port or unix:/path (default $"+adminListenEnv+", else "+defaultAdminListen+")")
+	allowPlain := fs.Bool("allow-plain-http", false, "let the admin listener serve plain HTTP off loopback (default $"+allowPlainHTTPEnv+", else false)")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(s.stderr, "usage: kman init [--config-dir dir] [--data-dir dir] [--key-source file|systemd-creds|passphrase|env] [--no-save-token]")
+		fmt.Fprintln(s.stderr, "usage: kman init [--config-dir dir] [--data-dir dir] [--key-source file|systemd-creds|passphrase|env] "+
+			"[--proxy-listen addr] [--admin-listen addr] [--allow-plain-http] [--no-save-token]")
 		return 1
 	}
 	in := initRun{sys: s, configDir: *configDir, dataDir: *dataDir, source: *source,
+		proxyListen: *proxyListen, adminListen: *adminListen,
 		save: !*noSave, opts: vault.Options{AllowDebug: *allowDebug}}
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "allow-plain-http" {
+			in.allowPlain = allowPlain
+		}
+	})
 	if err := in.run(); err != nil {
 		in.rollback()
 		if !errors.Is(err, errRefused) {
@@ -65,6 +76,8 @@ func cmdInit(args []string, s *sys) int {
 type initRun struct {
 	*sys
 	configDir, dataDir, source string
+	proxyListen, adminListen   string // empty: from the environment, else the default
+	allowPlain                 *bool  // nil: from the environment, else false
 	save                       bool
 	opts                       vault.Options
 
@@ -83,12 +96,15 @@ func (in *initRun) run() error {
 		return fmt.Errorf("%s already holds a kman database: init never overwrites one", in.dataDir)
 	}
 	container := in.inContainer()
-	cfg := Config{
-		DataDir:     in.dataDir,
-		ProxyListen: defaultProxyListen,
-		AdminListen: defaultAdminListen,
+	cfg := Config{DataDir: in.dataDir}
+	if err := in.chooseListeners(&cfg); err != nil {
+		return err
 	}
 	if err := in.chooseKeySource(&cfg, container); err != nil {
+		return err
+	}
+	// Refuse now what serve would refuse later, before writing anything.
+	if err := cfg.check(); err != nil {
 		return err
 	}
 	if cfg.MasterKeyFile != "" {
@@ -151,6 +167,34 @@ func (in *initRun) resolveDirs() error {
 	}
 	in.dataDir, err = filepath.Abs(in.dataDir)
 	return err
+}
+
+// chooseListeners settles the listeners: a flag, else its environment
+// variable, else loopback (invariant 8). The variables are for
+// docker compose run --rm kman init, which passes no flags.
+func (in *initRun) chooseListeners(cfg *Config) error {
+	pick := func(flag, env, def string) string {
+		if flag != "" {
+			return flag
+		}
+		if v := in.getenv(env); v != "" {
+			return v
+		}
+		return def
+	}
+	cfg.ProxyListen = pick(in.proxyListen, proxyListenEnv, defaultProxyListen)
+	cfg.AdminListen = pick(in.adminListen, adminListenEnv, defaultAdminListen)
+	switch v := in.getenv(allowPlainHTTPEnv); {
+	case in.allowPlain != nil:
+		cfg.AllowPlainHTTP = *in.allowPlain
+	case v != "":
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("$%s=%q is not true or false", allowPlainHTTPEnv, v)
+		}
+		cfg.AllowPlainHTTP = b
+	}
+	return nil
 }
 
 // chooseKeySource settles the key source and the master key file. With no

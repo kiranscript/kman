@@ -59,6 +59,35 @@ archives:
           group: root
           mtime: "{{ .CommitDate }}"
 
+# The best-effort .deb and .rpm (SPEC §3): the released linux binary and
+# kman.service, nothing else. The package scripts create nothing: systemd
+# makes the dynamic user, /var/lib/kman and /etc/kman when the unit starts.
+# The times come from the commit and the RPM build host is fixed (nfpm
+# defaults to the hostname), so the rebuild job can compare the packages.
+nfpms:
+  - id: kman
+    ids: [kman]
+    package_name: kman
+    file_name_template: "{{ .ConventionalFileName }}"
+    formats: [deb, rpm]
+    vendor: kman
+    homepage: https://github.com/kirank55/kman
+    maintainer: kirank55 <kirank55@users.noreply.github.com>
+    description: A key manager and proxy for LLM API keys.
+    bindir: /usr/bin
+    mtime: "{{ .CommitDate }}"
+    section: net
+    contents:
+      - src: packaging/kman.service
+        dst: /usr/lib/systemd/system/kman.service
+        file_info:
+          mode: 0o644
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
+    rpm:
+      buildhost: kman-release
+
 source:
   enabled: true
   format: tar.gz
@@ -107,11 +136,15 @@ dockers_v2:
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.created: "{{ .CommitDate }}"
+    # A release pushes a multi-arch index and annotates it and each manifest.
+    # A snapshot loads one image per platform into Docker, where buildx
+    # refuses index annotations ("not supported for single platform export"),
+    # so there they go on the manifest only. GoReleaser templates the keys.
     annotations:
-      "index,manifest:org.opencontainers.image.source": https://github.com/kirank55/kman
-      "index,manifest:org.opencontainers.image.revision": "{{ .FullCommit }}"
-      "index,manifest:org.opencontainers.image.version": "{{ .Version }}"
-      "index,manifest:org.opencontainers.image.created": "{{ .CommitDate }}"
+      "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.source": https://github.com/kirank55/kman
+      "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.version": "{{ .Version }}"
+      "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.created": "{{ .CommitDate }}"
 
 docker_digest:
   name_template: digests.txt

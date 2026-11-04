@@ -32,6 +32,14 @@ const (
 	defaultAdminListen = "127.0.0.1:8081"
 )
 
+// The environment variables init takes the listener choices from when no
+// flag gives them.
+const (
+	proxyListenEnv    = "KMAN_PROXY_LISTEN"
+	adminListenEnv    = "KMAN_ADMIN_LISTEN"
+	allowPlainHTTPEnv = "KMAN_ALLOW_PLAIN_HTTP"
+)
+
 // unixPrefix marks a listen address as a Unix socket path.
 const unixPrefix = "unix:"
 

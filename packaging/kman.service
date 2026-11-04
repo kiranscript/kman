@@ -1,0 +1,61 @@
+# kman, as the .deb and .rpm install it (SPEC §3). Set up once with the
+# steps in docs/operator-guide/systemd.md: encrypt a master key to
+# /etc/kman/master.key.cred, run kman init, then enable this unit.
+#
+# systemd owns everything here: a dynamic user, /var/lib/kman for the data
+# directory and /etc/kman for the config. The package scripts create nothing.
+[Unit]
+Description=kman, a key manager and proxy for LLM API keys
+Documentation=https://github.com/kirank55/kman
+After=network.target
+
+[Service]
+Type=exec
+DynamicUser=yes
+StateDirectory=kman
+ConfigurationDirectory=kman
+# The master key never touches the disk in the clear: systemd decrypts it
+# into the credentials directory, which only this service can read.
+LoadCredentialEncrypted=master.key:/etc/kman/master.key.cred
+# kman init writes kman.yaml 0600 as root, so the dynamic user cannot read
+# /etc/kman/kman.yaml. systemd passes it in as a credential too, and serve
+# reads its config from the credentials directory (%d).
+LoadCredential=kman.yaml:/etc/kman/kman.yaml
+ExecStart=/usr/bin/kman serve --config-dir %d
+Restart=on-failure
+RestartSec=5s
+
+# Sandbox. DynamicUser= already implies ProtectSystem=strict,
+# ProtectHome=read-only, PrivateTmp=, RemoveIPC= and NoNewPrivileges=;
+# they are spelled out so a reader need not know that.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# Not ~@resources: kman sets RLIMIT_CORE to zero when it starts.
+SystemCallFilter=~@privileged
+UMask=0077
+# kman also turns core dumps off itself; this covers a crash before it does.
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

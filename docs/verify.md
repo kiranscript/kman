@@ -2,7 +2,7 @@
 
 Every kman release is built by one GitHub Actions workflow, `release.yml`, from a pushed tag. Each release proves where it came from in three ways:
 
-- **A cosign signature on `checksums.txt`**, made keylessly with Sigstore. `checksums.txt` lists the SHA-256 of every archive and SBOM, so one signature covers them all.
+- **A cosign signature on `checksums.txt`**, made keylessly with Sigstore. `checksums.txt` lists the SHA-256 of every archive, package and SBOM, so one signature covers them all.
 - **GitHub artifact attestations** (SLSA Build L2 provenance) for every archive, the source archive and the image, plus an SPDX 2.3 SBOM attestation for each archive. An offline copy of every attestation is attached as `kman_<version>.intoto.jsonl`.
 - **An immutable GitHub release**, which GitHub attests itself. Its assets and tag cannot change after publishing.
 
