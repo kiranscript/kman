@@ -279,3 +279,71 @@ jobs:
         run: |
           KMAN_REQUIRE_SIGNATURE=1 KMAN_INSTALL_DIR="$RUNNER_TEMP/latest" sh install.sh
           "$RUNNER_TEMP/latest/kman" version | grep -Fx "kman $TAG"
+
+  # The Homebrew formula (SPEC §3, best-effort), for stable releases only and
+  # once the verify job has checked the signature over the checksums the
+  # formula pins. The tap is pushed with a deploy key for kirank55/homebrew-tap
+  # alone; this job's GITHUB_TOKEN stays read-only. docs/releasing.md has the
+  # one-time setup.
+  homebrew:
+    needs: [release, verify]
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: kirank55/homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          path: tap
+      - name: Write the formula and push it to the tap
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p checksums.txt -O "$RUNNER_TEMP/checksums.txt"
+          mkdir -p tap/Formula
+          sh scripts/homebrew-formula.sh "$TAG" "$RUNNER_TEMP/checksums.txt" > tap/Formula/kman.rb
+          ruby -c tap/Formula/kman.rb
+          cd tap
+          git add Formula/kman.rb
+          if git diff --cached --quiet; then
+            echo "Formula/kman.rb is already $TAG"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "kman $TAG"
+          git push origin HEAD
+
+  # Homebrew installs the published formula, and nothing it installed is
+  # quarantined: kman is not notarized, so a quarantined binary would not run.
+  brew:
+    needs: homebrew
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - name: brew installs the formula, unquarantined
+        env:
+          TAG: ${{ github.ref_name }}
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          brew install kirank55/tap/kman
+          kman=$(brew --prefix)/bin/kman
+          "$kman" version | grep -Fx "kman $TAG"
+          cellar=$(brew --cellar kirank55/tap/kman)
+          if xattr -r -l "$cellar" | grep com.apple.quarantine; then
+            echo "Homebrew quarantined what it installed from the formula" >&2
+            exit 1
+          fi
+          brew test kirank55/tap/kman

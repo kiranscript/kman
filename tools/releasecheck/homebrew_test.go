@@ -3,7 +3,9 @@ package releasecheck_test
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -100,5 +102,92 @@ func TestTheFormulaNeedsASemverTag(t *testing.T) {
 	checksums, _ := checksumsFor("1.2.3")
 	if out, err := formula(t, "1.2.3", checksums); err == nil {
 		t.Errorf("rendered a formula for a tag without the v:\n%s", out)
+	}
+}
+
+func needsOf(j job) []string {
+	switch n := j.Needs.(type) {
+	case string:
+		return []string{n}
+	case []any:
+		var out []string
+		for _, v := range n {
+			out = append(out, fmt.Sprint(v))
+		}
+		return out
+	}
+	return nil
+}
+
+const stableOnly = "${{ !contains(github.ref_name, '-') }}"
+
+// The formula is published to kirank55/homebrew-tap for stable releases
+// only, and only once the verify job has checked the release's signature:
+// the formula pins the checksums that signature covers. The job pushes
+// with a deploy key for the tap alone, and its token stays read-only.
+func TestTheReleasePublishesTheFormulaOnceVerified(t *testing.T) {
+	w := loadWorkflow(t, "release.yml")
+	j, ok := w.Jobs["homebrew"]
+	if !ok {
+		t.Fatal("release.yml has no homebrew job")
+	}
+	if n := needsOf(j); !slices.Contains(n, "release") || !slices.Contains(n, "verify") {
+		t.Errorf("job homebrew needs %v, want release and verify", n)
+	}
+	if j.If != stableOnly {
+		t.Errorf("job homebrew if = %q, want %s (no formula for a release candidate)", j.If, stableOnly)
+	}
+	if !reflect.DeepEqual(j.Permissions, map[string]any{"contents": "read"}) {
+		t.Errorf("job homebrew permissions = %#v, want contents: read", j.Permissions)
+	}
+	tap := false
+	for _, s := range stepsUsing(j, "actions/checkout") {
+		if s.With["repository"] == "kirank55/homebrew-tap" {
+			tap = true
+			if s.With["ssh-key"] != "${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}" {
+				t.Errorf("the tap checkout ssh-key = %q, want the HOMEBREW_TAP_DEPLOY_KEY secret", s.With["ssh-key"])
+			}
+		}
+	}
+	if !tap {
+		t.Error("job homebrew does not check out kirank55/homebrew-tap")
+	}
+	var script string
+	for _, s := range j.Steps {
+		script += s.Run + "\n"
+	}
+	for _, want := range []string{"sh scripts/homebrew-formula.sh", "Formula/kman.rb", "ruby -c", "git push"} {
+		if !strings.Contains(script, want) {
+			t.Errorf("job homebrew does not run %q", want)
+		}
+	}
+}
+
+// SPEC §15 step 6: after release, Homebrew installs the formula on macOS,
+// and nothing it installed is quarantined (kman is not notarized, so a
+// quarantined binary would not run).
+func TestThePostReleaseJobsInstallTheFormulaUnquarantined(t *testing.T) {
+	w := loadWorkflow(t, "release.yml")
+	j, ok := w.Jobs["brew"]
+	if !ok {
+		t.Fatal("release.yml has no brew job")
+	}
+	if n := needsOf(j); !slices.Equal(n, []string{"homebrew"}) {
+		t.Errorf("job brew needs %v, want homebrew", n)
+	}
+	if fmt.Sprint(j.RunsOn) != "macos-latest" {
+		t.Errorf("job brew runs on %v, want macos-latest", j.RunsOn)
+	}
+	if !reflect.DeepEqual(j.Permissions, map[string]any{"contents": "read"}) {
+		t.Errorf("job brew permissions = %#v, want contents: read", j.Permissions)
+	}
+	var script string
+	for _, s := range j.Steps {
+		script += s.Run + "\n"
+	}
+	for _, want := range []string{"brew install kirank55/tap/kman", "com.apple.quarantine", `grep -Fx "kman $TAG"`, "brew test kirank55/tap/kman"} {
+		if !strings.Contains(script, want) {
+			t.Errorf("job brew does not run %q", want)
+		}
 	}
 }
