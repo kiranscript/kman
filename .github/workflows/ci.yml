@@ -136,9 +136,54 @@ jobs:
       - name: Benchmark gate (allocations, or a slowdown over 10%)
         run: go -C tools run ./benchgate -base "$RUNNER_TEMP/base.txt" -head "$RUNNER_TEMP/head.txt" -max-slowdown 0.10
 
+  systemd-creds:
+    # SPEC §17: the systemd-creds key-source tests run on Linux in a
+    # container booted with systemd. The vault test binary encrypts a master
+    # key with systemd-creds and runs itself as a transient service with
+    # LoadCredentialEncrypted= (internal/vault/systemd_linux_test.go).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: Build the vault tests
+        env:
+          CGO_ENABLED: "0"
+        run: go test -c -o "$RUNNER_TEMP/kman-systemd/vault.test" ./internal/vault
+      - name: Boot systemd in a container
+        env:
+          IMAGE: ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+        run: |
+          docker run -d --name systemd --privileged --cgroupns=private \
+            -e container=docker --tmpfs /run --tmpfs /run/lock \
+            -v "$RUNNER_TEMP/kman-systemd:/kman:ro" \
+            "$IMAGE" bash -c 'apt-get update -qq &&
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends systemd >/dev/null &&
+              exec /usr/lib/systemd/systemd'
+          for _ in $(seq 1 90); do
+            state=$(docker exec systemd systemctl is-system-running 2>/dev/null || true)
+            case "$state" in running|degraded) echo "systemd is $state"; exit 0 ;; esac
+            sleep 2
+          done
+          echo "systemd did not boot (last state: ${state:-none})"
+          docker logs systemd | tail -50
+          exit 1
+      - name: systemd-creds key-source tests
+        run: docker exec -e KMAN_TEST_SYSTEMD=1 systemd /kman/vault.test -test.run 'Systemd' -test.v
+      - name: Container logs
+        if: failure()
+        run: |
+          docker logs systemd 2>&1 | tail -100
+          docker exec systemd journalctl --no-pager -n 100 || true
+
   required:
     if: always()
-    needs: [lint, test, race, cross-compile, bench]
+    needs: [lint, test, race, cross-compile, systemd-creds, bench]
     runs-on: ubuntu-latest
     steps:
       - name: Every gate passed
