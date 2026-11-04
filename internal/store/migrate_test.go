@@ -44,8 +44,8 @@ func TestMigration0001CreatesStrictTables(t *testing.T) {
 
 func TestOpenRecordsTheSchemaVersion(t *testing.T) {
 	s := openTest(t, t.TempDir())
-	if got := userVersion(t, s); got != 1 {
-		t.Errorf("user_version = %d, want 1", got)
+	if got := userVersion(t, s); got != 1 || SchemaVersion != 1 || len(migrations) != SchemaVersion {
+		t.Errorf("user_version = %d, SchemaVersion = %d, %d migrations; want 1 each", got, SchemaVersion, len(migrations))
 	}
 }
 

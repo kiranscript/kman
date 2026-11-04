@@ -19,6 +19,10 @@ type migrationEnv struct {
 	rand io.Reader
 }
 
+// SchemaVersion is the schema this kman migrates every database to: the
+// number of migrations.
+const SchemaVersion = 1
+
 // migrations are applied in order: migrations[i] takes user_version from i to
 // i+1. Once a release is tagged, its migrations never change; the schema
 // moves on only by appending a migration.
