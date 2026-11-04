@@ -41,6 +41,8 @@ CREATE TABLE data_keys (
 	created_at      INTEGER NOT NULL,
 	retired_at      INTEGER
 ) STRICT;
+-- At most one data key is current: rekey retires the old one first.
+CREATE UNIQUE INDEX data_keys_one_current ON data_keys ((retired_at IS NULL)) WHERE retired_at IS NULL;
 
 CREATE TABLE settings (
 	key        TEXT    PRIMARY KEY,

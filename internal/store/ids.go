@@ -1,6 +1,7 @@
 package store
 
 import (
+	"crypto/rand"
 	"fmt"
 	"io"
 )
@@ -11,9 +12,20 @@ const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 // bits of randomness.
 const idLen = 12
 
-// newID returns prefix followed by idLen random base62 characters read from r,
-// such as "up_3fK9xQ2mPz7a". Bytes are drawn by rejection so every character
-// is equally likely.
+// NewID returns prefix followed by 12 random base62 characters read from r,
+// such as "up_3fK9xQ2mPz7a": the form of every random id the store holds.
+// A nil r reads crypto/rand. Repos mint their own ids; NewID is for an id
+// that is needed before its row exists, such as a data key's, which its
+// wrapping binds.
+func NewID(r io.Reader, prefix string) (string, error) {
+	if r == nil {
+		r = rand.Reader
+	}
+	return newID(r, prefix)
+}
+
+// newID is NewID with the source given. Bytes are drawn by rejection so
+// every character is equally likely.
 func newID(r io.Reader, prefix string) (string, error) {
 	out := make([]byte, 0, len(prefix)+idLen)
 	out = append(out, prefix...)
