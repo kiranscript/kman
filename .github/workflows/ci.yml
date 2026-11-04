@@ -1,5 +1,7 @@
 # The required gates of SPEC §17. The dependency rule, the no-untested-package
-# gate and the clock seam run inside go test (package gates). Branch
+# gate and the clock seam run inside go test (package gates), and so does
+# the check that the committed admin API OpenAPI document is current
+# (internal/adminapi, TestTheOpenAPIDocumentIsCurrent). Branch
 # protection requires the "required" job, which passes only when every other
 # job passed.
 #
