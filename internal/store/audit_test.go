@@ -50,3 +50,24 @@ func TestAuditEntriesReadBackInOrder(t *testing.T) {
 		t.Errorf("AuditEntries after the first = %+v, want only the second", after)
 	}
 }
+
+func TestLatestAuditEntriesAreTheNewestOldestFirst(t *testing.T) {
+	s := open(t)
+	do(t, s, func(tx *store.Tx) error {
+		for _, action := range []string{"a", "b", "c"} {
+			if _, err := tx.AppendAudit(store.AuditEntry{TS: now, Actor: "owner", Action: action, TargetKind: "x", TargetID: "y"}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	var got []store.AuditEntry
+	do(t, s, func(tx *store.Tx) error {
+		var err error
+		got, err = tx.LatestAuditEntries(2)
+		return err
+	})
+	if len(got) != 2 || got[0].Action != "b" || got[1].Action != "c" {
+		t.Errorf("LatestAuditEntries(2) = %+v, want b then c", got)
+	}
+}
