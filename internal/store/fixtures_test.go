@@ -56,9 +56,11 @@ func TestEveryFixtureMigrates(t *testing.T) {
 // counts are what a migration must keep. The fixture is read with plain SQL
 // because it holds an older schema than the store's repos expect.
 type counts struct {
-	installID string
-	audit     int
-	upstreams int
+	installID   string
+	audit       int
+	upstreams   int
+	adminTokens int
+	settings    int
 }
 
 func countRows(t *testing.T, path string) counts {
@@ -66,9 +68,11 @@ func countRows(t *testing.T, path string) counts {
 	db := rawOpen(t, path)
 	var c counts
 	for q, dst := range map[string]any{
-		`SELECT install_id FROM meta`:    &c.installID,
-		`SELECT count(*) FROM audit_log`: &c.audit,
-		`SELECT count(*) FROM upstreams`: &c.upstreams,
+		`SELECT install_id FROM meta`:       &c.installID,
+		`SELECT count(*) FROM audit_log`:    &c.audit,
+		`SELECT count(*) FROM upstreams`:    &c.upstreams,
+		`SELECT count(*) FROM admin_tokens`: &c.adminTokens,
+		`SELECT count(*) FROM settings`:     &c.settings,
 	} {
 		if err := db.QueryRow(q).Scan(dst); err != nil {
 			t.Fatalf("%s: %v", q, err)

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -78,7 +79,14 @@ func (h *home) command(args ...string) *exec.Cmd {
 // that has not ended after 30 s is killed and fails the test.
 func (h *home) run(t *testing.T, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
+	return h.runWithInput(t, "", args...)
+}
+
+// runWithInput is run with stdin reading input.
+func (h *home) runWithInput(t *testing.T, input string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
 	cmd := h.command(args...)
+	cmd.Stdin = strings.NewReader(input)
 	timer := time.AfterFunc(30*time.Second, func() { cmd.Process.Kill() })
 	defer func() {
 		if !timer.Stop() {

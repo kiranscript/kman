@@ -16,6 +16,11 @@ type sys struct {
 	inContainer func() bool
 	// passphrase prompts for a passphrase and reads it without echo.
 	passphrase func(prompt string) ([]byte, error)
+	stdin      io.Reader
+	// readSecret prompts for a secret on a terminal and reads it without
+	// echo. It is nil when stdin is not a terminal, so the CLI reads a
+	// line of stdin instead.
+	readSecret func(prompt string) ([]byte, error)
 	// stopSignals restores the default handling of SIGINT and SIGTERM, so
 	// a second signal during a graceful shutdown ends the process.
 	stopSignals func()

@@ -44,8 +44,16 @@ func (tx *Tx) AppendAudit(e AuditEntry) (int64, error) {
 // AuditEntries returns up to limit entries with ids above afterID, oldest
 // first. Pass afterID 0 to start from the beginning.
 func (tx *Tx) AuditEntries(afterID int64, limit int) ([]AuditEntry, error) {
-	rows, err := tx.tx.QueryContext(tx.ctx,
-		`SELECT `+auditColumns+` FROM audit_log WHERE id > ? ORDER BY id LIMIT ?`, afterID, limit)
+	return tx.auditEntries(`SELECT `+auditColumns+` FROM audit_log WHERE id > ? ORDER BY id LIMIT ?`, afterID, limit)
+}
+
+// LatestAuditEntries returns the newest limit entries, oldest first.
+func (tx *Tx) LatestAuditEntries(limit int) ([]AuditEntry, error) {
+	return tx.auditEntries(`SELECT * FROM (SELECT `+auditColumns+` FROM audit_log ORDER BY id DESC LIMIT ?) ORDER BY id`, limit)
+}
+
+func (tx *Tx) auditEntries(query string, args ...any) ([]AuditEntry, error) {
+	rows, err := tx.tx.QueryContext(tx.ctx, query, args...)
 	if err != nil {
 		return nil, typed(err, "list audit entries")
 	}

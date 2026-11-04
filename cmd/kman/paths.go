@@ -7,11 +7,12 @@ import (
 
 // The files kman keeps in the config directory.
 const (
-	configFile      = "kman.yaml"
-	masterKeyFile   = "master.key"
-	sealedKeyFile   = "master.key.sealed"
-	credentialsFile = "credentials.json"
+	configFile    = "kman.yaml"
+	masterKeyFile = "master.key"
+	sealedKeyFile = "master.key.sealed"
 )
+
+// The CLI's credentials file, cli.CredentialsFile, sits beside them.
 
 // defaultDirs returns the config directory and the data directory for an
 // OS, reading the environment through getenv: ~/.config/kman and

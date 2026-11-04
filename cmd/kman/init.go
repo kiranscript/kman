@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,8 +11,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kirank55/kman/internal/admin"
+	"github.com/kirank55/kman/internal/cli"
 	"github.com/kirank55/kman/internal/store"
-	"github.com/kirank55/kman/internal/token"
 	"github.com/kirank55/kman/internal/vault"
 )
 
@@ -46,12 +46,12 @@ func cmdInit(args []string, s *sys) int {
 	adminListen := fs.String("admin-listen", "", "the admin listener, host:port or unix:/path (default $"+adminListenEnv+", else "+defaultAdminListen+")")
 	allowPlain := fs.Bool("allow-plain-http", false, "let the admin listener serve plain HTTP off loopback (default $"+allowPlainHTTPEnv+", else false)")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return 1
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintln(s.stderr, "usage: kman init [--config-dir dir] [--data-dir dir] [--key-source file|systemd-creds|passphrase|env] "+
 			"[--proxy-listen addr] [--admin-listen addr] [--allow-plain-http] [--no-save-token]")
-		return 2
+		return 1
 	}
 	in := initRun{sys: s, configDir: *configDir, dataDir: *dataDir, source: *source,
 		proxyListen: *proxyListen, adminListen: *adminListen,
@@ -306,9 +306,9 @@ func (in *initRun) newPassphrase() ([]byte, error) {
 	return pass, nil
 }
 
-// createStore creates the database with the data key and the owner admin
-// token, in one transaction with its audit entry.
-func (in *initRun) createStore(wk vault.WrappedKey) (token.Minted, error) {
+// createStore creates the database with the data key, then mints the
+// owner admin token through the admin service, as actor system:init.
+func (in *initRun) createStore(wk vault.WrappedKey) (admin.CreatedAdminToken, error) {
 	if _, err := os.Stat(in.dataDir); errors.Is(err, os.ErrNotExist) {
 		in.created = append(in.created, in.dataDir)
 	}
@@ -318,21 +318,18 @@ func (in *initRun) createStore(wk vault.WrappedKey) (token.Minted, error) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Options{Dir: in.dataDir, Now: now})
 	if err != nil {
-		return token.Minted{}, err
+		return admin.CreatedAdminToken{}, err
 	}
-	owner := token.MintAdminToken()
 	err = st.Do(ctx, func(tx *store.Tx) error {
-		if err := tx.CreateDataKey(store.DataKey{ID: wk.ID, Wrapped: wk.Wrapped, Nonce: wk.Nonce,
-			KEKFingerprint: wk.Fingerprint, CreatedAt: now}); err != nil {
-			return err
-		}
-		if _, err := tx.CreateAdminToken(store.AdminToken{Name: ownerToken, Hash: owner.Hash[:], CreatedAt: now}); err != nil {
-			return err
-		}
-		_, err := tx.AppendAudit(store.AuditEntry{TS: now, Actor: initActor, Action: "admin_token.create",
-			TargetKind: "admin_token", TargetID: ownerToken})
-		return err
+		return tx.CreateDataKey(store.DataKey{ID: wk.ID, Wrapped: wk.Wrapped, Nonce: wk.Nonce,
+			KEKFingerprint: wk.Fingerprint, CreatedAt: now})
 	})
+	var owner admin.CreatedAdminToken
+	if err == nil {
+		svc := admin.New(admin.Options{Store: st, Now: in.now})
+		owner, err = svc.CreateAdminToken(admin.WithCaller(ctx, admin.Caller{Actor: initActor}),
+			admin.CreateAdminTokenRequest{Name: ownerToken})
+	}
 	if cerr := st.Close(); err == nil {
 		err = cerr
 	}
@@ -341,7 +338,7 @@ func (in *initRun) createStore(wk vault.WrappedKey) (token.Minted, error) {
 
 // report prints the owner token once, saves it unless told not to or in a
 // container, and names the next three commands.
-func (in *initRun) report(cfg Config, owner token.Minted, container bool) {
+func (in *initRun) report(cfg Config, owner admin.CreatedAdminToken, container bool) {
 	w := in.stdout
 	fmt.Fprintf(w, "kman is set up.\n\n  config:      %s\n  data:        %s\n", filepath.Join(in.configDir, configFile), cfg.DataDir)
 	switch cfg.KeySource {
@@ -350,15 +347,15 @@ func (in *initRun) report(cfg Config, owner token.Minted, container bool) {
 	default:
 		fmt.Fprintf(w, "  master key:  from the %s key source\n", cfg.KeySource)
 	}
-	fmt.Fprintf(w, "\nThe %s admin token, shown only this once:\n\n  %s\n\n", ownerToken, owner.Reveal())
+	fmt.Fprintf(w, "\nThe %s admin token, shown only this once:\n\n  %s\n\n", ownerToken, owner.Secret)
 	switch {
 	case container:
 		fmt.Fprintln(w, "In a container kman never saves the token. Keep it somewhere safe and pass it as KMAN_ADMIN_TOKEN.")
 	case !in.save:
 		fmt.Fprintln(w, "Not saved (--no-save-token). Pass it as KMAN_ADMIN_TOKEN, or save it with kman login.")
 	default:
-		path := filepath.Join(in.configDir, credentialsFile)
-		if err := saveCredentials(path, adminURL(cfg), owner.Reveal()); err != nil {
+		path := filepath.Join(in.configDir, cli.CredentialsFile)
+		if err := cli.SaveCredentials(path, adminURL(cfg), owner.Secret); err != nil {
 			fmt.Fprintf(in.stderr, "kman init: could not save the token (%v); pass it as KMAN_ADMIN_TOKEN instead.\n", err)
 		} else {
 			fmt.Fprintf(w, "Saved to %s, so the kman commands on this machine use it.\n", path)
@@ -376,21 +373,6 @@ func adminURL(c Config) string {
 		return "https://" + c.AdminListen
 	}
 	return "http://" + c.AdminListen
-}
-
-// credentials is the credentials file: the admin URL and token the CLI
-// uses. kman login and logout (#33) manage it after init.
-type credentials struct {
-	AdminURL string `json:"admin_url"`
-	Token    string `json:"token"`
-}
-
-func saveCredentials(path, url, tok string) error {
-	raw, err := json.MarshalIndent(credentials{AdminURL: url, Token: tok}, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writeNew(path, append(raw, '\n'))
 }
 
 // mkdir creates dir 0700 if it is missing.
