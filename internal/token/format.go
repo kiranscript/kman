@@ -2,6 +2,7 @@ package token
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"errors"
 	"hash/crc32"
 	"strings"
@@ -19,7 +20,13 @@ const (
 )
 
 // Hash is the SHA-256 of a token's secret: all of a secret kman stores.
+// Compare hashes with Equal, not ==, so the comparison takes constant time.
 type Hash [sha256.Size]byte
+
+// Equal reports whether h and o are the same hash, in constant time.
+func (h Hash) Equal(o Hash) bool {
+	return subtle.ConstantTimeCompare(h[:], o[:]) == 1
+}
 
 // Token is a token parsed and checked offline. It holds the secret's hash,
 // never the secret.
