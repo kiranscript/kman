@@ -1,8 +1,10 @@
 package releasecheck_test
 
 import (
+	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -85,5 +87,103 @@ func TestTheReleaseJobInstallsCosignV3(t *testing.T) {
 	v := steps[0].With["cosign-release"]
 	if !exactVersion.MatchString(v) || !strings.HasPrefix(v, "v3.") {
 		t.Errorf("cosign-release = %q, want an exact v3.x.y", v)
+	}
+}
+
+// A pull request that touches release config gets a GoReleaser snapshot run:
+// the same config, unsigned and unpublished.
+func TestPullRequestsTouchingReleaseConfigGetASnapshotDryRun(t *testing.T) {
+	w := loadWorkflow(t, "release-snapshot.yml")
+	pr, ok := w.On["pull_request"].(map[string]any)
+	if !ok || len(w.On) != 1 {
+		t.Fatalf("release-snapshot.yml triggers = %#v, want only pull_request", w.On)
+	}
+	paths := map[string]bool{}
+	for _, p := range pr["paths"].([]any) {
+		paths[p.(string)] = true
+	}
+	for _, want := range []string{
+		".goreleaser.yaml", "Dockerfile", "install.sh", "go.mod", "scripts/**",
+		".github/workflows/release.yml", ".github/workflows/release-snapshot.yml",
+	} {
+		if !paths[want] {
+			t.Errorf("release-snapshot.yml paths lack %s", want)
+		}
+	}
+	runs := 0
+	for id, j := range w.Jobs {
+		if j.Permissions != nil {
+			t.Errorf("job %s sets permissions; the dry run needs only the read-only default", id)
+		}
+		for _, s := range stepsUsing(j, "goreleaser/goreleaser-action") {
+			runs++
+			args := strings.Fields(s.With["args"])
+			for _, want := range []string{"release", "--snapshot", "--clean"} {
+				if !slices.Contains(args, want) {
+					t.Errorf("snapshot args %v lack %s", args, want)
+				}
+			}
+			if !slices.ContainsFunc(args, func(a string) bool {
+				return strings.HasPrefix(a, "--skip=") && slices.Contains(strings.Split(strings.TrimPrefix(a, "--skip="), ","), "sign")
+			}) {
+				t.Errorf("snapshot args %v must skip signing: a PR has no signing identity", args)
+			}
+		}
+	}
+	if runs != 1 {
+		t.Errorf("release-snapshot.yml runs GoReleaser %d times, want once", runs)
+	}
+}
+
+// After publishing, release.yml checks its own release: the documented
+// verify commands, a rebuild compared by checksum, and install.sh with each
+// verifier, all read-only.
+func TestThePostReleaseJobsCheckThePublishedRelease(t *testing.T) {
+	w := loadWorkflow(t, "release.yml")
+	runs := func(j job, want string) bool {
+		return slices.ContainsFunc(j.Steps, func(s step) bool { return strings.Contains(s.Run, want) })
+	}
+	checks := map[string]string{
+		"verify":  "sh scripts/verify-release.sh",
+		"rebuild": "sh scripts/compare-checksums.sh",
+		"install": "sh install.sh",
+	}
+	for id, want := range checks {
+		j, ok := w.Jobs[id]
+		if !ok {
+			t.Errorf("release.yml has no %s job", id)
+			continue
+		}
+		if needs, _ := j.Needs.(string); needs != "release" {
+			t.Errorf("job %s needs %v, want release", id, j.Needs)
+		}
+		if !runs(j, want) {
+			t.Errorf("job %s does not run %q", id, want)
+		}
+	}
+	rebuild := w.Jobs["rebuild"]
+	for _, s := range stepsUsing(rebuild, "goreleaser/goreleaser-action") {
+		if !strings.Contains(s.With["args"], "--skip=publish,sign,sbom,docker,announce,validate") {
+			t.Errorf("rebuild args %q, want the documented rebuild", s.With["args"])
+		}
+	}
+	install := w.Jobs["install"]
+	if !strings.Contains(fmt.Sprint(install.Strategy), "macos") {
+		t.Errorf("job install strategy = %v, want Linux and macOS", install.Strategy)
+	}
+	if !runs(install, "KMAN_REQUIRE_SIGNATURE=1") {
+		t.Error("job install must run install.sh with KMAN_REQUIRE_SIGNATURE=1")
+	}
+	gh, cosign := -1, -1
+	for i, s := range install.Steps {
+		if actionPath(s.Uses) == "sigstore/cosign-installer" {
+			cosign = i
+		}
+		if strings.Contains(s.Run, "sh install.sh") && gh < 0 && cosign < 0 {
+			gh = i
+		}
+	}
+	if gh < 0 || cosign < 0 || !slices.ContainsFunc(install.Steps[cosign:], func(s step) bool { return strings.Contains(s.Run, "sh install.sh") }) {
+		t.Error("job install must run install.sh once with gh only, then again after installing cosign")
 	}
 }

@@ -1,0 +1,63 @@
+# The release dry run (SPEC §15, release checklist step 1): a pull request
+# that touches release config runs GoReleaser in snapshot mode with the same
+# config and version as release.yml, unsigned and unpublished, and checks
+# the image it builds.
+name: Release snapshot
+
+on:
+  pull_request:
+    paths:
+      - .goreleaser.yaml
+      - Dockerfile
+      - install.sh
+      - go.mod
+      - scripts/**
+      - .github/workflows/release.yml
+      - .github/workflows/release-snapshot.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-snapshot-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.56.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: release --snapshot --clean --skip=sign
+      - name: Five archives and the source, each with an SBOM
+        run: |
+          ls -l dist
+          test "$(grep -c '\.tar\.gz$\|\.zip$' dist/checksums.txt)" = 6
+          test "$(grep -c '\.spdx\.json$' dist/checksums.txt)" = 6
+      - name: The image runs kman as UID 65532
+        run: |
+          image=$(docker images ghcr.io/kirank55/kman --format '{{.Repository}}:{{.Tag}}' | grep -- '-amd64$' | head -n1)
+          test -n "$image"
+          test "$(docker inspect --format '{{.Config.User}}' "$image")" = 65532:65532
+          docker run --rm "$image" version

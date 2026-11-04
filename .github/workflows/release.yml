@@ -173,3 +173,109 @@ jobs:
           gh release upload "$TAG" "$out" -R "$GITHUB_REPOSITORY"
           if [ "$PRERELEASE" = true ]; then latest=false; else latest=true; fi
           gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=false --prerelease="$PRERELEASE" --latest="$latest"
+
+  # Post-release checks (SPEC §15, release checklist step 6), all read-only.
+
+  # The verify commands from docs/verify.md, exactly as documented.
+  verify:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      attestations: read
+      packages: read
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run the documented verify commands
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: sh scripts/verify-release.sh "$TAG" docs/verify.md
+
+  # Rebuild the tag from a fresh checkout and compare with the release.
+  rebuild:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: release --clean --skip=publish,sign,sbom,docker,announce,validate
+      - name: Compare checksums with the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p checksums.txt -O "$RUNNER_TEMP/published-checksums.txt"
+          sh scripts/compare-checksums.sh dist/checksums.txt "$RUNNER_TEMP/published-checksums.txt"
+
+  # install.sh from the tag, failing closed, first with gh (the runners ship
+  # it) and then with cosign.
+  install:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: install.sh verifies with gh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if command -v cosign; then echo "cosign is installed; this step checks gh" >&2; exit 1; fi
+          KMAN_VERSION="$TAG" KMAN_REQUIRE_SIGNATURE=1 KMAN_INSTALL_DIR="$RUNNER_TEMP/gh" sh install.sh 2>&1 | tee "$RUNNER_TEMP/gh.log"
+          grep -q 'signature OK (gh' "$RUNNER_TEMP/gh.log"
+          "$RUNNER_TEMP/gh/kman" version | grep -Fx "kman $TAG"
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+      - name: install.sh verifies with cosign
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          KMAN_VERSION="$TAG" KMAN_REQUIRE_SIGNATURE=1 KMAN_INSTALL_DIR="$RUNNER_TEMP/cosign" sh install.sh 2>&1 | tee "$RUNNER_TEMP/cosign.log"
+          grep -q 'signature OK (cosign' "$RUNNER_TEMP/cosign.log"
+          "$RUNNER_TEMP/cosign/kman" version | grep -Fx "kman $TAG"
+      - name: install.sh installs the latest stable release
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          KMAN_REQUIRE_SIGNATURE=1 KMAN_INSTALL_DIR="$RUNNER_TEMP/latest" sh install.sh
+          "$RUNNER_TEMP/latest/kman" version | grep -Fx "kman $TAG"
