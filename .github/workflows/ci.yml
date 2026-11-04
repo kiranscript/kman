@@ -156,6 +156,8 @@ jobs:
     # container booted with systemd. The vault test binary encrypts a master
     # key with systemd-creds and runs itself as a transient service with
     # LoadCredentialEncrypted= (internal/vault/systemd_linux_test.go).
+    # systemd-run --wait --pipe talks to systemd over the system D-Bus, not
+    # its private socket, so the container needs a bus daemon too.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -181,11 +183,15 @@ jobs:
             -e container=docker --tmpfs /run --tmpfs /run/lock \
             -v "$RUNNER_TEMP/kman-systemd:/kman:ro" \
             "$IMAGE" bash -c 'apt-get update -qq &&
-              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends systemd >/dev/null &&
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends systemd dbus >/dev/null &&
               exec /usr/lib/systemd/systemd'
           for _ in $(seq 1 90); do
             state=$(docker exec systemd systemctl is-system-running 2>/dev/null || true)
-            case "$state" in running|degraded) echo "systemd is $state"; exit 0 ;; esac
+            case "$state" in running|degraded)
+              if docker exec systemd test -S /run/dbus/system_bus_socket; then
+                echo "systemd is $state, with a system bus"; exit 0
+              fi ;;
+            esac
             sleep 2
           done
           echo "systemd did not boot (last state: ${state:-none})"
