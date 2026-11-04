@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 // home is an empty user environment for one run of kman: every home and
@@ -73,10 +74,17 @@ func (h *home) command(args ...string) *exec.Cmd {
 	return cmd
 }
 
-// run runs kman to the end and returns its output and exit code.
+// run runs kman to the end and returns its output and exit code. A run
+// that has not ended after 30 s is killed and fails the test.
 func (h *home) run(t *testing.T, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	cmd := h.command(args...)
+	timer := time.AfterFunc(30*time.Second, func() { cmd.Process.Kill() })
+	defer func() {
+		if !timer.Stop() {
+			t.Fatalf("kman %v ran over 30 s and was killed:\n%s", args, stderr)
+		}
+	}()
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()

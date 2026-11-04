@@ -3,6 +3,8 @@ package e2e_test
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"io"
 	"net"
 	"net/http"
@@ -167,6 +169,25 @@ func get(t *testing.T, addr, path string) int {
 	resp, err := client.Get(url)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+// getTLS makes a request over TLS, trusting only the certificate in
+// certFile, and returns the status code.
+func getTLS(t *testing.T, addr, certFile string) int {
+	t.Helper()
+	pemBytes, err := os.ReadFile(certFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(pemBytes)
+	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}
+	resp, err := client.Get("https://" + addr + "/")
+	if err != nil {
+		t.Fatalf("GET https://%s/: %v", addr, err)
 	}
 	resp.Body.Close()
 	return resp.StatusCode
