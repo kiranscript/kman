@@ -216,3 +216,35 @@ func TestThePackagesAreReproducible(t *testing.T) {
 		}
 	}
 }
+
+// The snapshot dry run checks every best-effort channel it built, and runs
+// whenever one of their files changes.
+func TestTheSnapshotRunsTheDocumentedSetupOfEveryPackage(t *testing.T) {
+	w := loadWorkflow(t, "release-snapshot.yml")
+	paths := map[string]bool{}
+	for _, p := range w.On["pull_request"].(map[string]any)["paths"].([]any) {
+		paths[p.(string)] = true
+	}
+	for _, want := range []string{"packaging/**", "examples/compose/**", "docs/operator-guide/docker.md", "docs/operator-guide/systemd.md"} {
+		if !paths[want] {
+			t.Errorf("release-snapshot.yml paths lack %s", want)
+		}
+	}
+	var script string
+	for _, s := range w.Jobs["snapshot"].Steps {
+		script += s.Run + "\n"
+	}
+	for _, want := range []string{
+		"sh scripts/doc-steps.sh docs/operator-guide/docker.md compose",
+		"sh scripts/doc-steps.sh docs/operator-guide/systemd.md systemd",
+		"sh scripts/homebrew-formula.sh",
+		"ruby -c",
+		`grep -c '\.deb$' dist/checksums.txt`,
+		`grep -c '\.rpm$' dist/checksums.txt`,
+		"systemd-analyze verify",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("the snapshot job does not run %q", want)
+		}
+	}
+}
