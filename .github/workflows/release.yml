@@ -1,0 +1,281 @@
+# The release pipeline (SPEC §15). A maintainer pushes a v* tag; this workflow
+# builds, signs, attests and publishes the release, then checks what it
+# published. Its path and the tag ref are the signing identity operators
+# verify against:
+#   https://github.com/kirank55/kman/.github/workflows/release.yml@refs/tags/<tag>
+#   issuer https://token.actions.githubusercontent.com
+#
+# GoReleaser makes the release as a draft. This workflow attests the archives,
+# the SBOMs and the image, attaches the attestation bundle as
+# kman_<version>.intoto.jsonl, and only then publishes the draft, because an
+# immutable release cannot gain assets after it is published.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  IMAGE: ghcr.io/kirank55/kman
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the draft release and its assets
+      id-token: write # keyless signing and attestations
+      attestations: write
+      packages: write # the GHCR image and its signature
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # a release never reuses a cache
+      - name: Version and release kind
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          case "$version" in *-*) prerelease=true ;; *) prerelease=false ;; esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+      - name: Release notes from CHANGELOG.md
+        env:
+          TAG: ${{ github.ref_name }}
+        run: sh scripts/release-notes.sh "$TAG" CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+      - name: govulncheck
+        run: go tool -modfile=tools/go.mod govulncheck ./...
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.56.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: release --clean --release-notes=${{ runner.temp }}/notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Provenance for every file in checksums.txt: the archives, the source
+      # archive and the SBOMs.
+      - name: Attest the archives
+        id: attest-archives
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: dist/checksums.txt
+      - name: Image digest
+        id: image
+        run: |
+          digests=$(awk '{print $1}' dist/digests.txt | sort -u)
+          if [ "$(printf '%s\n' "$digests" | grep -c .)" != 1 ]; then
+            echo "want exactly one image digest in dist/digests.txt, got:" >&2
+            cat dist/digests.txt >&2
+            exit 1
+          fi
+          echo "digest=sha256:$digests" >> "$GITHUB_OUTPUT"
+      - name: Attest the image
+        id: attest-image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
+      # One SBOM attestation per archive and one for the source. The list must
+      # match the GoReleaser targets; tools/releasecheck enforces that.
+      - name: Attest the SBOM of linux_amd64
+        id: sbom-linux-amd64
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/kman_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
+          sbom-path: dist/kman_${{ steps.version.outputs.version }}_linux_amd64.tar.gz.spdx.json
+      - name: Attest the SBOM of linux_arm64
+        id: sbom-linux-arm64
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/kman_${{ steps.version.outputs.version }}_linux_arm64.tar.gz
+          sbom-path: dist/kman_${{ steps.version.outputs.version }}_linux_arm64.tar.gz.spdx.json
+      - name: Attest the SBOM of darwin_amd64
+        id: sbom-darwin-amd64
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/kman_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
+          sbom-path: dist/kman_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz.spdx.json
+      - name: Attest the SBOM of darwin_arm64
+        id: sbom-darwin-arm64
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/kman_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
+          sbom-path: dist/kman_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz.spdx.json
+      - name: Attest the SBOM of windows_amd64
+        id: sbom-windows-amd64
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/kman_${{ steps.version.outputs.version }}_windows_amd64.zip
+          sbom-path: dist/kman_${{ steps.version.outputs.version }}_windows_amd64.zip.spdx.json
+      - name: Attest the SBOM of the source
+        id: sbom-source
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/kman_${{ steps.version.outputs.version }}.tar.gz
+          sbom-path: dist/kman_${{ steps.version.outputs.version }}.tar.gz.spdx.json
+
+      - name: Attach the attestation bundle and publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          BUNDLES: >-
+            ${{ steps.attest-archives.outputs.bundle-path }}
+            ${{ steps.attest-image.outputs.bundle-path }}
+            ${{ steps.sbom-linux-amd64.outputs.bundle-path }}
+            ${{ steps.sbom-linux-arm64.outputs.bundle-path }}
+            ${{ steps.sbom-darwin-amd64.outputs.bundle-path }}
+            ${{ steps.sbom-darwin-arm64.outputs.bundle-path }}
+            ${{ steps.sbom-windows-amd64.outputs.bundle-path }}
+            ${{ steps.sbom-source.outputs.bundle-path }}
+        run: |
+          out="dist/kman_${VERSION}.intoto.jsonl"
+          # shellcheck disable=SC2086 # BUNDLES is a space-separated list
+          jq -c . $BUNDLES > "$out"
+          test "$(wc -l < "$out")" -ge 8
+          gh release upload "$TAG" "$out" -R "$GITHUB_REPOSITORY"
+          if [ "$PRERELEASE" = true ]; then latest=false; else latest=true; fi
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=false --prerelease="$PRERELEASE" --latest="$latest"
+
+  # Post-release checks (SPEC §15, release checklist step 6), all read-only.
+
+  # The verify commands from docs/verify.md, exactly as documented.
+  verify:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      attestations: read
+      packages: read
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run the documented verify commands
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: sh scripts/verify-release.sh "$TAG" docs/verify.md
+
+  # Rebuild the tag from a fresh checkout and compare with the release.
+  rebuild:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: release --clean --skip=publish,sign,sbom,docker,announce,validate
+      - name: Compare checksums with the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p checksums.txt -O "$RUNNER_TEMP/published-checksums.txt"
+          sh scripts/compare-checksums.sh dist/checksums.txt "$RUNNER_TEMP/published-checksums.txt"
+
+  # install.sh from the tag, failing closed, first with gh (the runners ship
+  # it) and then with cosign.
+  install:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: install.sh verifies with gh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if command -v cosign; then echo "cosign is installed; this step checks gh" >&2; exit 1; fi
+          KMAN_VERSION="$TAG" KMAN_REQUIRE_SIGNATURE=1 KMAN_INSTALL_DIR="$RUNNER_TEMP/gh" sh install.sh 2>&1 | tee "$RUNNER_TEMP/gh.log"
+          grep -q 'signature OK (gh' "$RUNNER_TEMP/gh.log"
+          "$RUNNER_TEMP/gh/kman" version | grep -Fx "kman $TAG"
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+      - name: install.sh verifies with cosign
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          KMAN_VERSION="$TAG" KMAN_REQUIRE_SIGNATURE=1 KMAN_INSTALL_DIR="$RUNNER_TEMP/cosign" sh install.sh 2>&1 | tee "$RUNNER_TEMP/cosign.log"
+          grep -q 'signature OK (cosign' "$RUNNER_TEMP/cosign.log"
+          "$RUNNER_TEMP/cosign/kman" version | grep -Fx "kman $TAG"
+      - name: install.sh installs the latest stable release
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          KMAN_REQUIRE_SIGNATURE=1 KMAN_INSTALL_DIR="$RUNNER_TEMP/latest" sh install.sh
+          "$RUNNER_TEMP/latest/kman" version | grep -Fx "kman $TAG"
