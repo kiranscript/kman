@@ -11,9 +11,13 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/debug"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata" // spend_timezone must resolve where the OS has no zone database, such as Windows
 
+	"github.com/kirank55/kman/internal/cli"
 	"github.com/kirank55/kman/internal/vault"
 )
 
@@ -34,14 +38,20 @@ func main() {
 		getenv: os.Getenv, now: time.Now, goos: runtime.GOOS,
 		inContainer: func() bool { return inContainer(os.Getenv) },
 		passphrase:  func(prompt string) ([]byte, error) { return terminalPassphrase(prompt, os.Stderr) },
+		stdin:       os.Stdin,
+		readSecret:  terminalSecret(os.Stderr),
 		stopSignals: stop,
 	}
 	os.Exit(run(ctx, os.Args[1:], s))
 }
 
-// usageLine lists the commands. A new command adds its case to run and its
-// name here.
-const usageLine = "usage: kman <init|serve|keygen|version>"
+// offline lists the commands main runs itself; every other command is one
+// of the CLI's online commands. A new offline command adds its case to run
+// and its name here.
+var offline = []string{"init", "serve", "keygen", "version"}
+
+// usageLine lists the commands.
+var usageLine = "usage: kman <" + strings.Join(append(slices.Clone(offline), cli.Commands()...), "|") + ">"
 
 // run runs the command in args. ctx is cancelled by SIGINT or SIGTERM.
 func run(ctx context.Context, args []string, s *sys) int {
@@ -58,12 +68,27 @@ func run(ctx context.Context, args []string, s *sys) int {
 	case "keygen":
 		return cmdKeygen(rest, s.stdout, s.stderr)
 	}
+	if slices.Contains(cli.Commands(), args[0]) {
+		return cli.Run(ctx, args, cliEnv(s))
+	}
 	return usage(s.stderr)
 }
 
+// cliEnv is the environment of the CLI's online commands.
+func cliEnv(s *sys) cli.Env {
+	configDir, _, err := defaultDirs(s.goos, s.getenv)
+	if err != nil {
+		configDir = "" // the CLI asks for --config-dir
+	}
+	return cli.Env{Stdout: s.stdout, Stderr: s.stderr, Stdin: s.stdin, Getenv: s.getenv,
+		ConfigDir: configDir, ReadSecret: s.readSecret}
+}
+
+// usage prints the usage line. A usage error is an error: exit code 1
+// (SPEC §12).
 func usage(stderr io.Writer) int {
 	fmt.Fprintln(stderr, usageLine)
-	return 2
+	return 1
 }
 
 func cmdVersion(args []string, stdout, stderr io.Writer) int {

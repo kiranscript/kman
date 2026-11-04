@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kirank55/kman/internal/admin"
+	"github.com/kirank55/kman/internal/adminapi"
 	"github.com/kirank55/kman/internal/store"
 	"github.com/kirank55/kman/internal/vault"
 )
@@ -30,11 +32,11 @@ func cmdServe(ctx context.Context, args []string, s *sys) int {
 	configDir := fs.String("config-dir", "", "the config directory holding kman.yaml (default ~/.config/kman, or %APPDATA%\\kman on Windows)")
 	allowDebug := fs.Bool("allow-debug", false, "skip the process hardening that keeps the master key out of core dumps and debuggers")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return 1
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintln(s.stderr, "usage: kman serve [--config-dir dir] [--allow-debug]")
-		return 2
+		return 1
 	}
 	log := slog.New(slog.NewTextHandler(s.stderr, nil))
 	if err := serve(ctx, s, log, *configDir, vault.Options{AllowDebug: *allowDebug}); err != nil {
@@ -99,7 +101,8 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	}
 	defer v.Close()
 
-	ls, err := listen(cfg, log)
+	svc := admin.New(admin.Options{Store: st, Now: s.now})
+	ls, err := listen(cfg, log, adminHandler(svc, log))
 	if err != nil {
 		return err
 	}
@@ -150,17 +153,26 @@ func (l *listener) serve() error {
 }
 
 // listen binds the proxy and admin listeners, or neither.
-func listen(cfg Config, log *slog.Logger) ([]*listener, error) {
+func listen(cfg Config, log *slog.Logger, adminH http.Handler) ([]*listener, error) {
 	proxy, err := newListener("proxy", cfg.ProxyListen, cfg.TLS.Proxy, notYet("the proxy"), log)
 	if err != nil {
 		return nil, err
 	}
-	admin, err := newListener("admin", cfg.AdminListen, cfg.TLS.Admin, notYet("the admin API"), log)
+	adm, err := newListener("admin", cfg.AdminListen, cfg.TLS.Admin, adminH, log)
 	if err != nil {
 		proxy.l.Close()
 		return nil, err
 	}
-	return []*listener{proxy, admin}, nil
+	return []*listener{proxy, adm}, nil
+}
+
+// adminHandler serves the admin listener: the admin API under /admin/v1,
+// and nothing else until the dashboard (M3) and /metrics (#46).
+func adminHandler(svc *admin.Service, log *slog.Logger) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle(adminapi.Prefix+"/", adminapi.Handler(svc, log))
+	mux.Handle("/", notYet("the admin listener"))
+	return mux
 }
 
 func newListener(name, addr string, t ListenerTLS, h http.Handler, log *slog.Logger) (*listener, error) {
