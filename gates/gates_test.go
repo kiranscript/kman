@@ -89,6 +89,7 @@ func TestClockGateCatchesPlantedViolations(t *testing.T) {
 	assertViolations(t, gates.CheckClock(planted(t)), []string{
 		"internal/cli: clock.go:5 uses time.Since (only main reads the clock; take the time as an argument)",
 		"internal/gateway: clock.go:5 uses time.Now (only main reads the clock; take the time as an argument)",
+		"internal/gateway: dot.go:3 dot-imports time, which hides clock reads from this gate",
 		"internal/admin: sleep_test.go:8 uses time.Sleep outside testing/synctest (timer-driven tests run in a synctest bubble)",
 	})
 }

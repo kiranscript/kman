@@ -17,7 +17,7 @@ type Report struct {
 	Notes    []string
 }
 
-// series is every measurement of one benchmark in one unit.
+// series holds the measurements from one input, by benchmark and unit.
 type series map[string]map[string][]float64 // benchmark → unit → values
 
 // Compare reads go test -bench output for the base and the head and judges

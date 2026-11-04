@@ -2,6 +2,10 @@
 # gate and the clock seam run inside go test (package gates). Branch
 # protection requires the "required" job, which passes only when every other
 # job passed.
+#
+# Three gates of SPEC §17 join later, with the code they check: templ generate
+# with no diff (the dashboard, M3), and the secret-leak sweep and the canary
+# deadline gate (the e2e harness and alerts, M1).
 name: CI
 
 on:

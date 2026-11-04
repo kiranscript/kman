@@ -18,7 +18,7 @@ func CheckTested(pkgs []Package) []Violation {
 		if module(p.Rel()) == "" {
 			continue
 		}
-		files := append(append([]string{}, p.TestGoFiles...), p.XTestGoFiles...)
+		files := p.TestFiles()
 		if len(files) == 0 {
 			vs = append(vs, Violation{p.Rel(), "has no tests"})
 			continue

@@ -6,27 +6,17 @@ import (
 	"strings"
 )
 
-// Modules lists the packages SPEC §2 allows directly under internal/: the
-// fifteen modules plus token, a leaf package of token types that anything
-// may import.
-var Modules = []string{
-	"gateway", "profiles", "policy", "limiter", "meter", "pricing",
-	"registry", "vault", "store", "events", "detect", "alerts", "sessions",
-	"admin", "adminapi", "dashboard", "cli",
-	"token",
-}
-
+// transports are the modules over admin that nothing may import.
 var transports = []string{"adminapi", "dashboard", "cli"}
 
-// allowed is the closed import list for the modules SPEC §2 constrains.
-// token is added to every list, since it is the leaf anything may import.
+// allowed is the closed import list for the modules SPEC §2 constrains,
+// besides token, which every module may import.
 var allowed = map[string][]string{
 	"adminapi":  {"admin"},
 	"dashboard": {"admin"},
 	"cli":       {"admin"},
 	"admin":     {"store", "registry", "vault", "events", "sessions"},
 	"gateway":   {"registry", "policy", "limiter", "meter", "vault", "profiles", "events", "sessions"},
-	"token":     {},
 }
 
 // module returns the module under internal/ that a module-relative package
@@ -74,16 +64,10 @@ func importProblem(from, to string) string {
 		return "token is a leaf and imports no internal package"
 	case slices.Contains(transports, to):
 		return "nothing may import a transport"
-	case to == "token":
+	case to == "token", allowed[from] == nil, slices.Contains(allowed[from], to):
 		return ""
 	case slices.Contains(transports, from):
-		if !slices.Contains(allowed[from], to) {
-			return "a transport may import only admin and token"
-		}
-	case allowed[from] != nil:
-		if !slices.Contains(allowed[from], to) {
-			return fmt.Sprintf("%s may import only %s and token", from, strings.Join(allowed[from], ", "))
-		}
+		return "a transport may import only admin and token"
 	}
-	return ""
+	return fmt.Sprintf("%s may import only %s and token", from, strings.Join(allowed[from], ", "))
 }

@@ -12,7 +12,7 @@ import "strconv"
 type Kind int
 
 const (
-	// VirtualKey is a kmn_ token an app sends in place of a real key.
+	// VirtualKey is a kmn_ token an app sends in place of a credential.
 	VirtualKey Kind = iota + 1
 	// ChildKey is a short-lived ek_kmn_ token minted from a virtual key.
 	ChildKey

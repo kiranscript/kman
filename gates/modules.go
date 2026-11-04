@@ -5,6 +5,16 @@ import (
 	"strings"
 )
 
+// Modules lists the packages SPEC §2 allows directly under internal/: the
+// fifteen modules plus token, a leaf package of token types that anything
+// may import.
+var Modules = []string{
+	"gateway", "profiles", "policy", "limiter", "meter", "pricing",
+	"registry", "vault", "store", "events", "detect", "alerts", "sessions",
+	"admin", "adminapi", "dashboard", "cli",
+	"token",
+}
+
 // CheckModules reports every module from SPEC §2 that is missing or has no
 // package doc comment, and every package directly under internal/ that is
 // not a module.

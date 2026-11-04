@@ -38,6 +38,11 @@ func (p Package) Rel() string {
 	return strings.TrimPrefix(strings.TrimPrefix(p.ImportPath, p.Module.Path), "/")
 }
 
+// TestFiles returns the package's test files, in-package and external.
+func (p Package) TestFiles() []string {
+	return append(append([]string{}, p.TestGoFiles...), p.XTestGoFiles...)
+}
+
 // Violation is one broken gate in one package.
 type Violation struct {
 	Package string // relative to the module, such as "internal/gateway"
