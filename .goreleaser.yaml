@@ -107,11 +107,15 @@ dockers_v2:
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.created: "{{ .CommitDate }}"
+    # A release pushes a multi-arch index and annotates it and each manifest.
+    # A snapshot loads one image per platform into Docker, where buildx
+    # refuses index annotations ("not supported for single platform export"),
+    # so there they go on the manifest only. GoReleaser templates the keys.
     annotations:
-      "index,manifest:org.opencontainers.image.source": https://github.com/kirank55/kman
-      "index,manifest:org.opencontainers.image.revision": "{{ .FullCommit }}"
-      "index,manifest:org.opencontainers.image.version": "{{ .Version }}"
-      "index,manifest:org.opencontainers.image.created": "{{ .CommitDate }}"
+      "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.source": https://github.com/kirank55/kman
+      "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.version": "{{ .Version }}"
+      "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.created": "{{ .CommitDate }}"
 
 docker_digest:
   name_template: digests.txt
