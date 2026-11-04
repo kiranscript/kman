@@ -119,7 +119,6 @@ type installer struct {
 	bin     string // the install directory
 	path    string
 	logFile string
-	env     []string
 }
 
 func newInstaller(t *testing.T, verifiers ...verifier) *installer {
