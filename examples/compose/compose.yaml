@@ -1,0 +1,54 @@
+# kman with Docker Compose (SPEC §3). From the directory holding this file:
+#
+#   docker run --rm ghcr.io/kirank55/kman keygen > master.key
+#   docker compose run --rm kman init     # the admin token goes to your terminal, not the logs
+#   docker compose up -d
+#
+# Back master.key up apart from the volume: the volume is ciphertext without
+# it. Steps and upgrades: docs/operator-guide/docker.md.
+name: kman
+
+services:
+  kman:
+    # Set KMAN_VERSION (such as 0.1.0) to pin a release.
+    image: ghcr.io/kirank55/kman:${KMAN_VERSION:-latest}
+    command: ["serve"]
+    environment:
+      # kman's default directories live under $HOME (the volume below).
+      HOME: /home/nonroot
+      # The master key comes from the secret below, never from the volume.
+      KMAN_MASTER_KEY_FILE: /run/secrets/master_key
+      # Inside the container kman listens on every interface, so a published
+      # port can reach it. The ports below publish on host loopback only;
+      # plain HTTP on the admin listener stays inside this container network.
+      # init writes these into kman.yaml (invariant 8: enabled explicitly).
+      KMAN_PROXY_LISTEN: 0.0.0.0:8080
+      KMAN_ADMIN_LISTEN: 0.0.0.0:8081
+      KMAN_ALLOW_PLAIN_HTTP: "true"
+    secrets:
+      - source: master_key
+    volumes:
+      # kman's config (~/.config/kman) and data (~/.local/share/kman)
+      # directories. The volume goes on the nonroot home because the image
+      # already has it, owned by UID 65532, so Docker gives the new volume
+      # that owner.
+      - kman:/home/nonroot
+    tmpfs:
+      - /tmp
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      # To reach the proxy from other machines, put a TLS reverse proxy in
+      # front rather than publishing 8080 beyond loopback.
+      - 127.0.0.1:8080:8080
+      - 127.0.0.1:8081:8081
+    restart: unless-stopped
+
+secrets:
+  master_key:
+    file: ./master.key
+
+volumes:
+  kman:
