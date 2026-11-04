@@ -143,7 +143,7 @@ func newInstaller(t *testing.T, verifiers ...verifier) *installer {
 		}
 	}
 	for _, tool := range []string{
-		"sh", "curl", "tar", "gzip", "sha256sum", "shasum", "uname", "mktemp", "rm", "mkdir",
+		"curl", "tar", "gzip", "sha256sum", "shasum", "uname", "mktemp", "rm", "mkdir",
 		"chmod", "mv", "cp", "awk", "grep", "sed", "cat", "head", "tail", "tr", "id", "dirname",
 		"basename", "wc", "cut",
 	} {
@@ -173,7 +173,12 @@ func newInstaller(t *testing.T, verifiers ...verifier) *installer {
 // run runs install.sh against the release server at url with extra env.
 func (in *installer) run(url string, env ...string) (stdout, stderr string, err error) {
 	in.t.Helper()
-	cmd := exec.Command(filepath.Join(in.path, "sh"), filepath.Join("..", "install.sh"))
+	// The real sh by its own path: macOS's /bin/sh may not run from a symlink.
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		in.t.Skip("sh is not installed")
+	}
+	cmd := exec.Command(sh, filepath.Join("..", "install.sh"))
 	cmd.Env = append([]string{
 		"PATH=" + in.path,
 		"HOME=" + in.home,
