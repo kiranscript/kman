@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"runtime/debug"
+
+	"github.com/kirank55/kman/internal/vault"
 )
 
 // Set with -ldflags -X by the release build. When they are empty, the values
@@ -23,13 +25,51 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
+// usageLine lists the commands. A new command adds its case to run and its
+// name here.
+const usageLine = "usage: kman <version|keygen>"
+
 func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 1 && args[0] == "version" {
-		printVersion(stdout)
-		return 0
+	if len(args) == 0 {
+		return usage(stderr)
 	}
-	fmt.Fprintln(stderr, "usage: kman version")
+	switch name, rest := args[0], args[1:]; name {
+	case "version":
+		return cmdVersion(rest, stdout, stderr)
+	case "keygen":
+		return cmdKeygen(rest, stdout, stderr)
+	}
+	return usage(stderr)
+}
+
+func usage(stderr io.Writer) int {
+	fmt.Fprintln(stderr, usageLine)
 	return 2
+}
+
+func cmdVersion(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 0 {
+		return usage(stderr)
+	}
+	printVersion(stdout)
+	return 0
+}
+
+// cmdKeygen prints a fresh master key and stores nothing. It works offline,
+// so in Docker the key can be made on the host and mounted as a secret.
+func cmdKeygen(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 0 {
+		return usage(stderr)
+	}
+	mk := vault.NewMasterKey()
+	defer clear(mk)
+	text := vault.EncodeMasterKey(mk)
+	defer clear(text)
+	if _, err := stdout.Write(text); err != nil {
+		fmt.Fprintln(stderr, "kman keygen:", err)
+		return 1
+	}
+	return 0
 }
 
 func printVersion(w io.Writer) {
