@@ -232,6 +232,8 @@ func (in *initRun) keyMaterial(cfg Config) (vault.KeySource, error) {
 		if err := in.writeFile(cfg.MasterKeyFile, sealed); err != nil {
 			return nil, err
 		}
+		// Create unseals the file again with this copy, so init asks only
+		// twice; the passphrase source wipes it after use.
 		again := bytes.Clone(pass)
 		return vault.PassphraseSource(cfg.MasterKeyFile, func() ([]byte, error) { return again, nil }), nil
 	}
