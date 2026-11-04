@@ -4,16 +4,31 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
 
-const goodConfig = `data_dir: /var/lib/kman
+// root makes the fixture paths absolute on the OS running the tests: with
+// no drive, /var/lib/kman is relative on Windows.
+var root = func() string {
+	if runtime.GOOS == "windows" {
+		return "C:"
+	}
+	return ""
+}()
+
+var (
+	dataDir    = root + "/var/lib/kman"
+	keyFile    = root + "/etc/kman/master.key"
+	adminSock  = "unix:" + root + "/run/kman/admin.sock"
+	goodConfig = "data_dir: " + dataDir + `
 key_source: file
-master_key_file: /etc/kman/master.key
+master_key_file: ` + keyFile + `
 proxy_listen: 127.0.0.1:8080
 admin_listen: 127.0.0.1:8081
 `
+)
 
 func writeConfig(t *testing.T, yaml string) string {
 	t.Helper()
@@ -31,10 +46,10 @@ func TestLoadConfigRefuses(t *testing.T) {
 		name, yaml, want string
 	}{
 		{"an unknown key", goodConfig + "data_directory: /x\n", "data_directory"},
-		{"no data_dir", strings.Replace(goodConfig, "data_dir: /var/lib/kman\n", "", 1), "data_dir is not set"},
-		{"a relative data_dir", strings.Replace(goodConfig, "/var/lib/kman", "data", 1), "not an absolute path"},
+		{"no data_dir", strings.Replace(goodConfig, "data_dir: "+dataDir+"\n", "", 1), "data_dir is not set"},
+		{"a relative data_dir", strings.Replace(goodConfig, dataDir, "data", 1), "not an absolute path"},
 		{"an unknown key source", strings.Replace(goodConfig, "key_source: file", "key_source: vault", 1), `"vault" is not one of`},
-		{"a key file source with no file", strings.Replace(goodConfig, "master_key_file: /etc/kman/master.key\n", "", 1), "needs master_key_file"},
+		{"a key file source with no file", strings.Replace(goodConfig, "master_key_file: "+keyFile+"\n", "", 1), "needs master_key_file"},
 		{"half a TLS pair", goodConfig + "tls:\n  admin:\n    cert_file: /c.pem\n", "needs both cert_file and key_file"},
 		{"a proxy on a Unix socket", strings.Replace(goodConfig, "proxy_listen: 127.0.0.1:8080", "proxy_listen: unix:/run/kman.sock", 1), "only the admin listener"},
 		{"a relative admin socket", strings.Replace(goodConfig, "admin_listen: 127.0.0.1:8081", "admin_listen: unix:kman.sock", 1), "not absolute"},
@@ -58,14 +73,14 @@ func TestLoadConfigAccepts(t *testing.T) {
 		{"the defaults", goodConfig},
 		{"IPv6 loopback admin", strings.Replace(goodConfig, "admin_listen: 127.0.0.1:8081", `admin_listen: "[::1]:8081"`, 1)},
 		{"localhost admin", strings.Replace(goodConfig, "admin_listen: 127.0.0.1:8081", "admin_listen: localhost:8081", 1)},
-		{"an admin Unix socket", strings.Replace(goodConfig, "admin_listen: 127.0.0.1:8081", "admin_listen: unix:/run/kman/admin.sock", 1)},
+		{"an admin Unix socket", strings.Replace(goodConfig, "admin_listen: 127.0.0.1:8081", "admin_listen: "+adminSock, 1)},
 		{"public admin with TLS", strings.Replace(goodConfig, "admin_listen: 127.0.0.1:8081", "admin_listen: 0.0.0.0:8081", 1) +
 			"tls:\n  admin:\n    cert_file: /c.pem\n    key_file: /k.pem\n"},
 		{"public plain admin, explicitly enabled", strings.Replace(goodConfig, "admin_listen: 127.0.0.1:8081", "admin_listen: 0.0.0.0:8081", 1) +
 			"allow_plain_http: true\n"},
 		{"trusted proxies", goodConfig + "trusted_proxies:\n  - 10.0.0.0/8\n  - 192.0.2.7\n  - \"fd00::/8\"\n"},
 		{"a public proxy", strings.Replace(goodConfig, "proxy_listen: 127.0.0.1:8080", "proxy_listen: 0.0.0.0:8080", 1)},
-		{"the env key source", strings.Replace(strings.Replace(goodConfig, "key_source: file", "key_source: env", 1), "master_key_file: /etc/kman/master.key\n", "", 1)},
+		{"the env key source", strings.Replace(strings.Replace(goodConfig, "key_source: file", "key_source: env", 1), "master_key_file: "+keyFile+"\n", "", 1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := loadConfig(writeConfig(t, tc.yaml), noEnv); err != nil {
@@ -82,7 +97,7 @@ func TestTheKeyFileVariableOverridesTheFileSourcesKeyFile(t *testing.T) {
 		}
 		return ""
 	}
-	c, err := loadConfig(writeConfig(t, strings.Replace(goodConfig, "master_key_file: /etc/kman/master.key\n", "", 1)), env)
+	c, err := loadConfig(writeConfig(t, strings.Replace(goodConfig, "master_key_file: "+keyFile+"\n", "", 1)), env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +114,7 @@ func TestAMissingConfigNamesInit(t *testing.T) {
 }
 
 func TestInitWritesAConfigServeAccepts(t *testing.T) {
-	c := Config{DataDir: "/var/lib/kman", KeySource: keySourceFile, MasterKeyFile: "/etc/kman/master.key",
+	c := Config{DataDir: dataDir, KeySource: keySourceFile, MasterKeyFile: keyFile,
 		ProxyListen: defaultProxyListen, AdminListen: defaultAdminListen}
 	raw, err := c.marshal()
 	if err != nil {
