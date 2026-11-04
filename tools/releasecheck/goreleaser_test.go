@@ -68,6 +68,7 @@ type goreleaser struct {
 		Artifacts string
 		Args      []string
 	} `yaml:"docker_signs"`
+	Nfpms   []nfpm
 	Release struct {
 		Draft      bool
 		Prerelease string
