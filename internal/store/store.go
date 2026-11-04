@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver; pure Go, so CGO_ENABLED=0 holds
@@ -130,7 +131,13 @@ func dsn(path string) string {
 	q.Set("_txlock", "immediate")
 	q.Add("_pragma", "trusted_schema(OFF)")
 	q.Add("_pragma", "journal_size_limit(67108864)")
-	return "file:" + filepath.ToSlash(path) + "?" + q.Encode()
+	return fileURI(path) + "?" + q.Encode()
+}
+
+// fileURI is path as an SQLite file: URI, with the characters that would end
+// or garble the path escaped.
+func fileURI(path string) string {
+	return "file:" + strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23").Replace(filepath.ToSlash(path))
 }
 
 // tighten removes group and other permissions from path, logging when it had

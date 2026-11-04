@@ -74,3 +74,11 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 		t.Errorf("%s has mode %v, want %v", filepath.Base(path), got, want)
 	}
 }
+
+func TestOpenAcceptsAnAwkwardDirectoryName(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "a #b?c%20d")
+	openTest(t, dir)
+	if _, err := os.Stat(filepath.Join(dir, FileName+"-wal")); err != nil {
+		t.Errorf("SQLite did not open the database at the given path: %v", err)
+	}
+}
