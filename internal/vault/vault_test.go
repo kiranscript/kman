@@ -38,7 +38,7 @@ func (s *fixedSource) String() string { return "test source" }
 // data key.
 func create(t *testing.T, src vault.KeySource) (*vault.Vault, vault.WrappedKey) {
 	t.Helper()
-	v, wk, err := vault.Create(src, vault.Options{AllowDebug: true})
+	v, wk, err := vault.Create(src, testDEKID, vault.Options{AllowDebug: true})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -111,8 +111,8 @@ func TestTheFingerprintNamesTheMasterKeyWithoutRevealingIt(t *testing.T) {
 	if a.Fingerprint == other.Fingerprint {
 		t.Errorf("two master keys share the fingerprint %q", a.Fingerprint)
 	}
-	if a.ID == b.ID {
-		t.Errorf("two data keys share the id %q", a.ID)
+	if bytes.Equal(a.Wrapped, b.Wrapped) {
+		t.Error("two Creates wrapped the same data key")
 	}
 	if strings.Contains(a.Fingerprint, base64.StdEncoding.EncodeToString(src.key)[:8]) ||
 		strings.Contains(a.Fingerprint, hex.EncodeToString(src.key)[:8]) {
@@ -122,7 +122,11 @@ func TestTheFingerprintNamesTheMasterKeyWithoutRevealingIt(t *testing.T) {
 
 func TestATamperedOrForeignCiphertextIsRefused(t *testing.T) {
 	v, _ := create(t, newFixedSource(t))
-	other, _ := create(t, newFixedSource(t))
+	other, _, err := vault.Create(newFixedSource(t), "dek_another0key", vault.Options{AllowDebug: true})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(other.Close)
 	good, err := v.Seal("cr_aaaaaaaaaaaa", []byte("secret-a"))
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
@@ -290,7 +294,7 @@ func TestReadsRunAlongsideWrites(t *testing.T) {
 }
 
 func BenchmarkCredential(b *testing.B) {
-	v, _, err := vault.Create(&fixedSource{key: vault.NewMasterKey()}, vault.Options{AllowDebug: true})
+	v, _, err := vault.Create(&fixedSource{key: vault.NewMasterKey()}, testDEKID, vault.Options{AllowDebug: true})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -302,5 +306,34 @@ func BenchmarkCredential(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		v.Credential("cr_aaaaaaaaaaaa")
+	}
+}
+
+// testDEKID is a data-key id in the store's form, which callers mint with
+// store.NewID.
+const testDEKID = "dek_0123456789ab"
+
+func TestCreateWrapsTheDataKeyUnderTheIDGiven(t *testing.T) {
+	src := newFixedSource(t)
+	v, wk := create(t, src)
+	if wk.ID != testDEKID || v.DataKeyID() != testDEKID {
+		t.Fatalf("Create gave ids %q and %q, want %q", wk.ID, v.DataKeyID(), testDEKID)
+	}
+	// The id is bound to the wrapping: the same wrapped key under another
+	// id does not unlock.
+	moved := wk
+	moved.ID = "dek_ba9876543210"
+	if _, err := vault.Unlock(src, moved, vault.Options{AllowDebug: true}); !errors.Is(err, vault.ErrWrongMasterKey) {
+		t.Fatalf("Unlock under another id = %v, want ErrWrongMasterKey", err)
+	}
+}
+
+func TestCreateRefusesAnEmptyID(t *testing.T) {
+	src := newFixedSource(t)
+	if _, _, err := vault.Create(src, "", vault.Options{AllowDebug: true}); err == nil {
+		t.Fatal("Create with no data-key id succeeded")
+	}
+	if src.reads != 0 {
+		t.Errorf("Create read the master key %d times before refusing, want 0", src.reads)
 	}
 }

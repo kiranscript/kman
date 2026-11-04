@@ -60,7 +60,7 @@ func TestSystemdCredsHelper(t *testing.T) {
 	if os.Getenv("CREDENTIALS_DIRECTORY") == "" {
 		t.Fatal("systemd set no $CREDENTIALS_DIRECTORY")
 	}
-	v, wk, err := vault.Create(vault.SystemdCredsSource(), vault.Options{})
+	v, wk, err := vault.Create(vault.SystemdCredsSource(), testDEKID, vault.Options{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}

@@ -4,10 +4,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"runtime"
 	"runtime/debug"
+	"syscall"
+	"time"
 
 	"github.com/kirank55/kman/internal/vault"
 )
@@ -22,24 +27,38 @@ var (
 )
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	s := &sys{
+		stdout: os.Stdout, stderr: os.Stderr,
+		getenv: os.Getenv, now: time.Now, goos: runtime.GOOS,
+		inContainer: func() bool { return inContainer(os.Getenv) },
+		passphrase:  func(prompt string) ([]byte, error) { return terminalPassphrase(prompt, os.Stderr) },
+		stopSignals: stop,
+	}
+	os.Exit(run(ctx, os.Args[1:], s))
 }
 
 // usageLine lists the commands. A new command adds its case to run and its
 // name here.
-const usageLine = "usage: kman <version|keygen>"
+const usageLine = "usage: kman <init|serve|keygen|version>"
 
-func run(args []string, stdout, stderr io.Writer) int {
+// run runs the command in args. ctx is cancelled by SIGINT or SIGTERM.
+func run(ctx context.Context, args []string, s *sys) int {
 	if len(args) == 0 {
-		return usage(stderr)
+		return usage(s.stderr)
 	}
 	switch name, rest := args[0], args[1:]; name {
+	case "init":
+		return cmdInit(rest, s)
+	case "serve":
+		return cmdServe(ctx, rest, s)
 	case "version":
-		return cmdVersion(rest, stdout, stderr)
+		return cmdVersion(rest, s.stdout, s.stderr)
 	case "keygen":
-		return cmdKeygen(rest, stdout, stderr)
+		return cmdKeygen(rest, s.stdout, s.stderr)
 	}
-	return usage(stderr)
+	return usage(s.stderr)
 }
 
 func usage(stderr io.Writer) int {

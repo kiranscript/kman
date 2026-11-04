@@ -13,7 +13,7 @@ import (
 // PR_SET_DUMPABLE where there is one. It uses the real hardening,
 // so it leaves this test process hardened too.
 func TestOpeningAVaultTurnsOffCoreDumpsAndDumpability(t *testing.T) {
-	v, _, err := vault.Create(newFixedSource(t), vault.Options{})
+	v, _, err := vault.Create(newFixedSource(t), testDEKID, vault.Options{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}

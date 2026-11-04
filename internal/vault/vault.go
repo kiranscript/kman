@@ -63,10 +63,14 @@ type Vault struct {
 	cache atomic.Pointer[map[string][]byte]
 }
 
-// Create makes a fresh data key, wraps it under the master key from src,
-// and returns a vault holding it with the wrapped form to store. The master
-// key is wiped before Create returns.
-func Create(src KeySource, opts Options) (*Vault, WrappedKey, error) {
+// Create makes a fresh data key with id dekID, wraps it under the master key
+// from src, and returns a vault holding it with the wrapped form to store.
+// The wrapping binds dekID, which the caller mints with store.NewID so it
+// has the store's id form. The master key is wiped before Create returns.
+func Create(src KeySource, dekID string, opts Options) (*Vault, WrappedKey, error) {
+	if dekID == "" {
+		return nil, WrappedKey{}, errors.New("vault: no data-key id")
+	}
 	mk, err := readMasterKey(src, opts)
 	if err != nil {
 		return nil, WrappedKey{}, err
@@ -75,7 +79,7 @@ func Create(src KeySource, opts Options) (*Vault, WrappedKey, error) {
 	dek := make([]byte, KeySize)
 	defer clear(dek)
 	rand.Read(dek)
-	wk := WrappedKey{ID: "dek_" + rand.Text()[:16], Fingerprint: fingerprint(mk)}
+	wk := WrappedKey{ID: dekID, Fingerprint: fingerprint(mk)}
 	kek, err := newAEAD(mk)
 	if err != nil {
 		return nil, WrappedKey{}, err
