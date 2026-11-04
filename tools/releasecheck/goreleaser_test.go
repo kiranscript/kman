@@ -9,8 +9,8 @@ import (
 )
 
 type goreleaser struct {
-	Version  int
-	Builds   []struct {
+	Version int
+	Builds  []struct {
 		ID           string
 		Main         string
 		Env          []string
@@ -27,7 +27,7 @@ type goreleaser struct {
 			Goos    string
 			Formats []string
 		} `yaml:"format_overrides"`
-		NameTemplate string `yaml:"name_template"`
+		NameTemplate string   `yaml:"name_template"`
 		BuildsInfo   fileInfo `yaml:"builds_info"`
 		Files        []struct {
 			Src  string
