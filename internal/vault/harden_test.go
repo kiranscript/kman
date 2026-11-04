@@ -24,7 +24,7 @@ func TestTheProcessIsHardenedBeforeTheMasterKeyIsRead(t *testing.T) {
 	vault.SetHarden(t, func() error { hardened = true; return nil })
 	src := &orderSource{fixedSource: newFixedSource(t), hardened: &hardened}
 
-	v, wk, err := vault.Create(src, vault.Options{})
+	v, wk, err := vault.Create(src, testDEKID, vault.Options{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestFailedHardeningStopsBeforeAnySecretIsRead(t *testing.T) {
 	boom := errors.New("prctl refused")
 	vault.SetHarden(t, func() error { return boom })
 	src := newFixedSource(t)
-	if _, _, err := vault.Create(src, vault.Options{}); !errors.Is(err, boom) {
+	if _, _, err := vault.Create(src, testDEKID, vault.Options{}); !errors.Is(err, boom) {
 		t.Fatalf("Create = %v, want the hardening error", err)
 	}
 	if _, err := vault.Unlock(src, vault.WrappedKey{}, vault.Options{}); !errors.Is(err, boom) {
