@@ -111,8 +111,8 @@ func TestMintDrawsAFreshSecretEachTime(t *testing.T) {
 	if a.Reveal() == b.Reveal() || a.Hash == b.Hash {
 		t.Errorf("two mints for key id %q gave the same secret", id)
 	}
-	if token.NewKeyID() == token.NewKeyID() {
-		t.Error("two new key ids are equal")
+	if x, y := token.NewKeyID(), token.NewKeyID(); x == y {
+		t.Errorf("two new key ids are both %q", x)
 	}
 }
 
