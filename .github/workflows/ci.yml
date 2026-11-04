@@ -1,0 +1,151 @@
+# The required gates of SPEC §17. The dependency rule, the no-untested-package
+# gate and the clock seam run inside go test (package gates). Branch
+# protection requires the "required" job, which passes only when every other
+# job passed.
+#
+# Three gates of SPEC §17 join later, with the code they check: templ generate
+# with no diff (the dashboard, M3), and the secret-leak sweep and the canary
+# deadline gate (the e2e harness and alerts, M1).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: go vet
+        run: |
+          go vet ./...
+          go -C tools vet ./...
+      - name: staticcheck
+        run: |
+          go tool -modfile=tools/go.mod staticcheck ./...
+          go -C tools tool staticcheck ./...
+      - name: govulncheck
+        run: go tool -modfile=tools/go.mod govulncheck ./...
+      - name: go mod tidy has no diff
+        run: |
+          go mod tidy -diff
+          go -C tools mod tidy -diff
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: Unit, gate and e2e tests
+        run: go test ./...
+      - name: Tool tests
+        if: runner.os == 'Linux'
+        run: go -C tools test ./...
+
+  race:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: go test -race
+        env:
+          CGO_ENABLED: "1" # -race needs cgo
+        run: go test -race ./...
+
+  cross-compile:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: Build ${{ matrix.target }}
+        env:
+          CGO_ENABLED: "0"
+          TARGET: ${{ matrix.target }}
+        run: GOOS="${TARGET%/*}" GOARCH="${TARGET#*/}" go build -trimpath -o /dev/null ./cmd/kman
+
+  bench:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: Benchmark the base and the head
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -o pipefail
+          bench() { go test -run '^$' -bench . -benchmem -count 10 ./...; }
+          git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
+          if [ -f "$RUNNER_TEMP/base/go.mod" ]; then
+            (cd "$RUNNER_TEMP/base" && bench) | tee "$RUNNER_TEMP/base.txt"
+          else
+            echo "The base has no Go module yet; comparing against nothing."
+            : > "$RUNNER_TEMP/base.txt"
+          fi
+          bench | tee "$RUNNER_TEMP/head.txt"
+      - name: benchstat
+        run: go tool -modfile=tools/go.mod benchstat "$RUNNER_TEMP/base.txt" "$RUNNER_TEMP/head.txt"
+      - name: Benchmark gate (allocations, or a slowdown over 10%)
+        run: go -C tools run ./benchgate -base "$RUNNER_TEMP/base.txt" -head "$RUNNER_TEMP/head.txt" -max-slowdown 0.10
+
+  required:
+    if: always()
+    needs: [lint, test, race, cross-compile, bench]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every gate passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in success|skipped) ;; *) exit 1 ;; esac
+          done
