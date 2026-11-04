@@ -54,10 +54,11 @@ type goreleaser struct {
 		Args      []string
 	}
 	DockersV2 []struct {
-		Dockerfile string
-		Images     []string
-		Tags       []string
-		Platforms  []string
+		Dockerfile  string
+		Images      []string
+		Tags        []string
+		Platforms   []string
+		Annotations map[string]string
 	} `yaml:"dockers_v2"`
 	DockerDigest struct {
 		NameTemplate string `yaml:"name_template"`
@@ -67,6 +68,7 @@ type goreleaser struct {
 		Artifacts string
 		Args      []string
 	} `yaml:"docker_signs"`
+	Nfpms   []nfpm
 	Release struct {
 		Draft      bool
 		Prerelease string
@@ -294,6 +296,31 @@ func TestTheImage(t *testing.T) {
 	}
 	if !pushed {
 		t.Error("the release job must attest the image digest and push the attestation to the registry")
+	}
+}
+
+// The release pushes a multi-arch index, so its annotations go on the index
+// and on each manifest. A snapshot loads one image per platform into Docker,
+// and buildx refuses index annotations on a single-platform export, so there
+// they go on the manifest alone. GoReleaser templates annotation keys.
+const annotationScope = "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:"
+
+func TestTheImageAnnotatesTheIndexOnlyWhenItPushesOne(t *testing.T) {
+	d := loadGoreleaser(t).DockersV2[0]
+	var got []string
+	for k := range d.Annotations {
+		name, ok := strings.CutPrefix(k, annotationScope)
+		if !ok {
+			t.Errorf("annotation %q: want the key scoped as %s<name>", k, annotationScope)
+			continue
+		}
+		got = append(got, name)
+	}
+	slices.Sort(got)
+	want := []string{"org.opencontainers.image.created", "org.opencontainers.image.revision",
+		"org.opencontainers.image.source", "org.opencontainers.image.version"}
+	if !slices.Equal(got, want) {
+		t.Errorf("annotations = %v, want %v", got, want)
 	}
 }
 
