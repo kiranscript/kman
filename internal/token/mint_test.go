@@ -159,3 +159,17 @@ func TestLoggingAMintedTokenHidesTheSecret(t *testing.T) {
 		t.Errorf("log line %q does not name the token", got)
 	}
 }
+
+func TestMintAdminTokenFromReadsItsSecretFromTheReader(t *testing.T) {
+	secret := counting()
+	m, err := token.MintAdminTokenFrom(bytes.NewReader(secret[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Reveal() != goldenAdminToken {
+		t.Errorf("MintAdminTokenFrom = %q, want the golden admin token %q", m.Reveal(), goldenAdminToken)
+	}
+	if _, err := token.MintAdminTokenFrom(bytes.NewReader(secret[:31])); err == nil {
+		t.Error("MintAdminTokenFrom a short reader succeeded")
+	}
+}

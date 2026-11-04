@@ -44,6 +44,17 @@ func MintAdminToken() Minted {
 	return m
 }
 
+// MintAdminTokenFrom mints an admin token whose secret is the next 32 bytes
+// of r, so a seeded source can make reproducible fixtures. Use
+// MintAdminToken everywhere else.
+func MintAdminTokenFrom(r io.Reader) (Minted, error) {
+	var secret [32]byte
+	if _, err := io.ReadFull(r, secret[:]); err != nil {
+		return Minted{}, fmt.Errorf("token: read secret: %w", err)
+	}
+	return mint(AdminToken, "", secret)
+}
+
 func randomSecret() (secret [32]byte) {
 	rand.Read(secret[:]) // never fails (crypto/rand, Go 1.24+)
 	return secret
