@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -243,5 +244,63 @@ func TestACorruptNonceIsAnErrorNotAPanic(t *testing.T) {
 	s.Nonce = s.Nonce[:3]
 	if err := v.Put("cr_aaaaaaaaaaaa", s); !errors.Is(err, vault.ErrDecrypt) {
 		t.Fatalf("Put with a short nonce = %v, want ErrDecrypt", err)
+	}
+}
+
+func TestReadingACredentialAllocatesNothing(t *testing.T) {
+	v, _ := create(t, newFixedSource(t))
+	put(t, v, "cr_aaaaaaaaaaaa", "secret-a")
+	if n := testing.AllocsPerRun(100, func() { v.Credential("cr_aaaaaaaaaaaa") }); n != 0 {
+		t.Fatalf("Credential allocates %v times per call, want 0", n)
+	}
+}
+
+// TestReadsRunAlongsideWrites is for -race: the proxy reads one credential
+// while an operator rotates and deletes others.
+func TestReadsRunAlongsideWrites(t *testing.T) {
+	v, _ := create(t, newFixedSource(t))
+	put(t, v, "cr_aaaaaaaaaaaa", "secret-a")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range 200 {
+			s, err := v.Seal("cr_bbbbbbbbbbbb", fmt.Append(nil, "secret-b-", i))
+			if err == nil {
+				err = v.Put("cr_bbbbbbbbbbbb", s)
+			}
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if i%3 == 0 {
+				v.Delete("cr_bbbbbbbbbbbb")
+			}
+		}
+	}()
+	for {
+		select {
+		case <-done:
+			return
+		default:
+		}
+		if got, ok := v.Credential("cr_aaaaaaaaaaaa"); !ok || string(got) != "secret-a" {
+			t.Fatalf("Credential = %q, %v during writes to another credential", got, ok)
+		}
+	}
+}
+
+func BenchmarkCredential(b *testing.B) {
+	v, _, err := vault.Create(&fixedSource{key: vault.NewMasterKey()}, vault.Options{AllowDebug: true})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer v.Close()
+	s, _ := v.Seal("cr_aaaaaaaaaaaa", []byte("sk-real-upstream-secret"))
+	if err := v.Put("cr_aaaaaaaaaaaa", s); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		v.Credential("cr_aaaaaaaaaaaa")
 	}
 }
