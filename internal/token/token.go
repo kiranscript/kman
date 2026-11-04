@@ -2,7 +2,10 @@
 // token and the key id inside a virtual key. It is a leaf: it imports no
 // other internal package, so any module may import it (ADR 0006).
 //
-// The token formats themselves are fixed by ADR 0001.
+// The token formats are fixed by ADR 0001. Parse checks a token offline and
+// returns its kind, key id and secret hash; MintVirtualKey, MintChildKey and
+// MintAdminToken make new ones; Scanner finds keys in text. Only the SHA-256
+// Hash of a secret leaves this package for storage.
 package token
 
 import "strconv"
