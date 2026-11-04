@@ -52,6 +52,11 @@ type Store struct {
 // the directory and its files, copies the database aside if it needs a
 // migration, and runs every pending migration.
 func Open(ctx context.Context, opts Options) (*Store, error) {
+	return open(ctx, opts, migrations)
+}
+
+// open is Open with the migrations given, so tests can stand in later ones.
+func open(ctx context.Context, opts Options, ms []migration) (*Store, error) {
 	if opts.Dir == "" {
 		return nil, errors.New("store: no data directory")
 	}
@@ -88,7 +93,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	db.SetConnMaxIdleTime(0)
 	db.SetConnMaxLifetime(0)
 	s.db = db
-	if err := s.start(ctx, opts.Now); err != nil {
+	if err := s.start(ctx, opts.Now, ms); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -96,11 +101,11 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 }
 
 // start connects, migrates, and then tightens the files SQLite created.
-func (s *Store) start(ctx context.Context, now time.Time) error {
+func (s *Store) start(ctx context.Context, now time.Time, ms []migration) error {
 	if err := s.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("store: open %s: %w", s.path, err)
 	}
-	if err := s.migrate(ctx, now, migrations); err != nil {
+	if err := s.migrate(ctx, now, ms); err != nil {
 		return err
 	}
 	for _, p := range []string{s.path, s.path + "-wal", s.path + "-shm"} {

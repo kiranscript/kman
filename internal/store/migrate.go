@@ -34,6 +34,16 @@ func (s *Store) migrate(ctx context.Context, now time.Time, ms []migration) erro
 	if v > len(ms) {
 		return fmt.Errorf("store: %w: the database is at schema %d and this kman knows up to %d", ErrNewerSchema, v, len(ms))
 	}
+	if v == len(ms) {
+		return nil
+	}
+	// A new database has nothing to keep. Any other is copied aside first,
+	// so a failed or unwanted upgrade can be undone by restoring the copy.
+	if v > 0 {
+		if err := s.copyAside(ctx, len(ms)); err != nil {
+			return err
+		}
+	}
 	env := migrationEnv{now: now, rand: s.rand}
 	for i := v; i < len(ms); i++ {
 		if err := s.apply(ctx, i+1, ms[i], env); err != nil {
