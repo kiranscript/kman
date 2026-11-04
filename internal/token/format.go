@@ -80,11 +80,15 @@ func Parse(s string) (Token, error) {
 // maxBody is the longest token before its checksum: a child key.
 const maxBody = len(childPrefix) + idLen + 1 + secretLen
 
-// checksum is the CRC32 of everything in a token before the checksum.
+// checksum is the CRC32 (IEEE) of everything in a token before the checksum.
+// It walks the string with the table itself because crc32.ChecksumIEEE would
+// need a []byte that escapes, an allocation on every request.
 func checksum(body string) uint32 {
-	var b [maxBody]byte
-	n := copy(b[:], body)
-	return crc32.ChecksumIEEE(b[:n])
+	crc := ^uint32(0)
+	for i := 0; i < len(body); i++ {
+		crc = crc32.IEEETable[byte(crc)^body[i]] ^ crc>>8
+	}
+	return ^crc
 }
 
 func hashSecret(secret string) Hash {
