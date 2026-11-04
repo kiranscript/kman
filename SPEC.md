@@ -49,7 +49,7 @@ These hold in every milestone. Each has a test.
 
 ## 2. Architecture
 
-Fifteen modules, one Go package each under `internal/`, with an import rule checked by a `go list` test ([ADR 0006](docs/adr/0006-module-map.md)).
+Fifteen modules, one Go package each under `internal/`, plus the `token` leaf package, with an import rule checked by a `go list` test ([ADR 0006](docs/adr/0006-module-map.md)).
 
 | Module | Interface | Owns |
 |---|---|---|
@@ -68,8 +68,9 @@ Fifteen modules, one Go package each under `internal/`, with an import rule chec
 | `sessions` | `Open`, `CloseKey(keyID)`, child-key mint | Live realtime sessions and in-memory child keys. |
 | `admin` | one command per operation | Store transaction → registry update → audit entry. |
 | `adminapi`, `dashboard`, `cli` | transports over `admin` | Typed DTOs and OpenAPI, templ pages, the one typed client. |
+| `token` | `Kind`, `KeyID`, and the token formats | A leaf: the token types shared by every module, and minting and parsing per ADR 0001. It imports no internal package. |
 
-Import rule: transports import only `admin`. `admin` imports `store`, `registry`, `vault`, `events`, `sessions`. `gateway` imports `registry`, `policy`, `limiter`, `meter`, `vault`, `profiles`, `events`, `sessions`, and never `admin`. Nothing imports a transport. `detect` decides; `admin` executes its decisions as actor `system:detect`.
+Import rule: transports import only `admin`. `admin` imports `store`, `registry`, `vault`, `events`, `sessions`. `gateway` imports `registry`, `policy`, `limiter`, `meter`, `vault`, `profiles`, `events`, `sessions`, and never `admin`. Nothing imports a transport. `token` is a leaf that imports no internal package, and any module may import it. `detect` decides; `admin` executes its decisions as actor `system:detect`.
 
 ## 3. Install, first run, and configuration
 
