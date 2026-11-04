@@ -103,7 +103,7 @@ func TestPullRequestsTouchingReleaseConfigGetASnapshotDryRun(t *testing.T) {
 		paths[p.(string)] = true
 	}
 	for _, want := range []string{
-		".goreleaser.yaml", "Dockerfile", "install.sh", "go.mod", "scripts/**",
+		".goreleaser.yaml", "Dockerfile", "install.sh", "go.mod", "go.sum", "scripts/**",
 		".github/workflows/release.yml", ".github/workflows/release-snapshot.yml",
 	} {
 		if !paths[want] {

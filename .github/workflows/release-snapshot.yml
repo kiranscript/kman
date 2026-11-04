@@ -11,6 +11,7 @@ on:
       - Dockerfile
       - install.sh
       - go.mod
+      - go.sum
       - scripts/**
       - .github/workflows/release.yml
       - .github/workflows/release-snapshot.yml
