@@ -1,0 +1,149 @@
+# GoReleaser OSS configuration for kman releases (SPEC §15).
+#
+# Run only by .github/workflows/release.yml (a pushed v* tag) and by its
+# snapshot dry run (release-snapshot.yml). Build locally with:
+#   goreleaser release --snapshot --clean --skip=sign,docker
+#
+# Reproducibility: CGO off, -trimpath, every timestamp from the commit, and the
+# Go toolchain pinned in go.mod. The post-release job rebuilds the tag and
+# compares checksums.
+version: 2
+
+project_name: kman
+
+builds:
+  - id: kman
+    main: ./cmd/kman
+    binary: kman
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    # Symbols are kept so govulncheck can scan a released binary.
+    ldflags:
+      - -X main.version=v{{ .Version }} -X main.commit={{ .FullCommit }} -X main.date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: kman
+    ids: [kman]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Fixed owner and times, so an archive is the same on any machine.
+    builds_info:
+      owner: root
+      group: root
+      mtime: "{{ .CommitDate }}"
+    files:
+      - src: LICENSE*
+        info:
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
+      - src: README*
+        info:
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
+      - src: CHANGELOG*
+        info:
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
+
+source:
+  enabled: true
+  format: tar.gz
+  name_template: "{{ .ProjectName }}_{{ .Version }}"
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# One SPDX 2.3 SBOM per archive and one for the source, named
+# <artifact>.spdx.json (the OpenSSF naming convention). The release job also
+# attests each one.
+sboms:
+  - id: archives
+    artifacts: archive
+    documents: ["{{ .ArtifactName }}.spdx.json"]
+    args: ["$artifact", "--output", "spdx-json@2.3=$document"]
+  - id: source
+    artifacts: source
+    documents: ["{{ .ArtifactName }}.spdx.json"]
+    args: ["$artifact", "--output", "spdx-json@2.3=$document"]
+
+# cosign v3 signs checksums.txt once, keylessly, as release.yml at the tag.
+# The checksums cover every archive and SBOM, so one bundle covers them all.
+signs:
+  - id: checksums
+    cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args: ["sign-blob", "--bundle=${signature}", "${artifact}", "--yes"]
+    output: true
+
+# The image copies the released linux binaries; nothing is rebuilt in Docker.
+dockers_v2:
+  - id: kman
+    ids: [kman]
+    dockerfile: Dockerfile
+    images: ["ghcr.io/kirank55/kman"]
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms: [linux/amd64, linux/arm64]
+    labels:
+      org.opencontainers.image.title: kman
+      org.opencontainers.image.source: https://github.com/kirank55/kman
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.created: "{{ .CommitDate }}"
+    annotations:
+      "index,manifest:org.opencontainers.image.source": https://github.com/kirank55/kman
+      "index,manifest:org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "index,manifest:org.opencontainers.image.version": "{{ .Version }}"
+      "index,manifest:org.opencontainers.image.created": "{{ .CommitDate }}"
+
+docker_digest:
+  name_template: digests.txt
+
+# Signed by digest, never by tag.
+docker_signs:
+  - id: kman
+    cmd: cosign
+    args: ["sign", "${artifact}@${digest}", "--yes"]
+    output: true
+
+# Every GitHub release starts as a draft while assets upload. kman's stays a
+# draft until release.yml has attached the attestation bundle, then
+# release.yml publishes it. With immutable releases on, nothing changes after.
+release:
+  github:
+    owner: kirank55
+    name: kman
+  draft: true
+  replace_existing_draft: true
+  prerelease: auto
+  make_latest: "{{ not .Prerelease }}"
+  mode: replace
+  preflight:
+    fail_on_error: true
+
+# The release notes are the tag's CHANGELOG.md section (--release-notes).
+changelog:
+  disable: true
+
+metadata:
+  mod_timestamp: "{{ .CommitTimestamp }}"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
