@@ -67,8 +67,20 @@ func (c *call) credentialsPath() (string, error) {
 }
 
 // login reads the credentials file, with KMAN_ADMIN_URL and
-// KMAN_ADMIN_TOKEN overriding what it holds.
+// KMAN_ADMIN_TOKEN overriding what it holds. No token is an error.
 func (c *call) login() (login, error) {
+	l, err := c.loginOrNone()
+	if err != nil {
+		return login{}, err
+	}
+	if l.token == "" {
+		return login{}, fmt.Errorf("no admin token: run kman login --admin-url <url>, or set %s", TokenEnv)
+	}
+	return l, nil
+}
+
+// loginOrNone is login, but with no token as an empty one.
+func (c *call) loginOrNone() (login, error) {
 	path, err := c.credentialsPath()
 	if err != nil {
 		return login{}, err
@@ -93,9 +105,6 @@ func (c *call) login() (login, error) {
 	}
 	if t := strings.TrimSpace(c.env.Getenv(TokenEnv)); t != "" {
 		l.token, l.tokenFrom = t, TokenEnv
-	}
-	if l.token == "" {
-		return login{}, fmt.Errorf("no admin token: run kman login --admin-url <url>, or set %s", TokenEnv)
 	}
 	return l, nil
 }

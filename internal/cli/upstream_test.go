@@ -166,16 +166,15 @@ func TestUpstreamUpdateChangesOnlyTheFlagsGiven(t *testing.T) {
 func TestRmRefusesWhileAKeyDependsAndWorksOtherwise(t *testing.T) {
 	in := newInstall(t).loggedIn(t)
 	in.kmanIn(t, secret+"\n", "upstream", "add", "openai", "--preset", "openai")
-	var u admin.Upstream
-	in.kmanJSON(t, &u, "upstream", "show", "openai")
-	in.seedKey(t, "abcd1234", u.Credentials[0].ID, "active")
+	var created admin.CreatedKey
+	in.kmanJSON(t, &created, "key", "create", "my-app", "--upstream", "openai")
 	for _, args := range [][]string{{"upstream", "rm", "openai"}, {"credential", "rm", "openai"}} {
 		r := in.run(t, nil, "", args...)
-		if r.code != 1 || !strings.Contains(r.stderr, "abcd1234") {
+		if r.code != 1 || !strings.Contains(r.stderr, created.Key.ID) {
 			t.Errorf("kman %v: exit %d, %s", args, r.code, r.stderr)
 		}
 	}
-	in.seedKeyStatus(t, "abcd1234", "revoked")
+	in.setKeyStatus(t, created.Key.ID, "revoked")
 	out := in.kman(t, "upstream", "rm", "openai")
 	if !strings.Contains(out, "openai") {
 		t.Errorf("output: %s", out)

@@ -16,6 +16,7 @@ import (
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
 	"github.com/kirank55/kman/internal/cli"
+	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/store"
@@ -57,14 +58,8 @@ func (in *install) sqlExec(t *testing.T, query string, args ...any) {
 	}
 }
 
-// seedKey writes a virtual key on a credential: until #36 no command makes one.
-func (in *install) seedKey(t *testing.T, keyID, credentialID, status string) {
-	t.Helper()
-	in.sqlExec(t, `INSERT INTO virtual_keys (key_id, name, credential_id, kind, status, policy_version, created_at, generation)
-		VALUES (?, ?, ?, 'standard', ?, 1, 0, 1)`, keyID, "key-"+keyID, credentialID, status)
-}
-
-func (in *install) seedKeyStatus(t *testing.T, keyID, status string) {
+// setKeyStatus moves a key to a status no command reaches yet (#44).
+func (in *install) setKeyStatus(t *testing.T, keyID, status string) {
 	t.Helper()
 	in.sqlExec(t, `UPDATE virtual_keys SET status = ? WHERE key_id = ?`, status, keyID)
 }
@@ -123,7 +118,7 @@ func newInstallWith(t *testing.T, presets []registry.Preset, opts ...func(*admin
 		t.Fatal(err)
 	}
 	newService := func(presets []registry.Preset) *admin.Service {
-		return admin.New(admin.Options{Store: st, Now: func() time.Time { return t0 }, Vault: v, Presets: presets,
+		return admin.New(admin.Options{Store: st, Now: func() time.Time { return t0 }, Vault: v, Presets: presets, NormalizePolicy: policy.Normalize,
 			Prices: func() admin.PriceTable { return prices }})
 	}
 	svc := newService(presets)
