@@ -1,0 +1,145 @@
+{
+ "anthropic": {
+  "claude-fable-5-1": {
+   "checked": "2026-11-06",
+   "max_output": 128000,
+   "source": "https://platform.claude.com/docs/en/about-claude/models/overview"
+  },
+  "claude-haiku-5-5": {
+   "checked": "2026-11-06",
+   "max_output": 128000,
+   "source": "https://platform.claude.com/docs/en/about-claude/models/overview"
+  },
+  "claude-opus-5-5": {
+   "checked": "2026-11-06",
+   "max_output": 128000,
+   "source": "https://platform.claude.com/docs/en/about-claude/models/overview"
+  },
+  "claude-sonnet-5-5": {
+   "checked": "2026-11-06",
+   "max_output": 128000,
+   "source": "https://platform.claude.com/docs/en/about-claude/models/overview"
+  }
+ },
+ "cerebras": {
+  "gpt-oss-120b": {
+   "checked": "2026-11-03",
+   "max_output": 40960,
+   "source": "https://inference-docs.cerebras.ai/models/openai-oss.md"
+  }
+ },
+ "deepseek": {
+  "deepseek-v4-pro": {
+   "checked": "2026-11-03",
+   "max_output": 393216,
+   "source": "https://api-docs.deepseek.com/quick_start/pricing"
+  }
+ },
+ "gemini": {
+  "gemini-2.5-flash": {
+   "checked": "2026-11-06",
+   "max_output": 65536,
+   "source": "https://aistudio.google.com/docs/models/gemini-2.5-flash"
+  },
+  "gemini-2.5-pro": {
+   "checked": "2026-11-06",
+   "max_output": 65536,
+   "source": "https://aistudio.google.com/docs/models/gemini-2.5-pro"
+  },
+  "gemini-3.5-flash-lite": {
+   "checked": "2026-11-06",
+   "max_output": 65536,
+   "source": "https://aistudio.google.com/docs/models/gemini-3.5-flash-lite"
+  }
+ },
+ "groq": {
+  "openai/gpt-oss-120b": {
+   "checked": "2026-11-06",
+   "max_output": 65536,
+   "source": "https://console.groq.com/docs/model/openai/gpt-oss-120b"
+  },
+  "openai/gpt-oss-20b": {
+   "checked": "2026-11-06",
+   "max_output": 65536,
+   "source": "https://console.groq.com/docs/model/openai/gpt-oss-20b"
+  }
+ },
+ "openai": {
+  "gpt-4.1": {
+   "checked": "2026-11-06",
+   "max_output": 32768,
+   "source": "https://developers.openai.com/api/docs/models/gpt-4.1"
+  },
+  "gpt-4.1-mini": {
+   "checked": "2026-11-06",
+   "max_output": 32768,
+   "source": "https://developers.openai.com/api/docs/models/gpt-4.1-mini"
+  },
+  "gpt-4.1-nano": {
+   "checked": "2026-11-06",
+   "max_output": 32768,
+   "source": "https://developers.openai.com/api/docs/models/gpt-4.1-nano"
+  },
+  "gpt-4o": {
+   "checked": "2026-11-06",
+   "max_output": 16384,
+   "source": "https://developers.openai.com/api/docs/models/gpt-4o"
+  },
+  "gpt-4o-mini": {
+   "checked": "2026-11-06",
+   "max_output": 16384,
+   "source": "https://developers.openai.com/api/docs/models/gpt-4o-mini"
+  },
+  "gpt-5": {
+   "checked": "2026-11-06",
+   "max_output": 128000,
+   "source": "https://developers.openai.com/api/docs/models/gpt-5"
+  },
+  "gpt-5-mini": {
+   "checked": "2026-11-06",
+   "max_output": 128000,
+   "source": "https://developers.openai.com/api/docs/models/gpt-5-mini"
+  },
+  "gpt-5.4": {
+   "checked": "2026-11-06",
+   "max_output": 128000,
+   "source": "https://developers.openai.com/api/docs/models/gpt-5.4"
+  },
+  "o3": {
+   "checked": "2026-11-06",
+   "max_output": 100000,
+   "source": "https://developers.openai.com/api/docs/models/o3"
+  },
+  "o4-mini": {
+   "checked": "2026-11-06",
+   "max_output": 100000,
+   "source": "https://developers.openai.com/api/docs/models/o4-mini"
+  }
+ },
+ "xai": {
+  "grok-4.3": {
+   "checked": "2026-11-06",
+   "equals_context": "xAI's models page lists a context window and no separate output limit, so the context window is the upper bound.",
+   "max_output": 1000000,
+   "source": "https://docs.x.ai/docs/models"
+  },
+  "grok-4.6": {
+   "checked": "2026-11-06",
+   "equals_context": "xAI's models page lists a context window and no separate output limit, so the context window is the upper bound.",
+   "max_output": 500000,
+   "source": "https://docs.x.ai/docs/models"
+  },
+  "grok-4.7": {
+   "checked": "2026-11-06",
+   "equals_context": "xAI's models page lists a context window and no separate output limit, so the context window is the upper bound.",
+   "max_output": 500000,
+   "source": "https://docs.x.ai/docs/models"
+  },
+  "grok-build-0.1": {
+   "checked": "2026-11-06",
+   "equals_context": "xAI's models page lists a context window and no separate output limit, so the context window is the upper bound.",
+   "max_output": 256000,
+   "source": "https://docs.x.ai/docs/models"
+  }
+ }
+}

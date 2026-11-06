@@ -97,3 +97,24 @@ func TestClockGateCatchesPlantedViolations(t *testing.T) {
 func TestRepoKeepsTheClockSeam(t *testing.T) {
 	assertViolations(t, gates.CheckClock(repo(t)), nil)
 }
+
+func TestOfflineGateCatchesPlantedViolations(t *testing.T) {
+	assertViolations(t, gates.CheckOffline("internal/pricing", []string{"encoding/json", "net", "net/http", "os/exec"}), []string{
+		"internal/pricing: depends on net; price data is never fetched at runtime (ADR 0007)",
+		"internal/pricing: depends on net/http; price data is never fetched at runtime (ADR 0007)",
+		"internal/pricing: depends on os/exec; price data is never fetched at runtime (ADR 0007)",
+	})
+}
+
+// TestPricingCannotReachTheNetwork is the invariant of ADR 0007 at its root: the
+// module holding the price table links no code that could fetch one.
+func TestPricingCannotReachTheNetwork(t *testing.T) {
+	deps, err := gates.Deps("..", "./internal/pricing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(deps, "encoding/json") {
+		t.Fatalf("the dependency list looks wrong: %q", deps)
+	}
+	assertViolations(t, gates.CheckOffline("internal/pricing", deps), nil)
+}

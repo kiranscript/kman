@@ -3,6 +3,7 @@ package pricing
 import (
 	"bytes"
 	"cmp"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,8 +11,22 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
+
+//go:embed table.json
+var builtinTable []byte
+
+// Builtin returns the table embedded in this binary. A test parses it on every
+// build, so a bad one never ships.
+var Builtin = sync.OnceValue(func() *Table {
+	t, err := Parse(builtinTable)
+	if err != nil {
+		panic(err)
+	}
+	return t
+})
 
 // Schema is the version of the table's file format that Parse reads.
 const Schema = 1
@@ -60,9 +75,9 @@ type Entry struct {
 	Reviewed bool `json:"reviewed,omitzero"`
 	Schedule
 	Tiers        map[string]*Schedule `json:"tiers,omitempty"`         // by service tier: batch, flex, priority, fast...
-	PerMinute    int64               `json:"per_minute,omitzero"`     // voice: microdollars per minute, billed per second
-	PerTextInput int64               `json:"per_text_input,omitzero"` // voice: microdollars per text input
-	ToolFees     map[string]int64    `json:"tools,omitempty"`         // microdollars per server-tool call, by tool
+	PerMinute    int64                `json:"per_minute,omitzero"`     // voice: microdollars per minute, billed per second
+	PerTextInput int64                `json:"per_text_input,omitzero"` // voice: microdollars per text input
+	ToolFees     map[string]int64     `json:"tools,omitempty"`         // microdollars per server-tool call, by tool
 }
 
 // Source names one dataset a table was generated from.
