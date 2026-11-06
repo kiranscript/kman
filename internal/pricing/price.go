@@ -8,7 +8,9 @@ import (
 
 // Request is what's known about a request before it's forwarded.
 type Request struct {
+	UpstreamID    string // finds its overrides; empty sees only the install's
 	Preset, Model string
+	MultiplierPPM int64 // the upstream's price multiplier; 1,000,000 is ×1, as is 0
 	RequestBytes  int64
 	MaxTokens     int64 // the request's max_tokens; 0 when unset
 	ServiceTier   string
@@ -27,10 +29,11 @@ type Estimate struct {
 // output allowance at the output price. The allowance is max_tokens capped at
 // the model's max output, or the max output when unset. The long-context band
 // comes from the estimated input. With no tier requested, or one the table
-// doesn't know, it reserves at the highest known. It reports false for a model
-// the table doesn't know.
+// doesn't know, it reserves at the highest known. The upstream's multiplier
+// scales it unless the upstream's own override set the price. It reports false
+// for a model the table doesn't know.
 func (t *Table) Estimate(r Request) (Estimate, bool) {
-	e, ok := t.Lookup(r.Preset, r.Model)
+	e, origin, ok := t.Resolve(r.UpstreamID, r.Preset, r.Model)
 	if !ok {
 		return Estimate{}, false
 	}
@@ -42,13 +45,18 @@ func (t *Table) Estimate(r Request) (Estimate, bool) {
 	}
 	u := Usage{InputTokens: input, OutputTokens: output, Duration: r.Duration}
 	sched, tier := e.pick(r.ServiceTier, true, &u)
-	return Estimate{Micro: e.charge(sched, &u), InputTokens: input, OutputTokens: output, ServiceTier: tier}, true
+	micro := multiplied(e.charge(sched, &u), origin, r.MultiplierPPM)
+	return Estimate{Micro: micro, InputTokens: input, OutputTokens: output, ServiceTier: tier}, true
 }
 
 // Usage is what a response reported. Token counts are disjoint: InputTokens
 // holds neither cached, cache-write nor audio tokens.
 type Usage struct {
-	Preset string
+	UpstreamID string // finds its overrides; empty sees only the install's
+	Preset     string
+	// MultiplierPPM is the upstream's price multiplier: 1,000,000 is ×1, as
+	// is 0.
+	MultiplierPPM int64
 	// Model is the model the response names, or the requested one when it
 	// names none. RequestedModel is what to charge when the table doesn't
 	// know Model.
@@ -89,23 +97,34 @@ type Cost struct {
 // Cost prices a response at what the upstream reports: its model when the table
 // knows it (else the requested one), the band its actual input falls in, and
 // its tier (the base schedule when none is reported, and the highest known when
-// the table doesn't know it). A provider-reported cost is final and needs no
-// price. It reports false when the table knows neither model.
+// the table doesn't know it). The upstream's multiplier scales it unless the
+// upstream's own override set the price. A provider-reported cost is final and
+// needs no price. It reports false when the table knows neither model.
 func (t *Table) Cost(u Usage) (Cost, bool) {
 	if u.ReportedCost {
 		return Cost{Micro: max(u.ReportedMicro, 0), Reported: true}, true
 	}
 	model := u.Model
-	e, ok := t.Lookup(u.Preset, model)
+	e, origin, ok := t.Resolve(u.UpstreamID, u.Preset, model)
 	if !ok && u.RequestedModel != "" {
 		model = u.RequestedModel
-		e, ok = t.Lookup(u.Preset, model)
+		e, origin, ok = t.Resolve(u.UpstreamID, u.Preset, model)
 	}
 	if !ok {
 		return Cost{}, false
 	}
 	sched, tier := e.pick(u.ServiceTier, false, &u)
-	return Cost{Micro: e.charge(sched, &u), Model: model, ServiceTier: tier}, true
+	return Cost{Micro: multiplied(e.charge(sched, &u), origin, u.MultiplierPPM), Model: model, ServiceTier: tier}, true
+}
+
+// multiplied applies an upstream's price multiplier to a charge. It scales the
+// charge, not each rate, which picks the same schedule and costs no allocation.
+// A per-upstream override is that upstream's own price, so it stays as it is.
+func multiplied(micro int64, origin Origin, ppm int64) int64 {
+	if ppm == 0 || origin == OriginUpstreamOverride {
+		return micro
+	}
+	return mulDivCeil(micro, ppm, 1_000_000)
 }
 
 // pick chooses the schedule for a named tier. The names default and standard

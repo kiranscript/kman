@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -67,7 +68,7 @@ type Schedule struct {
 // Entry is what one model costs on one upstream kind, and how much it can
 // output in one response.
 type Entry struct {
-	Mode          string `json:"mode"` // chat, responses, completion, embedding or realtime
+	Mode          string `json:"mode"` // chat, responses, completion, embedding or realtime; empty on an override
 	ContextWindow int64  `json:"context,omitzero"`
 	MaxOutput     int64  `json:"max_output,omitzero"`
 	// Reviewed says MaxOutput came from the reviewed data file, checked
@@ -98,12 +99,15 @@ type Data struct {
 	Presets     map[string]map[string]Entry `json:"presets,omitempty"`
 }
 
-// Table answers what models cost. It is immutable: the request path reads it
-// without locks.
+// Table answers what models cost: the built-in entries, and the price overrides
+// in front of them. It is immutable: the request path reads it without locks.
 type Table struct {
 	generatedAt time.Time
 	global      map[string]*Entry
 	presets     map[string]map[string]*Entry
+
+	installOverrides  map[string]*Entry
+	upstreamOverrides map[string]map[string]*Entry // by upstream id
 }
 
 // Parse reads and checks a table file, refusing one that can't be enforced.
@@ -209,26 +213,121 @@ func (t *Table) Age(now time.Time) time.Duration { return max(now.Sub(t.generate
 // what kman says, never what kman enforces.
 func (t *Table) Stale(now time.Time) bool { return t.Age(now) > StaleAfter }
 
-// Lookup returns the entry for model on an upstream built from preset: the
-// preset's own entry, then the global one. Ids match exactly: no stripping of
-// date suffixes and no fallback by prefix. An empty preset means a custom
-// upstream, which sees only the global entries.
-func (t *Table) Lookup(preset, model string) (*Entry, bool) {
-	if e, ok := t.presets[preset][model]; ok {
-		return e, true
-	}
-	e, ok := t.global[model]
+// BuiltinEntry returns the built-in entry for model on an upstream built from
+// preset, ignoring overrides: the preset's own entry, then the global one. Ids
+// match exactly: no stripping of date suffixes and no fallback by prefix. An
+// empty preset means a custom upstream, which sees only the global entries.
+// What a request costs comes from Resolve.
+func (t *Table) BuiltinEntry(preset, model string) (*Entry, bool) {
+	e, _, ok := t.builtin(preset, model)
 	return e, ok
 }
 
-// Listed is one row of the table.
+func (t *Table) builtin(preset, model string) (*Entry, Origin, bool) {
+	if e, ok := t.presets[preset][model]; ok {
+		return e, OriginPreset, true
+	}
+	e, ok := t.global[model]
+	return e, OriginGlobal, ok
+}
+
+// Origin says where Resolve found an entry.
+type Origin int
+
+const (
+	OriginUpstreamOverride Origin = iota + 1
+	OriginInstallOverride
+	OriginPreset
+	OriginGlobal
+)
+
+// Resolve returns the entry that prices model on one upstream, and where it
+// came from: that upstream's override, the install's override, the preset's
+// built-in entry, then the global built-in entry. An override wins until it is
+// removed, and replaces the whole entry, its tiers and fees included.
+func (t *Table) Resolve(upstreamID, preset, model string) (*Entry, Origin, bool) {
+	if e, ok := t.upstreamOverrides[upstreamID][model]; ok {
+		return e, OriginUpstreamOverride, true
+	}
+	if e, ok := t.installOverrides[model]; ok {
+		return e, OriginInstallOverride, true
+	}
+	return t.builtin(preset, model)
+}
+
+// Override is an operator's price for one model, whole: rates that are nil fall
+// back as Rates says.
+type Override struct {
+	UpstreamID string // empty for the whole install
+	Model      string
+	MaxOutput  int64
+	Rates
+}
+
+// WithOverrides returns a table with t's built-in entries and exactly these
+// overrides, in place of any t had. It refuses a set that can't be enforced.
+func (t *Table) WithOverrides(overrides []Override) (*Table, error) {
+	next := &Table{generatedAt: t.generatedAt, global: t.global, presets: t.presets,
+		installOverrides: map[string]*Entry{}, upstreamOverrides: map[string]map[string]*Entry{}}
+	for _, o := range overrides {
+		if o.Model == "" {
+			return nil, errors.New("price override: no model")
+		}
+		e := &Entry{MaxOutput: o.MaxOutput, Schedule: Schedule{Rates: o.Rates}}
+		if err := e.check(); err != nil {
+			return nil, fmt.Errorf("price override of %q: %w", o.Model, err)
+		}
+		entries := next.installOverrides
+		if o.UpstreamID != "" {
+			if next.upstreamOverrides[o.UpstreamID] == nil {
+				next.upstreamOverrides[o.UpstreamID] = map[string]*Entry{}
+			}
+			entries = next.upstreamOverrides[o.UpstreamID]
+		}
+		if _, dup := entries[o.Model]; dup {
+			return nil, fmt.Errorf("price override of %q: given twice", o.Model)
+		}
+		entries[o.Model] = e
+	}
+	return next, nil
+}
+
+// Prices is the table in force. A change of overrides swaps a whole new table
+// in, so a reader sees all of a change or none of it and takes no lock.
+type Prices struct {
+	cur atomic.Pointer[Table]
+}
+
+// NewPrices returns t as the table in force.
+func NewPrices(t *Table) *Prices {
+	p := &Prices{}
+	p.cur.Store(t)
+	return p
+}
+
+// Table returns the table in force. A holder keeps a consistent table for as
+// long as it holds it.
+func (p *Prices) Table() *Table { return p.cur.Load() }
+
+// SetOverrides replaces every override. If it refuses the set, the table in
+// force stays as it was. Callers run one at a time: admin's commands do.
+func (p *Prices) SetOverrides(overrides []Override) error {
+	next, err := p.cur.Load().WithOverrides(overrides)
+	if err != nil {
+		return err
+	}
+	p.cur.Store(next)
+	return nil
+}
+
+// Listed is one built-in row of the table.
 type Listed struct {
 	Preset string // empty for a global entry
 	Model  string
 	Entry  *Entry
 }
 
-// All yields every row, the global ones first, then by preset and model.
+// All yields every built-in row, the global ones first, then by preset and model.
 func (t *Table) All() iter.Seq[Listed] {
 	return func(yield func(Listed) bool) {
 		for _, preset := range append([]string{""}, slices.Sorted(maps.Keys(t.presets))...) {

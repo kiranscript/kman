@@ -167,7 +167,7 @@ func TestLLMPresetsAndThePriceTableSectionsNameTheSameThings(t *testing.T) {
 			}
 			model = global
 		}
-		if _, ok := table.Lookup(p.Name, model); !ok {
+		if _, ok := table.BuiltinEntry(p.Name, model); !ok {
 			t.Errorf("preset %s does not find %s in the price table", p.Name, model)
 		}
 	}
