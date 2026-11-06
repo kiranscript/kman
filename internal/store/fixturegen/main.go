@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/kirank55/kman/internal/admin"
+	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/store"
@@ -131,7 +132,7 @@ func newDataKey(ctx context.Context, s *store.Store, rng io.Reader) (*vault.Vaul
 // seedAdmin makes what the admin commands make: the owner token as init
 // does, a live and a revoked token, a rotation, changed settings, upstreams
 // from a preset and by hand, credentials on them, one replaced and renamed,
-// and an upstream and its credential deleted.
+// an upstream and its credential deleted, and virtual keys, one updated.
 func seedAdmin(ctx context.Context, s *store.Store, rng io.Reader) error {
 	v, err := newDataKey(ctx, s, rng)
 	if err != nil {
@@ -140,7 +141,7 @@ func seedAdmin(ctx context.Context, s *store.Store, rng io.Reader) error {
 	defer v.Close()
 	reg := registry.New()
 	svc := admin.New(admin.Options{Store: s, Now: func() time.Time { return fixedNow }, Rand: rng,
-		Vault: v, Presets: profiles.Presets(), Apply: reg.Apply})
+		Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, NormalizePolicy: policy.Normalize})
 	as := func(actor string) context.Context {
 		return admin.WithCaller(ctx, admin.Caller{Actor: actor, ClientIP: "127.0.0.1"})
 	}
@@ -206,6 +207,21 @@ func seedAdmin(ctx context.Context, s *store.Store, rng io.Reader) error {
 		},
 		func() error {
 			_, err := svc.RemoveUpstream(as("owner"), admin.UpstreamRef{Ref: "gone"})
+			return err
+		},
+		func() error {
+			_, err := svc.CreateKey(as("owner"), admin.CreateKeyRequest{Upstream: "openai"})
+			return err
+		},
+		func() error {
+			week := int64(7 * 24 * 60 * 60)
+			created, err := svc.CreateKey(as("owner"), admin.CreateKeyRequest{Name: "billing", Upstream: "anthropic", Credential: "primary",
+				TTLSeconds: &week, Note: "the billing job", Tags: []string{"prod", "team:billing"}})
+			if err != nil {
+				return err
+			}
+			note, month := "moved to the new job", int64(30*24*60*60)
+			_, err = svc.UpdateKey(as("ci"), admin.KeyUpdate{ID: created.Key.ID, Note: &note, TTLSeconds: &month})
 			return err
 		},
 	} {

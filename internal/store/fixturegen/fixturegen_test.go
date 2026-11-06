@@ -62,6 +62,27 @@ func TestGenerateWritesAnOpenableInstall(t *testing.T) {
 		if got := strings.Join(names, " "); got != "acme anthropic openai" {
 			t.Errorf("upstreams = %s, want acme anthropic openai (and gone deleted)", got)
 		}
+		keys, err := tx.Keys()
+		if err != nil {
+			return err
+		}
+		if len(keys) != 2 {
+			t.Errorf("keys = %+v, want 2", keys)
+		}
+		billing, err := tx.KeyByName("billing")
+		if err != nil {
+			return err
+		}
+		if billing.Note != "moved to the new job" || billing.TagsJSON != `["prod","team:billing"]` || billing.PolicyJSON != `{}` {
+			t.Errorf("billing = %+v", billing)
+		}
+		secrets, err := tx.KeySecrets(billing.ID)
+		if err != nil {
+			return err
+		}
+		if len(secrets) != 1 || len(secrets[0].Hash) != 32 {
+			t.Errorf("billing's secrets = %+v", secrets)
+		}
 		openai, err := tx.UpstreamByName("openai")
 		if err != nil {
 			return err
