@@ -16,6 +16,7 @@ import (
 
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
+	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/store"
@@ -105,7 +106,7 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 
 	// The gateway (#37) will read reg and v on the request path.
 	reg := registry.New()
-	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices})
+	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices, NormalizePolicy: policy.Normalize})
 	if err := svc.Load(ctx); err != nil {
 		return err
 	}

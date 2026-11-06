@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kirank55/kman/internal/admin"
+	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/store"
@@ -30,6 +31,9 @@ type install struct {
 	now     time.Time
 	owner   string // the owner token's secret
 	applied []registry.Change
+	// normalize is the policy's rules; a test may swap them for rules that
+	// know more fields than policy does yet.
+	normalize func([]byte) (int, []byte, error)
 }
 
 func newInstall(t *testing.T) *install {
@@ -45,7 +49,7 @@ func newInstallWith(t *testing.T, presets []registry.Preset) *install {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	in := &install{store: st, dir: dir, now: t0, reg: registry.New(), vault: newVault(t, st)}
+	in := &install{store: st, dir: dir, now: t0, reg: registry.New(), vault: newVault(t, st), normalize: policy.Normalize}
 	in.svc = in.service(presets)
 	created, err := in.svc.CreateAdminToken(as("system:init"), admin.CreateAdminTokenRequest{Name: "owner"})
 	if err != nil {
@@ -59,10 +63,11 @@ func newInstallWith(t *testing.T, presets []registry.Preset) *install {
 // kman would be with its own presets.
 func (in *install) service(presets []registry.Preset) *admin.Service {
 	return admin.New(admin.Options{
-		Store:   in.store,
-		Now:     func() time.Time { return in.now },
-		Vault:   in.vault,
-		Presets: presets,
+		Store:           in.store,
+		Now:             func() time.Time { return in.now },
+		Vault:           in.vault,
+		Presets:         presets,
+		NormalizePolicy: func(raw []byte) (int, []byte, error) { return in.normalize(raw) },
 		Apply: func(c registry.Change) {
 			in.applied = append(in.applied, c)
 			in.reg.Apply(c)
@@ -127,12 +132,10 @@ func (in *install) sqlExec(t *testing.T, query string, args ...any) {
 	}
 }
 
-// seedKey writes a virtual key on a credential: until #36 no command makes
-// one.
-func (in *install) seedKey(t *testing.T, keyID, name, credentialID, status string) {
+// setKeyStatus moves a key to a status no command reaches yet (#44).
+func (in *install) setKeyStatus(t *testing.T, keyID, status string) {
 	t.Helper()
-	in.sqlExec(t, `INSERT INTO virtual_keys (key_id, name, credential_id, kind, status, policy_version, created_at, generation)
-		VALUES (?, ?, ?, 'standard', ?, 1, 0, 1)`, keyID, name, credentialID, status)
+	in.sqlExec(t, `UPDATE virtual_keys SET status = ? WHERE key_id = ?`, status, keyID)
 }
 
 // as is a context whose caller is actor.

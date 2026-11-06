@@ -43,6 +43,11 @@ type API interface {
 	UpdateCredential(ctx context.Context, req CredentialUpdate) (Credential, error)
 	RemoveCredential(ctx context.Context, req CredentialRef) (Credential, error)
 
+	CreateKey(ctx context.Context, req CreateKeyRequest) (CreatedKey, error)
+	ListKeys(ctx context.Context, req KeyQuery) (KeyList, error)
+	GetKey(ctx context.Context, req KeyRef) (Key, error)
+	UpdateKey(ctx context.Context, req KeyUpdate) (Key, error)
+
 	ListPrices(ctx context.Context, req PriceQuery) (PriceList, error)
 	PriceDataStatus(ctx context.Context) (PriceDataStatus, error)
 }
@@ -70,6 +75,11 @@ type Options struct {
 	// Prices returns the price table this binary carries. The composition
 	// root adapts it, since admin may not import pricing (SPEC §2).
 	Prices func() PriceTable
+	// NormalizePolicy is policy's rules for a key's policy: pass
+	// policy.Normalize, which admin may not import (SPEC §2). It returns the
+	// policy's version and the form to store. Key commands refuse to run
+	// without it.
+	NormalizePolicy func(raw []byte) (version int, normalized []byte, err error)
 }
 
 // Service runs the admin commands.
@@ -81,6 +91,7 @@ type Service struct {
 	presets []registry.Preset
 	apply   func(registry.Change)
 	prices  func() PriceTable
+	policy  func(raw []byte) (int, []byte, error)
 
 	// publishing holds a command from its transaction to its publish, so
 	// memory sees commands in the order they committed. The request path
@@ -90,7 +101,7 @@ type Service struct {
 
 // New returns the admin service over opts.Store.
 func New(opts Options) *Service {
-	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices}
+	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy}
 	if s.rand == nil {
 		s.rand = rand.Reader
 	}
@@ -186,7 +197,8 @@ func (s *Service) commandWith(ctx context.Context, fx *effects, fn func(tx *stor
 }
 
 // Load rebuilds what is held in memory from the store, at startup: each
-// credential's plaintext in the vault, then the registry's snapshot. It takes
+// credential's plaintext in the vault, then the registry's snapshot, with every
+// key, since the request path answers a revoked key by what it was. It takes
 // no caller and changes nothing durable. A credential that does not decrypt
 // fails it, naming the credential: kman will not serve with one it cannot use.
 func (s *Service) Load(ctx context.Context) error {
@@ -218,6 +230,13 @@ func (s *Service) Load(ctx context.Context) error {
 		for _, c := range creds {
 			change.Credentials = append(change.Credentials, publishedCredential(c))
 			sealed = append(sealed, sealedSecret{c.ID, sealedOf(c)})
+		}
+		keys, err := tx.Keys()
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			change.Keys = append(change.Keys, publishedKey(k))
 		}
 		return nil
 	})

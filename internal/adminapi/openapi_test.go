@@ -138,13 +138,17 @@ func TestTheOpenAPIDocumentDescribesTheTypes(t *testing.T) {
 		"post /admin/v1/credentials":                "addCredential",
 		"patch /admin/v1/credentials/{ref}":         "updateCredential",
 		"delete /admin/v1/credentials/{ref}":        "removeCredential",
+		"get /admin/v1/keys":                        "listKeys",
+		"post /admin/v1/keys":                       "createKey",
+		"get /admin/v1/keys/{id}":                   "getKey",
+		"patch /admin/v1/keys/{id}":                 "updateKey",
 	} {
 		if ops[want] != id {
 			t.Errorf("%s has operationId %q, want %q", want, ops[want], id)
 		}
 	}
-	if len(ops) != 21 {
-		t.Errorf("the document has %d operations, want 21: %v", len(ops), ops)
+	if len(ops) != 25 {
+		t.Errorf("the document has %d operations, want 25: %v", len(ops), ops)
 	}
 
 	// The settings an upstream takes reach the document, embedded as they are.
@@ -159,6 +163,19 @@ func TestTheOpenAPIDocumentDescribesTheTypes(t *testing.T) {
 		t.Error("AddCredentialRequest has no secret")
 	}
 	for _, name := range []string{"Credential", "Upstream", "UpstreamList", "UpstreamSyncPlan"} {
+		schema, ok := doc.Components.Schemas[name]
+		if !ok {
+			t.Errorf("no %s schema", name)
+		}
+		if _, ok := schema.Properties["secret"]; ok {
+			t.Errorf("%s has a secret", name)
+		}
+	}
+	// A key's secret comes out once, in the create response alone.
+	if _, ok := doc.Components.Schemas["CreatedKey"].Properties["secret"]; !ok {
+		t.Error("CreatedKey has no secret")
+	}
+	for _, name := range []string{"Key", "KeyList", "CreateKeyRequest", "KeyUpdate"} {
 		schema, ok := doc.Components.Schemas[name]
 		if !ok {
 			t.Errorf("no %s schema", name)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
+	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/store"
 	"github.com/kirank55/kman/internal/vault"
@@ -35,7 +36,7 @@ func newServer(t *testing.T) *server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	svc := admin.New(admin.Options{Store: st, Now: func() time.Time { return t0 }, Vault: newVault(t, st), Presets: profiles.Presets()})
+	svc := admin.New(admin.Options{Store: st, Now: func() time.Time { return t0 }, Vault: newVault(t, st), Presets: profiles.Presets(), NormalizePolicy: policy.Normalize})
 	owner, err := svc.CreateAdminToken(admin.WithCaller(context.Background(), admin.Caller{Actor: "system:init"}),
 		admin.CreateAdminTokenRequest{Name: "owner"})
 	if err != nil {

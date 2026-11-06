@@ -233,6 +233,30 @@ func (c *client) RemoveCredential(ctx context.Context, req admin.CredentialRef) 
 	return out, c.do(ctx, "DELETE", "/credentials/"+url.PathEscape(req.Ref), nil, nil, &out)
 }
 
+func (c *client) CreateKey(ctx context.Context, req admin.CreateKeyRequest) (admin.CreatedKey, error) {
+	var out admin.CreatedKey
+	return out, c.do(ctx, "POST", "/keys", nil, req, &out)
+}
+
+func (c *client) ListKeys(ctx context.Context, req admin.KeyQuery) (admin.KeyList, error) {
+	q := url.Values{}
+	if req.Name != "" {
+		q.Set("name", req.Name)
+	}
+	var out admin.KeyList
+	return out, c.do(ctx, "GET", "/keys", q, nil, &out)
+}
+
+func (c *client) GetKey(ctx context.Context, req admin.KeyRef) (admin.Key, error) {
+	var out admin.Key
+	return out, c.do(ctx, "GET", "/keys/"+url.PathEscape(req.ID), nil, nil, &out)
+}
+
+func (c *client) UpdateKey(ctx context.Context, req admin.KeyUpdate) (admin.Key, error) {
+	var out admin.Key
+	return out, c.do(ctx, "PATCH", "/keys/"+url.PathEscape(req.ID), nil, req, &out)
+}
+
 // connect returns a client logged in from the credentials file or the
 // environment.
 func (c *call) connect() (*client, login, error) {
