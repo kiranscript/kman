@@ -1,0 +1,13 @@
+{
+  "note": "Written by hand for the generic profile: a server-sent event stream, each chunk flushed.",
+  "exchanges": [
+    {
+      "request": {"method": "POST", "path": "/v1/stream"},
+      "response": {
+        "status": 200,
+        "headers": {"Content-Type": ["text/event-stream"], "Cache-Control": ["no-cache"]},
+        "chunks": ["data: {\"n\":1}\n\n", "data: {\"n\":2}\n\n", "data: [DONE]\n\n"]
+      }
+    }
+  ]
+}

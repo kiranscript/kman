@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -44,13 +43,14 @@ func (g *Gateway) forward(x *exchange) *refusal {
 	}
 	profiles.For(up.Profile).Authorize(out.Header, up.Auth, secret)
 
+	// RoundTrip and not http.Client, whose errors quote the URL and its query.
 	resp, err := g.transportFor(up).RoundTrip(out)
 	if err != nil {
 		if r.Context().Err() != nil {
 			x.abort = true // the app has gone: there's no one to answer
 			return nil
 		}
-		g.opts.Log.Warn("the upstream is unavailable", "key", x.route.Key.ID, "upstream", up.Name, "err", withoutURL(err))
+		g.opts.Log.Warn("the upstream is unavailable", "key", x.route.Key.ID, "upstream", up.Name, "err", err)
 		return &refusal{code: codeUpstreamUnavailable}
 	}
 	defer resp.Body.Close()
@@ -94,7 +94,7 @@ func (g *Gateway) respond(x *exchange, resp *http.Response) {
 		}
 		if err != nil {
 			if x.r.Context().Err() == nil {
-				g.opts.Log.Warn("the upstream broke off a response", "key", x.route.Key.ID, "upstream", x.route.Upstream.Name, "err", withoutURL(err))
+				g.opts.Log.Warn("the upstream broke off a response", "key", x.route.Key.ID, "upstream", x.route.Upstream.Name, "err", err)
 			}
 			x.abort = true
 			return
@@ -103,15 +103,6 @@ func (g *Gateway) respond(x *exchange, resp *http.Response) {
 	for name, values := range resp.Trailer {
 		h[http.TrailerPrefix+name] = values
 	}
-}
-
-// withoutURL is a transport error without the URL net/http wraps it in, which
-// holds the query string.
-func withoutURL(err error) error {
-	if e, ok := errors.AsType[*url.Error](err); ok {
-		return e.Err
-	}
-	return err
 }
 
 func scheme(up *registry.Upstream) string {

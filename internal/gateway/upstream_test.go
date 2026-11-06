@@ -172,6 +172,27 @@ func TestAnUpstreamThatIsDownIsAnErrorThatGivesNothingAway(t *testing.T) {
 	}
 }
 
+// A credential that would split the request's headers goes nowhere, and the error
+// that says so doesn't quote it.
+func TestACredentialHoldingALineBreakIsNeverSent(t *testing.T) {
+	up := newRecording()
+	s, secret := behind(t, up)
+	const bad = "sk-first-line\r\nX-Injected: yes"
+	sealed, err := s.vault.Seal(credID, []byte(bad))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.vault.Put(credID, sealed); err != nil {
+		t.Fatal(err)
+	}
+	resp, body := s.send("GET", "/", "", withBearer(secret))
+	wantRefusal(t, resp, body, 502, "upstream_unavailable")
+	up.none(t)
+	if logs := s.logs.String(); strings.Contains(logs, "sk-first-line") || strings.Contains(body, "sk-first-line") {
+		t.Errorf("the credential leaked:\nlog: %s\nbody: %s", logs, body)
+	}
+}
+
 // The app gets a 502 for a certificate it can't check, and no credential leaves.
 func TestAnUpstreamWithAnUntrustedCertificateIsUnavailable(t *testing.T) {
 	up := newRecording()
