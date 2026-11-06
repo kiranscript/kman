@@ -43,6 +43,8 @@ var commands = []command{
 	{"admin-token", "create, list, rotate or revoke admin tokens", cmdAdminToken},
 	{"settings", "get or set the install's settings", cmdSettings},
 	{"audit", "list the audit log, or export it", cmdAudit},
+	{"upstream", "add, list, show, update, remove or sync upstreams", cmdUpstream},
+	{"credential", "add, update or remove credentials", cmdCredential},
 }
 
 // Commands names the online commands Run serves, for kman's usage line.

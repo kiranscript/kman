@@ -36,7 +36,7 @@ func TestFlagsMayFollowArguments(t *testing.T) {
 
 func TestCommandsListsTheOnlineCommands(t *testing.T) {
 	got := strings.Join(cli.Commands(), " ")
-	if got != "login logout admin-token settings audit" {
+	if got != "login logout admin-token settings audit upstream credential" {
 		t.Errorf("Commands = %q", got)
 	}
 }
