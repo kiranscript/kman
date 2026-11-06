@@ -44,7 +44,6 @@ func TestTheSummaryOfAMachineWithNoInstallNamesInit(t *testing.T) {
 }
 
 func TestTheSummaryOfAnInstallThatIsNotRunningNamesServe(t *testing.T) {
-	in := newInstall(t)
 	url := "http://" + closedPort(t)
 	for name, tc := range map[string]struct {
 		env         map[string]string
@@ -53,10 +52,11 @@ func TestTheSummaryOfAnInstallThatIsNotRunningNamesServe(t *testing.T) {
 	}{
 		"init done, no token saved": {map[string]string{cli.URLEnv: url}, true, false},
 		"token saved":               {nil, true, true},
-		"environment says where":    {map[string]string{cli.URLEnv: url, cli.TokenEnv: in.owner}, false, false},
+		"environment says where":    {map[string]string{cli.URLEnv: url, cli.TokenEnv: "kma_any-token"}, false, false},
 		"a URL and no install here": {map[string]string{cli.URLEnv: url}, false, false},
 	} {
 		t.Run(name, func(t *testing.T) {
+			in := newInstall(t)
 			if tc.loggedIn {
 				if err := cli.SaveCredentials(in.credentials(), url, in.owner); err != nil {
 					t.Fatal(err)
