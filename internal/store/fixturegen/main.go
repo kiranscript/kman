@@ -146,6 +146,7 @@ func seedAdmin(ctx context.Context, s *store.Store, rng io.Reader) error {
 	}
 	ttl, tz := int64(30*24*60*60), "Europe/Berlin"
 	gw, rotated, renamed := "gw.example.test", admin.Secret("sk-fixture-anthropic-rotated-0123456789abcdef"), "primary"
+	inputPrice, outputPrice, cachedPrice, maxOutput, uplift := int64(2_000_000), int64(8_000_000), int64(500_000), int64(4096), int64(1_100_000)
 	for _, step := range []func() error{
 		func() error {
 			_, err := svc.CreateAdminToken(as("system:init"), admin.CreateAdminTokenRequest{Name: "owner"})
@@ -205,7 +206,33 @@ func seedAdmin(ctx context.Context, s *store.Store, rng io.Reader) error {
 			return err
 		},
 		func() error {
+			_, err := svc.SetPriceOverride(as("owner"), admin.PriceOverrideSet{Upstream: "gone", Model: "gone-model", InputMicro: &inputPrice, OutputMicro: &outputPrice, MaxOutput: &maxOutput})
+			return err
+		},
+		func() error {
 			_, err := svc.RemoveUpstream(as("owner"), admin.UpstreamRef{Ref: "gone"})
+			return err
+		},
+		func() error {
+			req := admin.PriceOverrideSet{Model: "fixture-model", InputMicro: &inputPrice, OutputMicro: &outputPrice, MaxOutput: &maxOutput}
+			req.CachedMicro = &cachedPrice
+			_, err := svc.SetPriceOverride(as("owner"), req)
+			return err
+		},
+		func() error {
+			_, err := svc.SetPriceOverride(as("ci"), admin.PriceOverrideSet{Upstream: "acme", Model: "fixture-model", InputMicro: &outputPrice, OutputMicro: &outputPrice, MaxOutput: &maxOutput})
+			return err
+		},
+		func() error {
+			_, err := svc.SetPriceOverride(as("ci"), admin.PriceOverrideSet{Model: "removed-model", InputMicro: &inputPrice, OutputMicro: &outputPrice, MaxOutput: &maxOutput})
+			return err
+		},
+		func() error {
+			_, err := svc.RemovePriceOverride(as("ci"), admin.PriceOverrideRef{Model: "removed-model"})
+			return err
+		},
+		func() error {
+			_, err := svc.UpdateUpstream(as("ci"), admin.UpstreamUpdate{Ref: "acme", UpstreamSettings: admin.UpstreamSettings{PriceMultiplierPPM: &uplift}})
 			return err
 		},
 	} {

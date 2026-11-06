@@ -16,6 +16,7 @@ import (
 
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
+	"github.com/kirank55/kman/internal/pricing"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/store"
@@ -103,9 +104,11 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	}
 	defer v.Close()
 
-	// The gateway (#37) will read reg and v on the request path.
+	// The gateway (#37) will read reg and v on the request path, and the meter
+	// (#41) prices.
 	reg := registry.New()
-	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices})
+	prices := pricing.NewPrices(pricing.Builtin())
+	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices, ApplyPrices: publishOverrides(prices)})
 	if err := svc.Load(ctx); err != nil {
 		return err
 	}
