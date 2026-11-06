@@ -153,6 +153,34 @@ jobs:
       - name: Benchmark gate (allocations, or a slowdown over 10%)
         run: go -C tools run ./benchgate -base "$RUNNER_TEMP/base.txt" -head "$RUNNER_TEMP/head.txt" -max-slowdown 0.10
 
+  price-flags:
+    # ADR 0007: a person looks at any changed price or limit, and at any max
+    # output equal to the context window. The job summary lists them. It fails
+    # only on a reviewed max output equal to the context window with no
+    # explanation in the reviewed file; go test runs that check too.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: Flag price data for review
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base="$RUNNER_TEMP/base-table.json"
+          git show "$BASE_SHA:internal/pricing/table.json" > "$base" 2>/dev/null ||
+            cp internal/pricing/table.json "$base" # a base from before the table
+          go run ./internal/pricing/pricegen check --base "$base" --github >> "$GITHUB_STEP_SUMMARY"
+
   systemd-creds:
     # SPEC §17: the systemd-creds key-source tests run on Linux in a
     # container booted with systemd. The vault test binary encrypts a master
@@ -209,7 +237,7 @@ jobs:
 
   required:
     if: always()
-    needs: [lint, test, race, cross-compile, systemd-creds, bench]
+    needs: [lint, test, race, cross-compile, price-flags, systemd-creds, bench]
     runs-on: ubuntu-latest
     steps:
       - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
