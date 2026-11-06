@@ -15,7 +15,8 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite" // registers the "sqlite" driver; pure Go, so CGO_ENABLED=0 holds
+	"modernc.org/sqlite" // also registers the "sqlite" driver; pure Go, so CGO_ENABLED=0 holds
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // FileName is the database file inside the data directory.
@@ -38,6 +39,8 @@ type Options struct {
 	// Logger receives notices such as tightened permissions. It defaults to
 	// discarding them.
 	Logger *slog.Logger
+
+	exclusive bool // set by OpenExclusive
 }
 
 // Store is kman's SQLite database. It holds one writer connection, so every
@@ -53,6 +56,19 @@ type Store struct {
 // the directory and its files, copies the database aside if it needs a
 // migration, and runs every pending migration.
 func Open(ctx context.Context, opts Options) (*Store, error) {
+	return open(ctx, opts, migrations)
+}
+
+// OpenExclusive is Open for offline commands such as rekey: it fails with
+// ErrHeld while anything else has the database open, a running server
+// included, and keeps every other opener out until Close. The operating system
+// drops the lock when a process dies, so a crash never leaves it behind.
+//
+// Its transactions are durable at commit, and what they delete or overwrite is
+// zeroed in the file rather than left in free space, so a secret they replace
+// is gone once Close has checkpointed the write-ahead log.
+func OpenExclusive(ctx context.Context, opts Options) (*Store, error) {
+	opts.exclusive = true
 	return open(ctx, opts, migrations)
 }
 
@@ -86,7 +102,11 @@ func open(ctx context.Context, opts Options, ms []migration) (*Store, error) {
 	if err := f.Close(); err != nil {
 		return nil, fmt.Errorf("store: create database: %w", err)
 	}
-	db, err := sql.Open("sqlite", dsn(s.path))
+	source := dsn(s.path)
+	if opts.exclusive {
+		source = exclusiveDSN(s.path)
+	}
+	db, err := sql.Open("sqlite", source)
 	if err != nil {
 		return nil, fmt.Errorf("store: open: %w", err)
 	}
@@ -94,17 +114,27 @@ func open(ctx context.Context, opts Options, ms []migration) (*Store, error) {
 	db.SetConnMaxIdleTime(0)
 	db.SetConnMaxLifetime(0)
 	s.db = db
-	if err := s.start(ctx, opts.Now, ms); err != nil {
+	if err := s.start(ctx, opts.Now, ms, opts.exclusive); err != nil {
 		db.Close()
+		if isBusy(err) {
+			return nil, fmt.Errorf("store: %s: %w", s.path, ErrHeld)
+		}
 		return nil, err
 	}
 	return s, nil
 }
 
-// start connects, migrates, and then tightens the files SQLite created.
-func (s *Store) start(ctx context.Context, now time.Time, ms []migration) error {
+// start connects, migrates, and then tightens the files SQLite created. An
+// exclusive store claims the database first, so it migrates nothing it does
+// not hold.
+func (s *Store) start(ctx context.Context, now time.Time, ms []migration, exclusive bool) error {
 	if err := s.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("store: open %s: %w", s.path, err)
+	}
+	if exclusive {
+		if err := s.claim(ctx); err != nil {
+			return err
+		}
 	}
 	if err := s.migrate(ctx, now, ms); err != nil {
 		return err
@@ -117,11 +147,48 @@ func (s *Store) start(ctx context.Context, now time.Time, ms []migration) error 
 	return nil
 }
 
-// dsn is the connection string for the database at path. The shorthand keys
-// are applied by the driver on every new connection, auto_vacuum first, so it
-// takes effect before the first table exists. _txlock makes every Do take the
-// write lock up front, so a transaction never fails to upgrade mid-way.
+// claim takes the exclusive file lock. In locking_mode=EXCLUSIVE SQLite takes
+// it when the first write transaction begins and never lets it go. Every other
+// connection in WAL mode holds a shared lock for as long as it is open, even
+// idle, so this is what fails while a server is running.
+func (s *Store) claim(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: claim %s: %w", s.path, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: claim %s: %w", s.path, err)
+	}
+	return nil
+}
+
+// isBusy reports whether err is SQLite saying another connection holds a lock.
+func isBusy(err error) bool {
+	var se *sqlite.Error
+	return errors.As(err, &se) && se.Code()&0xff == sqlite3.SQLITE_BUSY
+}
+
+// dsn is the connection string for the database at path.
 func dsn(path string) string {
+	return fileURI(path) + "?" + dsnParams().Encode()
+}
+
+// exclusiveDSN is dsn for OpenExclusive. A holder is refused quickly: nothing
+// is about to let go of a database the operator forgot was in use.
+func exclusiveDSN(path string) string {
+	q := dsnParams()
+	q.Set("_busy_timeout", "500")
+	q.Set("_synchronous", "FULL")
+	q.Add("_pragma", "locking_mode(EXCLUSIVE)")
+	q.Add("_pragma", "secure_delete(ON)")
+	return fileURI(path) + "?" + q.Encode()
+}
+
+// dsnParams are the connection settings. The shorthand keys are applied by the
+// driver on every new connection, auto_vacuum first, so it takes effect before
+// the first table exists. _txlock makes every Do take the write lock up front,
+// so a transaction never fails to upgrade mid-way.
+func dsnParams() url.Values {
 	q := url.Values{}
 	q.Set("_busy_timeout", "5000")
 	q.Set("_auto_vacuum", "INCREMENTAL")
@@ -131,7 +198,7 @@ func dsn(path string) string {
 	q.Set("_txlock", "immediate")
 	q.Add("_pragma", "trusted_schema(OFF)")
 	q.Add("_pragma", "journal_size_limit(67108864)")
-	return fileURI(path) + "?" + q.Encode()
+	return q
 }
 
 // fileURI is path as an SQLite file: URI, with the characters that would end

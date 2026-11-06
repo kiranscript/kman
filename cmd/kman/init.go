@@ -285,15 +285,15 @@ func (in *initRun) keyMaterial(cfg Config) (vault.KeySource, error) {
 }
 
 // newPassphrase asks for a passphrase twice.
-func (in *initRun) newPassphrase() ([]byte, error) {
-	pass, err := in.passphrase("Passphrase for the master key: ")
+func (s *sys) newPassphrase() ([]byte, error) {
+	pass, err := s.passphrase("Passphrase for the master key: ")
 	if err != nil {
 		return nil, fmt.Errorf("read the passphrase: %w", err)
 	}
 	if len(pass) == 0 {
 		return nil, errors.New("the passphrase is empty")
 	}
-	again, err := in.passphrase("The same passphrase again: ")
+	again, err := s.passphrase("The same passphrase again: ")
 	defer clear(again)
 	if err != nil {
 		clear(pass)
@@ -409,6 +409,9 @@ func writeNew(path string, data []byte) error {
 		return err
 	}
 	_, err = f.Write(data)
+	if err == nil {
+		err = f.Sync() // it may hold the only copy of a master key
+	}
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}

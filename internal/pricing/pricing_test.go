@@ -1,6 +1,7 @@
 package pricing_test
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -347,5 +348,260 @@ func BenchmarkCost(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		tbl.Cost(use)
+	}
+}
+
+// overridden is the sample table with an install override of "flat" and of a
+// new model, and an override of "flat" on upstream up_a only.
+//
+//	install: flat $3 in, $9 out, 2,000 max output; fresh $5 in, $10 out
+//	up_a: flat $6 in, $12 out, 3,000 max output
+func overridden(t *testing.T) *pricing.Table {
+	t.Helper()
+	tbl, err := table(t).WithOverrides([]pricing.Override{
+		{Model: "flat", MaxOutput: 2000, Rates: pricing.Rates{Input: 3000000, Output: 9000000}},
+		{Model: "fresh", MaxOutput: 1000, Rates: pricing.Rates{Input: 5000000, Output: 10000000}},
+		{UpstreamID: "up_a", Model: "flat", MaxOutput: 3000, Rates: pricing.Rates{Input: 6000000, Output: 12000000}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tbl
+}
+
+func TestLookupOrder(t *testing.T) {
+	// The built-in layers alone: "flat" is global and on the cheap preset.
+	plain, err := table(t).WithOverrides([]pricing.Override{
+		{UpstreamID: "up_a", Model: "only-on-a", MaxOutput: 1, Rates: pricing.Rates{Input: 7}},
+		{Model: "only-install", MaxOutput: 1, Rates: pricing.Rates{Input: 8}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name             string
+		tbl              *pricing.Table
+		upstream, preset string
+		model            string
+		origin           pricing.Origin
+		input            int64
+	}{
+		{"the per-upstream override beats everything", overridden(t), "up_a", "cheap", "flat", pricing.OriginUpstreamOverride, 6000000},
+		{"the install override beats the preset's entry", overridden(t), "up_b", "cheap", "flat", pricing.OriginInstallOverride, 3000000},
+		{"the install override beats the global entry", overridden(t), "up_b", "", "flat", pricing.OriginInstallOverride, 3000000},
+		{"another upstream's override doesn't apply", plain, "up_b", "", "only-on-a", 0, 0},
+		{"an install override prices a model the table lacks", overridden(t), "up_b", "", "fresh", pricing.OriginInstallOverride, 5000000},
+		{"an install override reaches an upstream with no id", plain, "", "", "only-install", pricing.OriginInstallOverride, 8},
+		{"the preset's entry beats the global entry", plain, "up_b", "cheap", "flat", pricing.OriginPreset, 1000000},
+		{"the global entry is last", plain, "up_b", "cheap", "modal", pricing.OriginGlobal, 4000000},
+		{"a custom upstream sees the global entry", plain, "up_b", "", "flat", pricing.OriginGlobal, 2000000},
+		{"ids match exactly", overridden(t), "up_a", "", "FLAT", 0, 0},
+		{"nothing knows it", overridden(t), "up_a", "cheap", "nope", 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e, origin, ok := tt.tbl.Resolve(tt.upstream, tt.preset, tt.model)
+			if want := tt.origin != 0; ok != want {
+				t.Fatalf("ok = %v, want %v", ok, want)
+			}
+			if !ok {
+				return
+			}
+			if origin != tt.origin || e.Input != tt.input {
+				t.Errorf("origin %v, input %d; want %v, %d", origin, e.Input, tt.origin, tt.input)
+			}
+		})
+	}
+}
+
+func TestEstimateAndCostUseTheOverride(t *testing.T) {
+	tbl := overridden(t)
+	est, ok := tbl.Estimate(pricing.Request{UpstreamID: "up_a", Preset: "cheap", Model: "flat", RequestBytes: 4000})
+	// 1,000 in at $6/M = 6,000µ; the override's 3,000 max output at $12/M = 36,000µ.
+	if !ok || est.Micro != 42000 || est.OutputTokens != 3000 {
+		t.Errorf("estimate = %+v, %v", est, ok)
+	}
+	cost, ok := tbl.Cost(pricing.Usage{UpstreamID: "up_b", Model: "fresh", InputTokens: 1000, OutputTokens: 1000})
+	// 1,000 in at $5/M = 5,000µ; 1,000 out at $10/M = 10,000µ.
+	if !ok || cost.Micro != 15000 || cost.Model != "fresh" {
+		t.Errorf("cost = %+v, %v", cost, ok)
+	}
+}
+
+func TestAnOverrideReplacesTheWholeEntry(t *testing.T) {
+	tbl, err := table(t).WithOverrides([]pricing.Override{{Model: "long", MaxOutput: 1000, Rates: pricing.Rates{Input: 1000000, Output: 2000000}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Over the built-in's 272k band and asking for its priority tier, neither
+	// of which the override has: 300,000 in at $1/M, 1,000 out at $2/M.
+	cost, ok := tbl.Cost(pricing.Usage{Model: "long", ServiceTier: "priority", InputTokens: 300000, OutputTokens: 1000})
+	if !ok || cost.Micro != 302000 || cost.ServiceTier != "" {
+		t.Errorf("cost = %+v, %v", cost, ok)
+	}
+}
+
+func TestOverrideOptionalPricesFallBackLikeTheTable(t *testing.T) {
+	cached := int64(1000000)
+	tbl, err := table(t).WithOverrides([]pricing.Override{{Model: "new", MaxOutput: 1000, Rates: pricing.Rates{Input: 4000000, Output: 8000000, Cached: &cached}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 1,000 cached at $1/M = 1,000µ; 1,000 cache writes at the input's $4/M = 4,000µ.
+	cost, ok := tbl.Cost(pricing.Usage{Model: "new", CachedTokens: 1000, CacheWriteTokens: 1000})
+	if !ok || cost.Micro != 5000 {
+		t.Errorf("cost = %+v, %v", cost, ok)
+	}
+}
+
+func TestPriceMultiplier(t *testing.T) {
+	tbl := overridden(t)
+	const uplift = 1_100_000 // ×1.1
+	tests := []struct {
+		name string
+		req  pricing.Request
+		want int64
+	}{
+		{"applies to a global entry", pricing.Request{Model: "modal", MaxTokens: 1000, MultiplierPPM: uplift}, 26400},      // 1,000 out at $24/M = 24,000µ, ×1.1
+		{"applies to an install override", pricing.Request{Model: "fresh", MaxTokens: 1000, MultiplierPPM: uplift}, 11000}, // 1,000 out at $10/M = 10,000µ, ×1.1
+		{"doesn't apply to a per-upstream override", pricing.Request{UpstreamID: "up_a", Model: "flat", MaxTokens: 1000, MultiplierPPM: uplift}, 12000},
+		{"zero means ×1", pricing.Request{Model: "fresh", MaxTokens: 1000}, 10000},
+		{"exactly ×1 changes nothing", pricing.Request{Model: "fresh", MaxTokens: 1000, MultiplierPPM: 1_000_000}, 10000},
+		{"a discount rounds up", pricing.Request{Model: "fresh", MaxTokens: 1, MultiplierPPM: 333_333}, 4}, // 10µ × 0.333333 = 3.33333µ
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := tbl.Estimate(tt.req)
+			if !ok || got.Micro != tt.want {
+				t.Errorf("estimate = %+v, %v; want %d", got, ok, tt.want)
+			}
+		})
+	}
+}
+
+func TestPriceMultiplierAppliesToAPresetsEntry(t *testing.T) {
+	// 500 out, the most it allows, at the cheap preset's $4/M = 2,000µ, ×1.1.
+	got, ok := table(t).Estimate(pricing.Request{Preset: "cheap", Model: "flat", MaxTokens: 500, MultiplierPPM: 1_100_000})
+	if !ok || got.Micro != 2200 {
+		t.Errorf("estimate = %+v, %v", got, ok)
+	}
+}
+
+func TestPriceMultiplierOnCost(t *testing.T) {
+	tbl := overridden(t)
+	const uplift = 1_500_000 // ×1.5
+	tests := []struct {
+		name string
+		u    pricing.Usage
+		want int64
+	}{
+		{"a built-in price is multiplied", pricing.Usage{Model: "modal", OutputTokens: 1000, MultiplierPPM: uplift}, 36000},
+		{"an install override is multiplied", pricing.Usage{Model: "fresh", OutputTokens: 1000, MultiplierPPM: uplift}, 15000},
+		{"a per-upstream override isn't", pricing.Usage{UpstreamID: "up_a", Model: "flat", OutputTokens: 1000, MultiplierPPM: uplift}, 12000},
+		{"a provider-reported cost isn't", pricing.Usage{Model: "modal", OutputTokens: 1000, MultiplierPPM: uplift, ReportedCost: true, ReportedMicro: 777}, 777},
+		{"voice minutes are prices too", pricing.Usage{Model: "voice", Duration: time.Minute, MultiplierPPM: uplift}, 75000},
+		{"tool fees are prices too", pricing.Usage{Model: "modal", Tools: []pricing.ToolCalls{{Name: "web_search", Calls: 1}}, MultiplierPPM: uplift}, 15000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := tbl.Cost(tt.u)
+			if !ok || got.Micro != tt.want {
+				t.Errorf("cost = %+v, %v; want %d", got, ok, tt.want)
+			}
+		})
+	}
+}
+
+func TestPriceMultiplierDoesNotWrapAtTheTop(t *testing.T) {
+	tbl := overridden(t)
+	got, ok := tbl.Cost(pricing.Usage{Model: "fresh", OutputTokens: math.MaxInt64, MultiplierPPM: 100_000_000})
+	if !ok || got.Micro != math.MaxInt64 {
+		t.Errorf("cost = %+v, %v", got, ok)
+	}
+}
+
+func TestWithOverridesRefuses(t *testing.T) {
+	good := pricing.Rates{Input: 1, Output: 1}
+	negative := int64(-1)
+	tests := []struct {
+		name      string
+		overrides []pricing.Override
+		want      string
+	}{
+		{"no max output", []pricing.Override{{Model: "m", Rates: good}}, "no max output"},
+		{"a negative price", []pricing.Override{{Model: "m", MaxOutput: 1, Rates: pricing.Rates{Input: -1}}}, "negative price"},
+		{"a negative optional price", []pricing.Override{{Model: "m", MaxOutput: 1, Rates: pricing.Rates{Cached: &negative}}}, "negative price"},
+		{"no model", []pricing.Override{{MaxOutput: 1, Rates: good}}, "no model"},
+		{"the same model twice", []pricing.Override{{Model: "m", MaxOutput: 1, Rates: good}, {Model: "m", MaxOutput: 1, Rates: good}}, "twice"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := table(t).WithOverrides(tt.overrides)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestWithOverridesReplacesAndLeavesTheOriginalAlone(t *testing.T) {
+	base := table(t)
+	once := overridden(t)
+	if _, _, ok := base.Resolve("", "", "fresh"); ok {
+		t.Error("the original table gained an override")
+	}
+	again, err := once.WithOverrides(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := again.Resolve("", "", "fresh"); ok {
+		t.Error("an empty set kept the old override")
+	}
+	if _, _, ok := once.Resolve("", "", "fresh"); !ok {
+		t.Error("the earlier table lost its override")
+	}
+	if e, origin, ok := again.Resolve("up_a", "", "flat"); !ok || origin != pricing.OriginGlobal || e.Input != 2000000 {
+		t.Errorf("after removal: %+v, %v, %v", e, origin, ok)
+	}
+}
+
+func TestPricesSwapsOverridesWhole(t *testing.T) {
+	prices := pricing.NewPrices(table(t))
+	if _, _, ok := prices.Table().Resolve("", "", "fresh"); ok {
+		t.Fatal("a new Prices has an override")
+	}
+	if err := prices.SetOverrides([]pricing.Override{{Model: "fresh", MaxOutput: 1, Rates: pricing.Rates{Input: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	held := prices.Table()
+	if _, _, ok := held.Resolve("", "", "fresh"); !ok {
+		t.Error("the override didn't arrive")
+	}
+	if err := prices.SetOverrides([]pricing.Override{{MaxOutput: 1}}); err == nil {
+		t.Error("a bad set was accepted")
+	}
+	if _, _, ok := prices.Table().Resolve("", "", "fresh"); !ok {
+		t.Error("a refused set changed what's in force")
+	}
+	if err := prices.SetOverrides(nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := prices.Table().Resolve("", "", "fresh"); ok {
+		t.Error("the override wasn't removed")
+	}
+	if _, _, ok := held.Resolve("", "", "fresh"); !ok {
+		t.Error("a table a request holds changed under it")
+	}
+}
+
+func TestOverriddenLookupsAllocateNothing(t *testing.T) {
+	tbl := overridden(t)
+	req := pricing.Request{UpstreamID: "up_a", Preset: "cheap", Model: "flat", RequestBytes: 4000, MultiplierPPM: 1_100_000}
+	u := pricing.Usage{UpstreamID: "up_b", Model: "fresh", InputTokens: 1, OutputTokens: 1, MultiplierPPM: 1_100_000}
+	if n := testing.AllocsPerRun(100, func() {
+		tbl.Estimate(req)
+		tbl.Cost(u)
+	}); n != 0 {
+		t.Errorf("%v allocations", n)
 	}
 }

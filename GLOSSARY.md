@@ -165,5 +165,8 @@ _Avoid_: Price list, prices file
 **Price override**:
 An operator's correction or addition to the price table, for the whole install or for one upstream.
 
+**Price multiplier**:
+A per-upstream factor on built-in prices and install-wide price overrides, for a regional uplift. It doesn't touch that upstream's own price override or a cost the provider reports.
+
 **Unmetered request**:
 A request whose model or price kman can't determine. Keys with a spend cap or a model allowlist refuse it.

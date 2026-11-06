@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,24 @@ func TestGenerateWritesAnOpenableInstall(t *testing.T) {
 		}
 		if openai.Preset != "openai" || openai.PresetVersion != 1 || openai.SDKEnv != "OPENAI_API_KEY" {
 			t.Errorf("openai = %+v", openai)
+		}
+		acme, err := tx.UpstreamByName("acme")
+		if err != nil {
+			return err
+		}
+		if acme.PriceMultiplierPPM != 1_100_000 {
+			t.Errorf("acme's price multiplier = %d", acme.PriceMultiplierPPM)
+		}
+		overrides, err := tx.PriceOverrides()
+		if err != nil {
+			return err
+		}
+		var scopes []string
+		for _, o := range overrides {
+			scopes = append(scopes, o.Scope+"/"+o.Model)
+		}
+		if want := []string{"install/fixture-model", acme.ID + "/fixture-model"}; !slices.Equal(scopes, want) {
+			t.Errorf("overrides = %v, want %v (and those on gone, and removed-model, deleted)", scopes, want)
 		}
 		// The admin service made these, as a real install's would be.
 		tokens, err := tx.AdminTokens()

@@ -50,6 +50,9 @@ type API interface {
 
 	ListPrices(ctx context.Context, req PriceQuery) (PriceList, error)
 	PriceDataStatus(ctx context.Context) (PriceDataStatus, error)
+	SetPriceOverride(ctx context.Context, req PriceOverrideSet) (PriceOverride, error)
+	RemovePriceOverride(ctx context.Context, req PriceOverrideRef) (PriceOverride, error)
+	ImportPriceOverrides(ctx context.Context, req PriceOverrideImport) (PriceOverrideImportResult, error)
 }
 
 var _ API = (*Service)(nil)
@@ -80,6 +83,11 @@ type Options struct {
 	// policy's version and the form to store. Key commands refuse to run
 	// without it.
 	NormalizePolicy func(raw []byte) (version int, normalized []byte, err error)
+	// ApplyPrices publishes every price override to the request path, whole,
+	// after a command that changes one commits and at startup. The
+	// composition root adapts it, since admin may not import pricing. Nil
+	// does nothing, for what runs no request path.
+	ApplyPrices func([]PriceOverride) error
 }
 
 // Service runs the admin commands.
@@ -92,6 +100,7 @@ type Service struct {
 	apply   func(registry.Change)
 	prices  func() PriceTable
 	policy  func(raw []byte) (int, []byte, error)
+	publish func([]PriceOverride) error
 
 	// publishing holds a command from its transaction to its publish, so
 	// memory sees commands in the order they committed. The request path
@@ -101,12 +110,15 @@ type Service struct {
 
 // New returns the admin service over opts.Store.
 func New(opts Options) *Service {
-	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy}
+	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices}
 	if s.rand == nil {
 		s.rand = rand.Reader
 	}
 	if s.apply == nil {
 		s.apply = func(registry.Change) {}
+	}
+	if s.publish == nil {
+		s.publish = func([]PriceOverride) error { return nil }
 	}
 	return s
 }
@@ -126,6 +138,9 @@ type effects struct {
 	change registry.Change // the rows the request path reads
 	seal   []sealedSecret  // cached in the vault before publishing
 	wipe   []string        // wiped from the vault after publishing
+	// overrides is every price override after the command, when it changed
+	// any. Nil means it changed none.
+	overrides []PriceOverride
 }
 
 // sealedSecret is a sealed credential to cache.
@@ -189,6 +204,9 @@ func (s *Service) commandWith(ctx context.Context, fx *effects, fn func(tx *stor
 	for _, p := range fx.seal {
 		putErr = errors.Join(putErr, s.vault.Put(p.id, p.sealed))
 	}
+	if fx.overrides != nil {
+		putErr = errors.Join(putErr, s.publish(fx.overrides))
+	}
 	s.apply(fx.change)
 	for _, id := range fx.wipe {
 		s.vault.Delete(id)
@@ -197,8 +215,9 @@ func (s *Service) commandWith(ctx context.Context, fx *effects, fn func(tx *stor
 }
 
 // Load rebuilds what is held in memory from the store, at startup: each
-// credential's plaintext in the vault, then the registry's snapshot, with every
-// key, since the request path answers a revoked key by what it was. It takes
+// credential's plaintext in the vault, the price overrides, then the registry's
+// snapshot, with every key, since the request path answers a revoked key by
+// what it was. It takes
 // no caller and changes nothing durable. A credential that does not decrypt
 // fails it, naming the credential: kman will not serve with one it cannot use.
 func (s *Service) Load(ctx context.Context) error {
@@ -206,6 +225,7 @@ func (s *Service) Load(ctx context.Context) error {
 	defer s.publishing.Unlock()
 	var change registry.Change
 	var sealed []sealedSecret
+	var overrides []PriceOverride
 	err := s.store.Do(ctx, func(tx *store.Tx) error {
 		meta, err := tx.Meta()
 		if err != nil {
@@ -238,7 +258,8 @@ func (s *Service) Load(ctx context.Context) error {
 		for _, k := range keys {
 			change.Keys = append(change.Keys, publishedKey(k))
 		}
-		return nil
+		overrides, err = allOverrides(tx)
+		return err
 	})
 	if err != nil {
 		return err
@@ -247,6 +268,9 @@ func (s *Service) Load(ctx context.Context) error {
 		if err := s.vault.Put(p.id, p.sealed); err != nil {
 			return fmt.Errorf("load credential %s: %w", p.id, err)
 		}
+	}
+	if err := s.publish(overrides); err != nil {
+		return fmt.Errorf("load price overrides: %w", err)
 	}
 	s.apply(change)
 	return nil

@@ -123,7 +123,7 @@ func TestEveryReviewedValueIsInTheCommittedTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	for k, rev := range reviewed {
-		e, ok := tbl.Lookup(k.preset, k.model)
+		e, ok := tbl.BuiltinEntry(k.preset, k.model)
 		if !ok {
 			t.Errorf("%s/%s is reviewed but not in the table; rerun scripts/update-price-data.sh", k.preset, k.model)
 			continue
