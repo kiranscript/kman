@@ -543,3 +543,85 @@ func TestARevokedKeyCannotBeUpdated(t *testing.T) {
 		t.Errorf("a revoked key is found by its name: %+v, %v", list, err)
 	}
 }
+
+// secretsIn is what the registry holds to authenticate a key.
+func secretsIn(t *testing.T, in *install, keyID string) []registry.KeySecret {
+	t.Helper()
+	route, ok := in.reg.Lookup(keyID)
+	if !ok {
+		t.Fatalf("the registry has no key %s", keyID)
+	}
+	return route.Key.Secrets
+}
+
+// The request path authenticates from the snapshot, with no store read, so the
+// hash must be there after everything that publishes a key.
+func TestTheRegistryHoldsTheHashOfAKeysSecret(t *testing.T) {
+	in, _ := withCredential(t)
+	created := in.createKey(t, admin.CreateKeyRequest{Name: "my-app", Upstream: "openai"})
+	tok, err := token.Parse(string(created.Secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(when string) {
+		t.Helper()
+		got := secretsIn(t, in, created.Key.ID)
+		if len(got) != 1 || !got[0].Hash.Equal(tok.Hash) || !got[0].ValidUntil.IsZero() {
+			t.Errorf("%s, the registry holds %+v", when, got)
+		}
+	}
+	check("after create")
+
+	note := "moved"
+	if _, err := in.svc.UpdateKey(as("owner"), admin.KeyUpdate{ID: created.Key.ID, Note: &note}); err != nil {
+		t.Fatal(err)
+	}
+	check("after update")
+
+	in.reg = registry.New()
+	if err := in.service(nil).Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	check("after a restart")
+}
+
+// A previous secret works until its grace ends, and a retired one never
+// authenticates, so it never reaches the request path.
+func TestTheRegistryHoldsOnlySecretsThatCanAuthenticate(t *testing.T) {
+	in, _ := withCredential(t)
+	created := in.createKey(t, admin.CreateKeyRequest{Upstream: "openai"})
+	previous := bytes.Repeat([]byte{1}, 32)
+	retired := bytes.Repeat([]byte{2}, 32)
+	graceEnds := t0.Add(time.Hour)
+	in.sqlExec(t, `INSERT INTO key_secrets (key_id, secret_hash, state, created_at, valid_until) VALUES (?, ?, 'previous', ?, ?)`,
+		created.Key.ID, previous, t0.UnixMilli(), graceEnds.UnixMilli())
+	in.sqlExec(t, `INSERT INTO key_secrets (key_id, secret_hash, state, created_at) VALUES (?, ?, 'retired', ?)`,
+		created.Key.ID, retired, t0.UnixMilli())
+
+	in.reg = registry.New()
+	if err := in.service(nil).Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := secretsIn(t, in, created.Key.ID)
+	if len(got) != 2 {
+		t.Fatalf("the registry holds %d secrets, want the current and the previous: %+v", len(got), got)
+	}
+	for _, s := range got {
+		if bytes.Equal(s.Hash[:], retired) {
+			t.Error("a retired secret reached the registry")
+		}
+		if bytes.Equal(s.Hash[:], previous) && !s.ValidUntil.Equal(graceEnds) {
+			t.Errorf("the previous secret is valid until %v, want %v", s.ValidUntil, graceEnds)
+		}
+	}
+}
+
+func TestLoadRefusesASecretHashOfTheWrongLength(t *testing.T) {
+	in, _ := withCredential(t)
+	created := in.createKey(t, admin.CreateKeyRequest{Upstream: "openai"})
+	in.sqlExec(t, `UPDATE key_secrets SET secret_hash = x'0011' WHERE key_id = ?`, created.Key.ID)
+	err := in.service(nil).Load(context.Background())
+	if err == nil || !strings.Contains(err.Error(), created.Key.ID) {
+		t.Errorf("Load = %v, want an error naming the key", err)
+	}
+}
