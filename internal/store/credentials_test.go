@@ -1,9 +1,7 @@
 package store_test
 
 import (
-	"database/sql"
 	"errors"
-	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -168,46 +166,27 @@ func TestUpdateCredentialOverwritesTheCiphertext(t *testing.T) {
 	}
 }
 
-// seedKey writes a virtual key directly: until #36 no command makes one.
-func seedKey(t *testing.T, dir, keyID, name, credentialID, status string) {
-	t.Helper()
-	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(dir, store.FileName))+"?_pragma=busy_timeout(5000)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if _, err := db.Exec(`INSERT INTO virtual_keys (key_id, name, credential_id, kind, status, policy_version, created_at, generation)
-		VALUES (?, ?, ?, 'standard', ?, 1, 0, 1)`, keyID, name, credentialID, status); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestKeysOnCredentialListsEveryKeyNotRevoked(t *testing.T) {
-	dir := t.TempDir()
-	s, err := store.Open(t.Context(), store.Options{Dir: dir, Now: now})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	var u store.Upstream
+	s, u := withUpstream(t)
 	do(t, s, func(tx *store.Tx) error {
-		if err := tx.CreateDataKey(store.DataKey{ID: "dek_1", Wrapped: []byte("w"), Nonce: []byte("n"), KEKFingerprint: "mkf_1", CreatedAt: now}); err != nil {
-			return err
-		}
-		if u, err = tx.CreateUpstream(openai("openai")); err != nil {
-			return err
-		}
 		if _, err := tx.CreateCredential(credential("cr_1", "main", u.ID)); err != nil {
 			return err
 		}
-		_, err := tx.CreateCredential(credential("cr_2", "other", u.ID))
-		return err
-	})
-	seedKey(t, dir, "activeAA", "a", "cr_1", "active")
-	seedKey(t, dir, "disabled", "b", "cr_1", "disabled")
-	seedKey(t, dir, "revokedC", "c", "cr_1", "revoked")
-	seedKey(t, dir, "elsewher", "d", "cr_2", "active")
-	do(t, s, func(tx *store.Tx) error {
+		if _, err := tx.CreateCredential(credential("cr_2", "other", u.ID)); err != nil {
+			return err
+		}
+		for _, k := range []struct{ id, credential, status string }{
+			{"activeAA", "cr_1", store.KeyActive},
+			{"disabled", "cr_1", store.KeyDisabled},
+			{"revokedC", "cr_1", store.KeyRevoked},
+			{"elsewher", "cr_2", store.KeyActive},
+		} {
+			key := virtualKey(k.id, k.id)
+			key.CredentialID, key.Status = k.credential, k.status
+			if _, err := tx.CreateKey(key, []byte(k.id)); err != nil {
+				return err
+			}
+		}
 		got, err := tx.KeysOnCredential("cr_1")
 		if want := []string{"activeAA", "disabled"}; !slices.Equal(got, want) {
 			t.Errorf("KeysOnCredential = %v, want %v", got, want)
