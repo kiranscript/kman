@@ -1,6 +1,6 @@
 {
 "schema": 1,
-"generated_at": "2026-11-06T06:38:19Z",
+"generated_at": "2026-11-06T06:43:39Z",
 "sources": [{"name":"litellm","url":"https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json","sha256":"3bc3632bee39cb1fb236fc15ae3201f3f4eef2d8c3fb07681a90e8961aa1b2d9"},{"name":"genai-prices","url":"https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json","sha256":"1dff0c483e10bd05e596a57dddd962402251964f5ea90321898b5477cbc06d3a"},{"name":"models.dev","url":"https://models.dev/api.json","sha256":"5fe31ba28dbca84dcc5024b1c607e58b80f42948f4f140fc899a25be53ca8aec"}],
 "global": {
 "chat-latest": {"mode":"chat","context":400000,"max_output":128000,"input":5000000,"output":30000000,"cached":500000},
@@ -220,7 +220,6 @@
 "o4-mini-high": {"mode":"chat","context":200000,"max_output":100000,"input":1100000,"output":4400000,"cached":275000,"tiers":{"batch":{"input":550000,"output":2200000,"cached":275000},"fast":{"input":2000000,"output":8000000,"cached":500000},"flex":{"input":550000,"output":2200000,"cached":138000},"priority":{"input":2000000,"output":8000000,"cached":500000}},"tools":{"file_search":2500,"web_search":10000}},
 "text-embedding-3-large": {"mode":"embedding","context":8192,"max_output":3072,"input":130000,"tiers":{"batch":{"input":65000}}},
 "text-embedding-3-small": {"mode":"embedding","context":8192,"max_output":1536,"input":20000,"tiers":{"batch":{"input":10000}}},
-"text-embedding-ada": {"mode":"chat","context":8192,"max_output":1536,"input":100000},
 "text-embedding-ada-002": {"mode":"embedding","context":8192,"max_output":1536,"input":100000},
 "text-embedding-ada-002-v2": {"mode":"embedding","context":8192,"max_output":1536,"input":100000,"tiers":{"batch":{"input":50000}}}
 },
@@ -1258,9 +1257,7 @@
 "sao10k/l3-lunaris-8b": {"mode":"chat","context":8192,"max_output":7372,"input":40000,"output":50000},
 "sao10k/l3.1-euryale-70b": {"mode":"chat","context":131072,"max_output":16384,"input":850000,"output":850000},
 "scaledown/extract": {"mode":"chat","context":1000000,"max_output":900000,"input":40000},
-"scaledown/extract-20260928": {"mode":"chat","context":1000000,"max_output":900000,"input":40000},
 "scaledown/summarize": {"mode":"chat","context":1000000,"max_output":4000,"input":40000},
-"scaledown/summarize-20260928": {"mode":"chat","context":1000000,"max_output":4000,"input":40000},
 "stealth/crouton-alpha": {"mode":"chat","context":1048576,"max_output":943718},
 "stepfun/step-3.5-flash": {"mode":"chat","context":262144,"max_output":65536,"input":100000,"output":300000,"cached":20000},
 "stepfun/step-3.7-flash": {"mode":"chat","context":262144,"max_output":230400,"input":200000,"output":1150000,"cached":40000},

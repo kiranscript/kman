@@ -267,8 +267,8 @@ func TestPriceHistoryUsesTheNewestPriceInForce(t *testing.T) {
 
 func TestEveryDatedIDAndAliasIsIncludedAndNothingIsInvented(t *testing.T) {
 	d, _ := gen(t, sources{
-		litellm: `{"gpt-5.4-2026-03-05": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5},
-			"openai/gpt-prefixed": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5}}`,
+		litellm: `{"gpt-5.4-2026-03-05": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5},
+			"openai/gpt-prefixed": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5}}`,
 		genai: `[{"id": "openai", "models": [{"id": "gpt-5.4", "match": {"or": [{"equals": "gpt-5.4"}, {"equals": "gpt-5.4-2026-03-05"}, {"equals": "gpt-5-4"}, {"starts_with": "gpt-5.4-"}]}, "prices": {"input_mtok": 2.5, "output_mtok": 15}}]}]`,
 		modelsdev: `{"openai": {"models": {"gpt-5.4": {"limit": {"output": 128000}}, "gpt-5-4": {"limit": {"output": 128000}},
 			"gpt-5.4-2026-03-05": {"limit": {"output": 128000}}}}}`,
@@ -289,14 +289,14 @@ func TestEveryDatedIDAndAliasIsIncludedAndNothingIsInvented(t *testing.T) {
 func TestPresetIDsAreThePresetsOwn(t *testing.T) {
 	d, _ := gen(t, sources{
 		litellm: `{
-			"gemini/gemini-9": {"litellm_provider": "gemini", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5},
-			"groq/openai/gpt-oss-120b": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5},
-			"together_ai/openai/gpt-oss-120b": {"litellm_provider": "together_ai", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5},
-			"fireworks_ai/accounts/fireworks/models/x": {"litellm_provider": "fireworks_ai", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5},
-			"mistral/mistral-9": {"litellm_provider": "mistral", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5},
-			"cerebras/gpt-oss-120b": {"litellm_provider": "cerebras", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5},
-			"azure/gpt-5.4": {"litellm_provider": "azure", "mode": "chat", "input_cost_per_token": 9e-06, "max_output_tokens": 5},
-			"claude-9": {"litellm_provider": "anthropic", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5}
+			"gemini/gemini-9": {"litellm_provider": "gemini", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5},
+			"groq/openai/gpt-oss-120b": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5},
+			"together_ai/openai/gpt-oss-120b": {"litellm_provider": "together_ai", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5},
+			"fireworks_ai/accounts/fireworks/models/x": {"litellm_provider": "fireworks_ai", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5},
+			"mistral/mistral-9": {"litellm_provider": "mistral", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5},
+			"cerebras/gpt-oss-120b": {"litellm_provider": "cerebras", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5},
+			"azure/gpt-5.4": {"litellm_provider": "azure", "mode": "chat", "input_cost_per_token": 9e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5},
+			"claude-9": {"litellm_provider": "anthropic", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5}
 		}`,
 		genai: `[{"id": "openrouter", "models": [{"id": "openai/gpt-9", "prices": {"input_mtok": 2, "output_mtok": 3}}]},
 			{"id": "aws", "models": [{"id": "nova", "prices": {"input_mtok": 2}}]}]`,
@@ -324,7 +324,7 @@ func TestRowsKmanDoesNotMeterAreLeftOut(t *testing.T) {
 	d, r := gen(t, sources{
 		litellm: `{
 			"sample_spec": {"litellm_provider": "one of https://docs.litellm.ai/docs/providers", "mode": "one of: chat", "input_cost_per_token": 0.0, "max_output_tokens": "max output tokens"},
-			"dall-e-9": {"litellm_provider": "openai", "mode": "image_generation", "input_cost_per_token": 1e-06, "max_output_tokens": 5},
+			"dall-e-9": {"litellm_provider": "openai", "mode": "image_generation", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5},
 			"whisper-9": {"litellm_provider": "openai", "mode": "audio_transcription", "input_cost_per_second": 0.0001},
 			"embed-9": {"litellm_provider": "openai", "mode": "embedding", "input_cost_per_token": 1e-07},
 			"no-limit": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06},
@@ -347,12 +347,41 @@ func TestRowsKmanDoesNotMeterAreLeftOut(t *testing.T) {
 	}
 }
 
+func TestAChatModelWithNoOutputPriceIsLeftOut(t *testing.T) {
+	// Its reservation would charge nothing for its output, so a cap could be
+	// overshot by the whole allowance. A published price of zero is a price.
+	d, r := gen(t, sources{
+		litellm: `{
+			"half": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5},
+			"free": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 0, "output_cost_per_token": 0, "max_output_tokens": 5},
+			"embed": {"litellm_provider": "openai", "mode": "embedding", "input_cost_per_token": 1e-07}
+		}`,
+		genai:     `[{"id": "openai", "models": [{"id": "half-too", "prices": {"input_mtok": 1}}]}]`,
+		modelsdev: `{"openai": {"models": {"half-too": {"limit": {"output": 5}}}}}`,
+	})
+	if _, ok := d.Global["half"]; ok {
+		t.Error("half is in the table with no output price")
+	}
+	if _, ok := d.Global["half-too"]; ok {
+		t.Error("half-too is in the table with no output price")
+	}
+	if _, ok := d.Global["free"]; !ok {
+		t.Errorf("a stated price of zero was dropped; have %v", keys(d.Global))
+	}
+	if _, ok := d.Global["embed"]; !ok {
+		t.Errorf("an embedding has no output to price; have %v", keys(d.Global))
+	}
+	if !strings.Contains(strings.Join(r.Dropped, "\n"), "openai/half: no output price") {
+		t.Errorf("dropped = %v", r.Dropped)
+	}
+}
+
 func TestReviewedMaxOutputWinsInBothDirections(t *testing.T) {
 	d, r := gen(t, sources{
 		litellm: `{
-			"gpt-4.1": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "max_input_tokens": 1000000, "max_output_tokens": 1000000},
-			"cerebras/gpt-oss-120b": {"litellm_provider": "cerebras", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 32768},
-			"other": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5}
+			"gpt-4.1": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_input_tokens": 1000000, "max_output_tokens": 1000000},
+			"cerebras/gpt-oss-120b": {"litellm_provider": "cerebras", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 32768},
+			"other": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5}
 		}`,
 		reviewed: `{
 			"openai": {"gpt-4.1": {"max_output": 32768, "checked": "2026-11-03", "source": "https://example.test/gpt-4.1"},
@@ -422,9 +451,9 @@ func TestSourcesAndTimeAreRecorded(t *testing.T) {
 
 func TestTheOutputIsDeterministicAndHasOneModelPerLine(t *testing.T) {
 	s := sources{litellm: `{
-		"b": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5},
-		"a": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5},
-		"groq/c": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 1e-06, "max_output_tokens": 5}}`}
+		"b": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5},
+		"a": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5},
+		"groq/c": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 1e-06, "output_cost_per_token": 1e-06, "max_output_tokens": 5}}`}
 	d, _ := gen(t, s)
 	first, err := encode(d)
 	if err != nil {

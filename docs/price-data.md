@@ -26,7 +26,7 @@ It leaves the table alone, `generated_at` included, when no price changed. It re
 - **Conservative merge:** at every input size, the highest price any source states; the largest context window and max output. Where two sources put a long-context threshold in different places, the lower one wins.
 - **DeepSeek is priced at peak.** models.dev holds only the off-peak price, so its DeepSeek prices are never read (its limits are), and a DeepSeek model only models.dev prices is left out.
 - **Exact ids:** every id and alias a source lists is a row. A source's prefix match names no id, and is not turned into one. An alias with no limits of its own takes those of the model the source says it names.
-- **Rows left out:** LiteLLM modes kman doesn't meter (images, audio, video and so on, whatever the other sources say), and rows with no price, or no max output unless they are embeddings or billed per minute. A capped key refuses such a model, and an operator can add it with a price override.
+- **Rows left out:** LiteLLM modes kman doesn't meter (images, audio, video and so on, whatever the other sources say), rows with no input price, no output price or no max output (an embedding needs neither of the last two, nor does a model billed per minute). A capped key refuses such a model, and an operator can add it with a price override.
 
 ## Service tiers and bands
 

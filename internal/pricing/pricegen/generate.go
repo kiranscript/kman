@@ -220,9 +220,17 @@ func mergeRows(a, b *row) *row {
 	return out
 }
 
+// priceProblem says why a row can't price a request. A row with no output price
+// would reserve nothing for its output, so a cap could be overshot by the whole
+// allowance.
 func priceProblem(r *row) string {
-	if r.base[fInput].base == nil && r.perMinute == 0 {
+	switch {
+	case r.perMinute > 0:
+		return ""
+	case r.base[fInput].base == nil:
 		return "no price"
+	case r.base[fOutput].base == nil && r.mode != "embedding":
+		return "no output price"
 	}
 	return ""
 }
