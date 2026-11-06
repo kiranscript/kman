@@ -8,15 +8,18 @@
 // code: the clock is fixed and every random id comes from a fixed seed, so a
 // rerun writes the same bytes.
 //
-// It drives the admin service where a command exists, so the fixture holds
-// what a real install holds: admin tokens and settings so far. Upstreams are
-// still seeded into the store directly until their commands land (#34),
-// which will also add sentinel credentials under a committed test-only
-// master key.
+// It drives the real admin service with the real presets, so the fixture holds
+// what a real install holds: admin tokens, settings, upstreams, and sentinel
+// credentials under the committed test-only master key in test-master.key,
+// which the migration test also reads to check they still decrypt. As later
+// tickets add commands, they add them here.
 package main
 
 import (
+	"bytes"
 	"context"
+	_ "embed"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -28,7 +31,10 @@ import (
 	"time"
 
 	"github.com/kirank55/kman/internal/admin"
+	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/store"
+	"github.com/kirank55/kman/internal/vault"
 )
 
 // fixedNow is the time every fixture is made at.
@@ -36,6 +42,11 @@ var fixedNow = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // seed is the fixed seed of every random id in a fixture.
 var seed = [32]byte([]byte("kman fixture generator seed v1.."))
+
+// masterKeyFile is the fixture's master key. It unlocks nothing but fixtures.
+//
+//go:embed test-master.key
+var masterKeyFile []byte
 
 var versionRE = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$`)
 
@@ -71,26 +82,70 @@ func generate(ctx context.Context, dir, version string) error {
 }
 
 // seedInstall creates an install in dir and fills it with one of each thing
-// the store can hold so far.
+// the admin service can make so far.
 func seedInstall(ctx context.Context, dir string) error {
 	rng := rand.NewChaCha8(seed)
 	s, err := store.Open(ctx, store.Options{Dir: dir, Now: fixedNow, Rand: rng})
 	if err != nil {
 		return err
 	}
-	err = errors.Join(seedAdmin(ctx, s, rng), seedStore(ctx, s))
+	err = seedAdmin(ctx, s, rng)
 	// Closing checkpoints the WAL, so the database file is complete.
 	return errors.Join(err, s.Close())
 }
 
+// masterKey is the committed test-only master key as a key source.
+type masterKey struct{}
+
+func (masterKey) MasterKey() ([]byte, error) {
+	enc := base64.StdEncoding
+	text := bytes.TrimSpace(masterKeyFile)
+	mk := make([]byte, enc.DecodedLen(len(text)))
+	n, err := enc.Decode(mk, text)
+	return mk[:n], err
+}
+
+func (masterKey) String() string { return "the fixture's test-only master key" }
+
+// newDataKey makes the fixture's data key, as init does.
+func newDataKey(ctx context.Context, s *store.Store, rng io.Reader) (*vault.Vault, error) {
+	id, err := store.NewID(rng, "dek_")
+	if err != nil {
+		return nil, err
+	}
+	// AllowDebug: this is a build tool holding a key that protects nothing.
+	v, wk, err := vault.Create(masterKey{}, id, vault.Options{AllowDebug: true, Rand: rng})
+	if err != nil {
+		return nil, err
+	}
+	err = s.Do(ctx, func(tx *store.Tx) error {
+		return tx.CreateDataKey(store.DataKey{ID: wk.ID, Wrapped: wk.Wrapped, Nonce: wk.Nonce, KEKFingerprint: wk.Fingerprint, CreatedAt: fixedNow})
+	})
+	if err != nil {
+		v.Close()
+		return nil, err
+	}
+	return v, nil
+}
+
 // seedAdmin makes what the admin commands make: the owner token as init
-// does, a live and a revoked token, a rotation, and changed settings.
+// does, a live and a revoked token, a rotation, changed settings, upstreams
+// from a preset and by hand, credentials on them, one replaced and renamed,
+// and an upstream and its credential deleted.
 func seedAdmin(ctx context.Context, s *store.Store, rng io.Reader) error {
-	svc := admin.New(admin.Options{Store: s, Now: func() time.Time { return fixedNow }, Rand: rng})
+	v, err := newDataKey(ctx, s, rng)
+	if err != nil {
+		return err
+	}
+	defer v.Close()
+	reg := registry.New()
+	svc := admin.New(admin.Options{Store: s, Now: func() time.Time { return fixedNow }, Rand: rng,
+		Vault: v, Presets: profiles.Presets(), Apply: reg.Apply})
 	as := func(actor string) context.Context {
 		return admin.WithCaller(ctx, admin.Caller{Actor: actor, ClientIP: "127.0.0.1"})
 	}
 	ttl, tz := int64(30*24*60*60), "Europe/Berlin"
+	gw, rotated, renamed := "gw.example.test", admin.Secret("sk-fixture-anthropic-rotated-0123456789abcdef"), "primary"
 	for _, step := range []func() error{
 		func() error {
 			_, err := svc.CreateAdminToken(as("system:init"), admin.CreateAdminTokenRequest{Name: "owner"})
@@ -116,31 +171,49 @@ func seedAdmin(ctx context.Context, s *store.Store, rng io.Reader) error {
 			_, err := svc.UpdateSettings(as("ci"), admin.SettingsUpdate{DefaultKeyTTLSeconds: &ttl, SpendTimezone: &tz})
 			return err
 		},
+		func() error {
+			_, err := svc.AddUpstream(as("owner"), admin.AddUpstreamRequest{Name: "openai", Preset: "openai",
+				Credential: &admin.NewCredential{Secret: "sk-fixture-openai-0123456789abcdef"}})
+			return err
+		},
+		func() error {
+			_, err := svc.AddUpstream(as("owner"), admin.AddUpstreamRequest{Preset: "anthropic"})
+			return err
+		},
+		func() error {
+			_, err := svc.AddCredential(as("owner"), admin.AddCredentialRequest{Name: "anthropic-main", Upstream: "anthropic", Secret: "sk-fixture-anthropic-0123456789abcdef"})
+			return err
+		},
+		func() error {
+			_, err := svc.UpdateCredential(as("ci"), admin.CredentialUpdate{Ref: "anthropic-main", Name: &renamed, Secret: &rotated})
+			return err
+		},
+		func() error {
+			paths := []string{"POST /v1/things", "GET /v1/things/*"}
+			_, err := svc.AddUpstream(as("owner"), admin.AddUpstreamRequest{Name: "acme",
+				UpstreamSettings: admin.UpstreamSettings{Host: &gw, Paths: &paths, Auth: &admin.Auth{Style: "basic"}},
+				Credential:       &admin.NewCredential{Secret: "fixture-user:fixture-password"}})
+			return err
+		},
+		func() error {
+			_, err := svc.UpdateUpstream(as("ci"), admin.UpstreamUpdate{Ref: "acme", UpstreamSettings: admin.UpstreamSettings{ServerName: &gw}})
+			return err
+		},
+		func() error {
+			_, err := svc.AddUpstream(as("owner"), admin.AddUpstreamRequest{Name: "gone", Preset: "groq",
+				Credential: &admin.NewCredential{Secret: "sk-fixture-gone-0123456789abcdef"}})
+			return err
+		},
+		func() error {
+			_, err := svc.RemoveUpstream(as("owner"), admin.UpstreamRef{Ref: "gone"})
+			return err
+		},
 	} {
 		if err := step(); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// seedStore writes what has no admin command yet.
-func seedStore(ctx context.Context, s *store.Store) error {
-	return s.Do(ctx, func(tx *store.Tx) error {
-		u, err := tx.CreateUpstream(store.Upstream{
-			Name: "openai", Preset: "openai", PresetVersion: 1, Profile: "openai",
-			Host: "api.openai.com", Port: 443, TLS: true, PathAllowlistJSON: `["/v1/"]`,
-			PriceMultiplierPPM: 1_000_000, CreatedAt: fixedNow, UpdatedAt: fixedNow,
-		})
-		if err != nil {
-			return err
-		}
-		_, err = tx.AppendAudit(store.AuditEntry{
-			TS: fixedNow, Actor: "owner", Action: "upstream.create",
-			TargetKind: "upstream", TargetID: u.ID, AfterJSON: `{"name":"openai"}`,
-		})
-		return err
-	})
 }
 
 // copyNew copies src to dst, which must not exist.

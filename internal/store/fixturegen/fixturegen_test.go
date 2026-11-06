@@ -8,8 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/store"
+	"github.com/kirank55/kman/internal/vault"
 )
 
 func TestGenerateIsDeterministic(t *testing.T) {
@@ -47,15 +50,31 @@ func TestGenerateWritesAnOpenableInstall(t *testing.T) {
 	}
 	defer s.Close()
 	err = s.Do(context.Background(), func(tx *store.Tx) error {
-		if _, err := tx.UpstreamByName("openai"); err != nil {
+		// The admin service made these too, with their real preset data.
+		upstreams, err := tx.Upstreams()
+		if err != nil {
 			return err
+		}
+		var names []string
+		for _, u := range upstreams {
+			names = append(names, u.Name)
+		}
+		if got := strings.Join(names, " "); got != "acme anthropic openai" {
+			t.Errorf("upstreams = %s, want acme anthropic openai (and gone deleted)", got)
+		}
+		openai, err := tx.UpstreamByName("openai")
+		if err != nil {
+			return err
+		}
+		if openai.Preset != "openai" || openai.PresetVersion != 1 || openai.SDKEnv != "OPENAI_API_KEY" {
+			t.Errorf("openai = %+v", openai)
 		}
 		// The admin service made these, as a real install's would be.
 		tokens, err := tx.AdminTokens()
 		if err != nil {
 			return err
 		}
-		var names []string
+		names = nil
 		for _, tok := range tokens {
 			state := "live"
 			if !tok.RevokedAt.IsZero() {
@@ -82,6 +101,73 @@ func TestGenerateWritesAnOpenableInstall(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+// The committed test-only master key still unlocks a fixture's credentials,
+// which is what the migration test relies on.
+func TestAFixturesCredentialsDecryptUnderTheCommittedKey(t *testing.T) {
+	path := generateTo(t, t.TempDir(), "v0.1.0")
+	dir := t.TempDir()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, store.FileName), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(context.Background(), store.Options{Dir: dir, Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	v, err := unlock(context.Background(), s, vault.FileSource("test-master.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+	if err := admin.New(admin.Options{Store: s, Now: func() time.Time { return fixedNow }, Vault: v}).Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"openai":  "sk-fixture-openai-0123456789abcdef",
+		"primary": "sk-fixture-anthropic-rotated-0123456789abcdef",
+		"acme":    "fixture-user:fixture-password",
+	}
+	err = s.Do(context.Background(), func(tx *store.Tx) error {
+		creds, err := tx.Credentials()
+		if err != nil {
+			return err
+		}
+		if len(creds) != len(want) {
+			t.Errorf("credentials = %+v, want %d", creds, len(want))
+		}
+		for _, c := range creds {
+			if plain, ok := v.Credential(c.ID); !ok || string(plain) != want[c.Name] {
+				t.Errorf("credential %s decrypts to %q, %v", c.Name, plain, ok)
+			}
+			if bytes.Contains(data, []byte(want[c.Name])) {
+				t.Errorf("the fixture holds credential %s in the clear", c.Name)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// unlock opens a fixture's data key from src.
+func unlock(ctx context.Context, s *store.Store, src vault.KeySource) (*vault.Vault, error) {
+	var dk store.DataKey
+	err := s.Do(ctx, func(tx *store.Tx) error {
+		var err error
+		dk, err = tx.CurrentDataKey()
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return vault.Unlock(src, vault.WrappedKey{ID: dk.ID, Nonce: dk.Nonce, Wrapped: dk.Wrapped, Fingerprint: dk.KEKFingerprint}, vault.Options{AllowDebug: true})
 }
 
 func TestGenerateRefusesToOverwrite(t *testing.T) {
