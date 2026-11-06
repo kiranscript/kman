@@ -471,3 +471,72 @@ func TestASecretPrintsAsRedacted(t *testing.T) {
 		}
 	}
 }
+
+func TestAnUpstreamCanBeAddedWithItsCredentialInOneCommand(t *testing.T) {
+	in := newInstall(t)
+	generation := in.reg.Generation()
+	u, err := in.svc.AddUpstream(as("owner"), admin.AddUpstreamRequest{Name: "openai", Preset: "openai",
+		Credential: &admin.NewCredential{Secret: secret}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(u.Credentials) != 1 || u.Credentials[0].Name != "openai" || u.Credentials[0].Last4 != "WXYZ" {
+		t.Fatalf("credentials = %+v, want one named for the upstream", u.Credentials)
+	}
+	id := u.Credentials[0].ID
+	if plain, ok := in.vault.Credential(id); !ok || string(plain) != secret {
+		t.Errorf("the vault holds %q, %v", plain, ok)
+	}
+	if rc, ok := in.reg.Credential(id); !ok || rc.UpstreamID != u.ID {
+		t.Errorf("the registry holds %+v, %v", rc, ok)
+	}
+	// One transaction, so one generation and one publish.
+	if g := in.reg.Generation(); g != generation+1 {
+		t.Errorf("generation went from %d to %d", generation, g)
+	}
+	var actions []string
+	for _, e := range in.latest(t, 2) {
+		actions = append(actions, e.Action)
+	}
+	if want := []string{"upstream.create", "credential.create"}; !slices.Equal(actions, want) {
+		t.Errorf("audit = %v, want %v", actions, want)
+	}
+}
+
+func TestANamedCredentialCanBeAddedWithItsUpstream(t *testing.T) {
+	in := newInstall(t)
+	u, err := in.svc.AddUpstream(as("owner"), admin.AddUpstreamRequest{Name: "openai", Preset: "openai",
+		Credential: &admin.NewCredential{Name: "main", Secret: secret}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(u.Credentials) != 1 || u.Credentials[0].Name != "main" {
+		t.Errorf("credentials = %+v", u.Credentials)
+	}
+}
+
+// A bad secret must not strand an upstream with nothing to authenticate it:
+// the operator fixes the secret and runs the same command again.
+func TestABadCredentialLeavesNoUpstreamBehind(t *testing.T) {
+	in := newInstall(t)
+	before := len(in.latest(t, 100))
+	generation := in.reg.Generation()
+	_, err := in.svc.AddUpstream(as("owner"), admin.AddUpstreamRequest{Name: "twilio", Preset: "twilio",
+		Credential: &admin.NewCredential{Secret: "no-colon-here"}})
+	if code(err) != admin.CodeInvalid {
+		t.Fatalf("AddUpstream = %v, want invalid", err)
+	}
+	if _, err := in.svc.GetUpstream(as("owner"), admin.UpstreamRef{Ref: "twilio"}); code(err) != admin.CodeNotFound {
+		t.Errorf("the upstream was left behind: %v", err)
+	}
+	if after := len(in.latest(t, 100)); after != before {
+		t.Errorf("the audit log grew by %d", after-before)
+	}
+	if g := in.reg.Generation(); g != generation {
+		t.Errorf("the registry moved to generation %d", g)
+	}
+	if _, err := in.svc.AddUpstream(as("owner"), admin.AddUpstreamRequest{Name: "twilio", Preset: "twilio",
+		Credential: &admin.NewCredential{Secret: "user:password"}}); err != nil {
+		t.Errorf("running it again: %v", err)
+	}
+}

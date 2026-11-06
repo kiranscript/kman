@@ -35,6 +35,14 @@
             ],
             "description": "A custom upstream defaults to Authorization: Bearer {key}, or x-api-key: {key} on the anthropic profile."
           },
+          "credential": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NewCredential"
+              }
+            ],
+            "description": "A first credential, added in the same transaction: a bad secret adds no upstream either."
+          },
           "host": {
             "description": "A host name or IP address, with no scheme, port or path. A custom upstream needs one.",
             "type": "string"
@@ -334,6 +342,23 @@
         },
         "required": [
           "error"
+        ],
+        "type": "object"
+      },
+      "NewCredential": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Defaults to the upstream's name.",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The real secret. kman seals it and never shows it again. For basic auth without a username, the whole user:password.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret"
         ],
         "type": "object"
       },

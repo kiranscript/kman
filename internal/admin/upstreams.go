@@ -72,6 +72,7 @@ type AddUpstreamRequest struct {
 	Name   string `json:"name,omitempty" doc:"1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit. With a preset, it defaults to the preset's name."`
 	Preset string `json:"preset,omitempty" doc:"The preset to copy. Absent to build a custom upstream from the settings."`
 	UpstreamSettings
+	Credential *NewCredential `json:"credential,omitempty" doc:"A first credential, added in the same transaction: a bad secret adds no upstream either."`
 }
 
 // UpstreamUpdate changes an upstream.
@@ -166,7 +167,8 @@ func (s *Service) newSpec(req *AddUpstreamRequest) (registry.Spec, int, error) {
 	return spec, version, nil
 }
 
-// AddUpstream adds an upstream, copying its preset if it names one.
+// AddUpstream adds an upstream, copying its preset if it names one, and its
+// first credential if it gives one.
 func (s *Service) AddUpstream(ctx context.Context, req AddUpstreamRequest) (Upstream, error) {
 	spec, version, err := s.newSpec(&req)
 	if err != nil {
@@ -174,6 +176,19 @@ func (s *Service) AddUpstream(ctx context.Context, req AddUpstreamRequest) (Upst
 	}
 	if err := checkName("upstream", req.Name); err != nil {
 		return Upstream{}, err
+	}
+	var credName, credID string
+	if req.Credential != nil {
+		credName = req.Credential.Name
+		if credName == "" {
+			credName = req.Name
+		}
+		if err := checkName("credential", credName); err != nil {
+			return Upstream{}, err
+		}
+		if credID, err = store.NewID(s.rand, "cr_"); err != nil {
+			return Upstream{}, err
+		}
 	}
 	var out Upstream
 	fx := &effects{}
@@ -192,7 +207,17 @@ func (s *Service) AddUpstream(ctx context.Context, req AddUpstreamRequest) (Upst
 		}
 		fx.change.Upstreams = append(fx.change.Upstreams, pub)
 		out = s.upstreamDTO(pub, u)
-		return []audit{{action: "upstream.create", kind: "upstream", id: u.ID, after: out}}, nil
+		entries := []audit{{action: "upstream.create", kind: "upstream", id: u.ID, after: out}}
+		if req.Credential != nil {
+			entry, err := s.createCredential(tx, fx, now, credID, credName, string(req.Credential.Secret), u, pub.Auth)
+			if err != nil {
+				return nil, err
+			}
+			created, _ := entry.after.(Credential)
+			out.Credentials = []Credential{created}
+			entries = append(entries, entry)
+		}
+		return entries, nil
 	})
 	return out, err
 }

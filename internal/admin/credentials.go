@@ -58,6 +58,12 @@ type AddCredentialRequest struct {
 	Secret   Secret `json:"secret" doc:"The real secret. kman seals it and never shows it again. For basic auth without a username, the whole user:password."`
 }
 
+// NewCredential is the credential an upstream is added with.
+type NewCredential struct {
+	Name   string `json:"name,omitempty" doc:"Defaults to the upstream's name."`
+	Secret Secret `json:"secret" doc:"The real secret. kman seals it and never shows it again. For basic auth without a username, the whole user:password."`
+}
+
 // CredentialRef names a credential.
 type CredentialRef struct {
 	Ref string `json:"-" path:"ref" doc:"The credential's name or id."`
@@ -131,21 +137,28 @@ func (s *Service) AddCredential(ctx context.Context, req AddCredentialRequest) (
 		if err != nil {
 			return nil, err
 		}
-		sealed, err := s.sealCredential(id, string(req.Secret), pub.Auth)
-		if err != nil {
-			return nil, err
-		}
-		c, err := tx.CreateCredential(store.Credential{ID: id, UpstreamID: u.ID, Name: req.Name, Ciphertext: sealed.Ciphertext,
-			Nonce: sealed.Nonce, DataKeyID: sealed.DataKeyID, Last4: last4(string(req.Secret)), CreatedAt: now})
-		if err != nil {
-			return nil, fromStore(err, "credential "+req.Name)
-		}
-		fx.seal = append(fx.seal, sealedSecret{id, sealed})
-		fx.change.Credentials = append(fx.change.Credentials, publishedCredential(c))
-		out = credentialDTO(c, u.Name)
-		return []audit{{action: "credential.create", kind: "credential", id: id, after: out}}, nil
+		entry, err := s.createCredential(tx, fx, now, id, req.Name, string(req.Secret), u, pub.Auth)
+		out, _ = entry.after.(Credential)
+		return []audit{entry}, err
 	})
 	return out, err
+}
+
+// createCredential seals a secret and writes its row and effects, as part of
+// a command's transaction, returning its audit entry.
+func (s *Service) createCredential(tx *store.Tx, fx *effects, now time.Time, id, name, secret string, u store.Upstream, auth registry.Auth) (audit, error) {
+	sealed, err := s.sealCredential(id, secret, auth)
+	if err != nil {
+		return audit{}, err
+	}
+	c, err := tx.CreateCredential(store.Credential{ID: id, UpstreamID: u.ID, Name: name, Ciphertext: sealed.Ciphertext,
+		Nonce: sealed.Nonce, DataKeyID: sealed.DataKeyID, Last4: last4(secret), CreatedAt: now})
+	if err != nil {
+		return audit{}, fromStore(err, "credential "+name)
+	}
+	fx.seal = append(fx.seal, sealedSecret{id, sealed})
+	fx.change.Credentials = append(fx.change.Credentials, publishedCredential(c))
+	return audit{action: "credential.create", kind: "credential", id: id, after: credentialDTO(c, u.Name)}, nil
 }
 
 // UpdateCredential renames a credential, replaces its secret, or both. A new
