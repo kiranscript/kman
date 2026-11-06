@@ -18,8 +18,9 @@ func header(template string) registry.Auth {
 // sees the change; a test holds this to testdata/presets.json.
 //
 // The LLM allowlists leave out batch, files, fine-tune, and multipart audio
-// and image routes (SPEC §7), which keman allowed. Every preset is on 443 over
-// TLS, which the Presets function fills in.
+// and image routes (SPEC §7), which keman allowed. An LLM preset's Name is also
+// its section in the price table, so renaming one loses its prices. Every preset
+// is on 443 over TLS, which the Presets function fills in.
 var presets = []registry.Preset{
 	{Name: "openai", Title: "OpenAI", Version: 1, Spec: registry.Spec{
 		Profile: registry.ProfileOpenAI, Host: "api.openai.com", InjectUsage: true,

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kirank55/kman/internal/pricing"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
 )
@@ -128,6 +129,52 @@ func TestChangingPresetsDoesNotChangeTheBinarysData(t *testing.T) {
 	second := profiles.Presets()
 	if second[0].Name == "changed" || second[0].Spec.Paths[0] == "POST /changed" {
 		t.Error("Presets shares its data with its caller")
+	}
+}
+
+// An upstream records its preset's name, and pricing looks a model up by that
+// name: a preset that misses its section would price nothing from it, and every
+// model only it lists would be refused on a capped key. pricegen names the
+// sections by hand, so the two lists could drift apart in either direction.
+func TestLLMPresetsAndThePriceTableSectionsNameTheSameThings(t *testing.T) {
+	table := pricing.Builtin()
+	sections := map[string]string{} // a section, and one model in it
+	for row := range table.All() {
+		sections[row.Preset] = row.Model
+	}
+	global, ok := sections[""]
+	if !ok {
+		t.Fatal("the price table has no global section")
+	}
+	// OpenAI's and Anthropic's rows are the global section, which every lookup
+	// falls back to (#38).
+	inGlobal := []string{"openai", "anthropic"}
+
+	presets := map[string]bool{}
+	for _, p := range profiles.Presets() {
+		presets[p.Name] = true
+		if p.Spec.Profile == registry.ProfileGeneric {
+			if _, ok := sections[p.Name]; ok {
+				t.Errorf("preset %s is unmetered, but the price table has a section for it", p.Name)
+			}
+			continue
+		}
+		model, ok := sections[p.Name]
+		if !ok {
+			if !slices.Contains(inGlobal, p.Name) {
+				t.Errorf("LLM preset %s has no section in the price table", p.Name)
+				continue
+			}
+			model = global
+		}
+		if _, ok := table.Lookup(p.Name, model); !ok {
+			t.Errorf("preset %s does not find %s in the price table", p.Name, model)
+		}
+	}
+	for section := range sections {
+		if section != "" && !presets[section] {
+			t.Errorf("the price table has a section %s, which no preset names", section)
+		}
 	}
 }
 
