@@ -17,7 +17,10 @@ import (
 // transcript is a recorded conversation with an upstream: what it was asked, in
 // order, and what it answered. Transcripts live in testdata/transcripts.
 type transcript struct {
-	Note      string     `json:"note"`
+	Note string `json:"note"`
+	// Profile is the profile to read it under. internal/profiles reads the same
+	// files, and holds each exchange's Usage to what it reads from the response.
+	Profile   string     `json:"profile"`
 	Exchanges []exchange `json:"exchanges"`
 }
 
@@ -31,6 +34,7 @@ type exchange struct {
 		Headers map[string][]string `json:"headers"`
 		Chunks  []string            `json:"chunks"` // each is written and flushed
 	} `json:"response"`
+	Usage json.RawMessage `json:"usage"` // for internal/profiles: not used here
 }
 
 // received is a request as the mock upstream got it.
@@ -151,11 +155,27 @@ func behindKman(t *testing.T, name string) *proxied {
 	return &proxied{t: t, h: h, s: s, mock: mock, secret: h.createKey(t, "my-app", "mock")}
 }
 
-// addUpstream adds a plain-HTTP upstream with the sentinel as its credential.
-func (h *home) addUpstream(t *testing.T, name, host string, port int) {
+// behindKmanAs is behindKman with an upstream on an LLM profile, which asks
+// streams for their usage on the OpenAI one, as its preset does.
+func behindKmanAs(t *testing.T, name, profile string) *proxied {
 	t.Helper()
-	stdout, stderr, code := h.runWithInput(t, sentinel+"\n", "upstream", "add", name,
-		"--host", host, "--port", strconv.Itoa(port), "--no-tls", "--path", "* /**")
+	h := installed(t)
+	s := h.serve(t)
+	h.login(t, s)
+	mock := newMock(t, name)
+	flags := []string{"--profile", profile}
+	if profile == "openai" {
+		flags = append(flags, "--inject-usage")
+	}
+	h.addUpstream(t, "mock", mock.host, mock.port, flags...)
+	return &proxied{t: t, h: h, s: s, mock: mock, secret: h.createKey(t, "my-app", "mock")}
+}
+
+// addUpstream adds a plain-HTTP upstream with the sentinel as its credential.
+func (h *home) addUpstream(t *testing.T, name, host string, port int, flags ...string) {
+	t.Helper()
+	args := append([]string{"upstream", "add", name, "--host", host, "--port", strconv.Itoa(port), "--no-tls", "--path", "* /**"}, flags...)
+	stdout, stderr, code := h.runWithInput(t, sentinel+"\n", args...)
 	if code != 0 {
 		t.Fatalf("upstream add exited %d:\n%s%s", code, stdout, stderr)
 	}

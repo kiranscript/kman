@@ -1,0 +1,30 @@
+{
+  "note": "Written by hand, not captured from the live API (no credentials were to hand): the shape follows the types in the pinned SDKs under e2e/testdata/sdk. An upstream's refusal, with no usage.",
+  "profile": "anthropic",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages"
+      },
+      "response": {
+        "status": 429,
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ],
+          "Request-Id": [
+            "req_e2e"
+          ],
+          "Retry-After": [
+            "1"
+          ]
+        },
+        "chunks": [
+          "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"slow down\"},\"request_id\":\"req_e2e\"}"
+        ]
+      },
+      "usage": {}
+    }
+  ]
+}

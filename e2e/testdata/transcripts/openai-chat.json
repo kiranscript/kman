@@ -1,0 +1,34 @@
+{
+  "note": "Written by hand, not captured from the live API (no credentials were to hand): the shape follows the types in the pinned SDKs under e2e/testdata/sdk. Chat completion.",
+  "profile": "openai",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Request-Id": [
+            "req_e2e"
+          ]
+        },
+        "chunks": [
+          "{\"id\":\"chatcmpl-e2e\",\"object\":\"chat.completion\",\"created\":1767225600,\"model\":\"gpt-4o-mini-2024-07-18\",\"service_tier\":\"default\",\"system_fingerprint\":\"fp_e2e\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Hello there\",\"refusal\":null},\"logprobs\":null,\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":5,\"total_tokens\":17,\"prompt_tokens_details\":{\"cached_tokens\":4,\"audio_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"audio_tokens\":0,\"accepted_prediction_tokens\":0,\"rejected_prediction_tokens\":0}}}"
+        ]
+      },
+      "usage": {
+        "Seen": true,
+        "Model": "gpt-4o-mini-2024-07-18",
+        "ServiceTier": "default",
+        "InputTokens": 8,
+        "CachedTokens": 4,
+        "OutputTokens": 5
+      }
+    }
+  ]
+}

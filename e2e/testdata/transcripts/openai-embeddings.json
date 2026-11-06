@@ -1,0 +1,31 @@
+{
+  "note": "Written by hand, not captured from the live API (no credentials were to hand): the shape follows the types in the pinned SDKs under e2e/testdata/sdk. Embedding, base64-encoded as the SDKs ask for by default: 0.5 and -0.25 as little-endian floats.",
+  "profile": "openai",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/embeddings"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Request-Id": [
+            "req_e2e"
+          ]
+        },
+        "chunks": [
+          "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"index\":0,\"embedding\":\"AAAAPwAAgL4=\"}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":6,\"total_tokens\":6}}"
+        ]
+      },
+      "usage": {
+        "Seen": true,
+        "Model": "text-embedding-3-small",
+        "InputTokens": 6
+      }
+    }
+  ]
+}

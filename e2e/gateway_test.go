@@ -174,3 +174,30 @@ func TestTheProxyInTheEnvironmentIsNotUsed(t *testing.T) {
 		t.Errorf("the proxy in the environment got %d requests", n)
 	}
 }
+
+// What a metered profile reads, it reads on the way past: an app gets the upstream's
+// response byte for byte. This runs without the SDKs, on every OS.
+func TestAMeteredResponsePassesThroughTheRealBinaryUnchanged(t *testing.T) {
+	for _, tc := range []struct {
+		name, profile, uri, body string
+		want                     string // the body the upstream must get
+		status                   int
+	}{
+		{"openai-chat", "openai", "/v1/chat/completions", `{"model":"m"}`, `{"model":"m"}`, 200},
+		{"openai-chat-stream", "openai", "/v1/chat/completions", `{"model":"m","stream":true}`, `{"model":"m","stream":true,"stream_options":{"include_usage":true}}`, 200},
+		{"openai-responses-stream", "openai", "/v1/responses", `{"model":"m","stream":true}`, `{"model":"m","stream":true}`, 200},
+		{"anthropic-messages-stream", "anthropic", "/v1/messages", `{"model":"m","stream":true}`, `{"model":"m","stream":true}`, 200},
+		{"anthropic-error", "anthropic", "/v1/messages", `{"model":"m"}`, `{"model":"m"}`, 429},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := behindKmanAs(t, tc.name, tc.profile)
+			resp, body := p.send("POST", tc.uri, strings.NewReader(tc.body))
+			if want := strings.Join(p.mock.flows[0].Response.Chunks, ""); resp.StatusCode != tc.status || body != want {
+				t.Errorf("response = %d %q\n want %d %q", resp.StatusCode, body, tc.status, want)
+			}
+			if got := p.mock.only(t); got.Body != tc.want || got.Header.Get("Accept-Encoding") != "identity" {
+				t.Errorf("the upstream got %q, Accept-Encoding %q", got.Body, got.Header.Get("Accept-Encoding"))
+			}
+		})
+	}
+}
