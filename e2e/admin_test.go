@@ -2,10 +2,13 @@ package e2e_test
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -119,5 +122,59 @@ func TestLogoutForgetsTheSavedToken(t *testing.T) {
 	_, stderr, code := h.run(t, "admin-token", "list")
 	if code != 1 || !strings.Contains(stderr, "kman login") {
 		t.Errorf("after logout: exit %d, stderr %q; want 1 and a hint to log in", code, stderr)
+	}
+}
+
+func TestPriceListShowsTheEmbeddedTableAndItsAge(t *testing.T) {
+	h := installed(t)
+	s := h.serve(t)
+	h.login(t, s)
+
+	out, _ := h.mustRun(t, "price", "list", "--model", "gpt-5.4")
+	if !strings.Contains(out, "Price data generated ") || !strings.Contains(out, " old.\n") {
+		t.Errorf("no age:\n%s", out)
+	}
+	if !regexp.MustCompile(`global\s+gpt-5\.4\s+\$2\.50\s+\$15\s+\$0\.25\s+128000`).MatchString(out) {
+		t.Errorf("no gpt-5.4 row:\n%s", out)
+	}
+	out, _ = h.mustRun(t, "price", "list", "--preset", "deepseek", "--model", "deepseek-v4-pro")
+	if !regexp.MustCompile(`deepseek\s+deepseek-v4-pro\s+\$1\.32\s+\$3\.96`).MatchString(out) {
+		t.Errorf("DeepSeek is not at its peak price:\n%s", out)
+	}
+	out, _ = h.mustRun(t)
+	if !strings.Contains(out, "Price data generated ") || !strings.Contains(out, "usage: kman") {
+		t.Errorf("plain kman printed:\n%s", out)
+	}
+}
+
+// TestPriceCommandsMakeNoOutboundCall runs serve and the price commands with
+// every proxy variable pointing at a listener that records what reaches it. A
+// fetch through any standard client would arrive here, and the gate
+// TestPricingCannotReachTheNetwork covers a dial of its own.
+func TestPriceCommandsMakeNoOutboundCall(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	var calls atomic.Int32
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			calls.Add(1)
+			c.Close()
+		}
+	}()
+	proxy := "http://" + l.Addr().String()
+	h := installed(t).with("HTTPS_PROXY="+proxy, "HTTP_PROXY="+proxy, "ALL_PROXY="+proxy, "https_proxy="+proxy, "http_proxy="+proxy)
+	s := h.serve(t)
+	h.login(t, s)
+	h.mustRun(t, "price", "list")
+	h.mustRun(t)
+	if n := calls.Load(); n != 0 {
+		t.Errorf("%d connections reached the proxy", n)
 	}
 }

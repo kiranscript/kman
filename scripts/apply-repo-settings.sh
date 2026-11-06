@@ -14,6 +14,8 @@
 #   3. The tag rulesets in .github/rulesets/: only admins create v* tags, and
 #      nobody moves or deletes one. Rulesets on a private repo need GitHub
 #      Pro, so on the free plan this step works only once the repo is public.
+#   4. Let Actions open pull requests, for the weekly price-data job. Workflow
+#      tokens stay read-only by default; that job asks for write itself.
 set -eu
 
 repo=${KMAN_REPO:-kirank55/kman}
@@ -47,6 +49,11 @@ allowed=$(gh api "repos/$repo/actions/permissions" --jq .allowed_actions)
 echo "now: sha_pinning_required=$(gh api "repos/$repo/actions/permissions" --jq .sha_pinning_required)"
 run gh api -X PUT "repos/$repo/actions/permissions" --silent \
 	-F enabled=true -f allowed_actions="$allowed" -F sha_pinning_required=true
+
+echo "== $repo: Actions may open pull requests"
+echo "now: can_approve_pull_request_reviews=$(gh api "repos/$repo/actions/permissions/workflow" --jq .can_approve_pull_request_reviews)"
+run gh api -X PUT "repos/$repo/actions/permissions/workflow" --silent \
+	-f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
 
 for file in .github/rulesets/release-tags-create.json .github/rulesets/release-tags-locked.json; do
 	name=$(sed -n 's/^  "name": "\(.*\)",$/\1/p' "$file")

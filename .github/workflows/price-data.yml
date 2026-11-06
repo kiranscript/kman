@@ -1,0 +1,88 @@
+# ADR 0007: regenerate the embedded price table every week and open a pull
+# request with the diff. A person reviews and merges it; a merged data-only
+# change ships as a patch release. See docs/price-data.md.
+#
+# Pull requests opened with the default GITHUB_TOKEN don't start other workflows,
+# so CI won't run on them. Set the repository secret PRICE_DATA_TOKEN to a token
+# with contents and pull-requests write to change that; without it, close and
+# reopen the pull request to run CI.
+name: Price data
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: price-data
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: Regenerate the table
+        run: sh scripts/update-price-data.sh
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ secrets.PRICE_DATA_TOKEN || github.token }}
+          BRANCH: price-data/update
+        run: |
+          if git diff --quiet -- internal/pricing/table.json; then
+            echo "No price changed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          base="$RUNNER_TEMP/base-table.json"
+          git show HEAD:internal/pricing/table.json > "$base"
+          flags="$RUNNER_TEMP/flags.md"
+          status=0
+          go run ./internal/pricing/pricegen check --base "$base" --github > "$flags" || status=$?
+          cat "$flags" >> "$GITHUB_STEP_SUMMARY"
+
+          body="$RUNNER_TEMP/body.md"
+          {
+            echo "The weekly regeneration of the price table (ADR 0007). Review each changed value against the provider's page, and the new rows in \`internal/pricing/pricegen/disagreements.md\`. See \`docs/price-data.md\`."
+            echo
+            if [ "$status" -ne 0 ]; then
+              echo "**The check failed:** a reviewed max output equals the context window, with no explanation in the reviewed file."
+              echo
+            fi
+            # A pull request body holds 65,536 characters; the job summary has it all.
+            head -c 60000 "$flags"
+            if [ "$(wc -c < "$flags")" -gt 60000 ]; then
+              printf '\n\nCut short: see the summary of run %s.\n' "$GITHUB_RUN_ID"
+            fi
+          } > "$body"
+
+          gh auth setup-git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add internal/pricing/table.json internal/pricing/pricegen/disagreements.md
+          git commit -m "Update the price table"
+          git push --force origin "$BRANCH"
+          if [ "$(gh pr list --head "$BRANCH" --state open --json number --jq length)" -gt 0 ]; then
+            gh pr edit "$BRANCH" --body-file "$body"
+          else
+            gh pr create --head "$BRANCH" --base main --title "Update the price table" --body-file "$body"
+          fi

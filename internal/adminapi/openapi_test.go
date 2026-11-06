@@ -125,14 +125,16 @@ func TestTheOpenAPIDocumentDescribesTheTypes(t *testing.T) {
 		"get /admin/v1/settings":                    "getSettings",
 		"patch /admin/v1/settings":                  "updateSettings",
 		"get /admin/v1/audit":                       "listAudit",
+		"get /admin/v1/prices":                      "listPrices",
+		"get /admin/v1/prices/status":               "getPriceDataStatus",
 		"get /admin/v1/openapi.json":                "openapi",
 	} {
 		if ops[want] != id {
 			t.Errorf("%s has operationId %q, want %q", want, ops[want], id)
 		}
 	}
-	if len(ops) != 9 {
-		t.Errorf("the document has %d operations, want 9: %v", len(ops), ops)
+	if len(ops) != 11 {
+		t.Errorf("the document has %d operations, want 11: %v", len(ops), ops)
 	}
 
 	create := doc.Paths["/admin/v1/admin-tokens"]["post"]
