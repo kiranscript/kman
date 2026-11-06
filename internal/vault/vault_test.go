@@ -337,3 +337,50 @@ func TestCreateRefusesAnEmptyID(t *testing.T) {
 		t.Errorf("Create read the master key %d times before refusing, want 0", src.reads)
 	}
 }
+
+// seeded is a fixed stream of "random" bytes.
+func seeded() *bytes.Reader { return bytes.NewReader(bytes.Repeat([]byte("kman test seed.."), 1024)) }
+
+// The fixture generator needs a rerun to write the same bytes (SPEC §14).
+func TestAGivenRandomSourceMakesTheVaultDeterministic(t *testing.T) {
+	src := newFixedSource(t)
+	make1 := func() (vault.WrappedKey, vault.Sealed) {
+		v, wk, err := vault.Create(src, "dek_test", vault.Options{AllowDebug: true, Rand: seeded()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer v.Close()
+		s, err := v.Seal("cr_1", []byte("sk-sentinel"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := v.Put("cr_1", s); err != nil {
+			t.Fatal(err)
+		}
+		return wk, s
+	}
+	wk1, s1 := make1()
+	wk2, s2 := make1()
+	if !bytes.Equal(wk1.Wrapped, wk2.Wrapped) || !bytes.Equal(wk1.Nonce, wk2.Nonce) {
+		t.Error("two creates from one seed wrapped different data keys")
+	}
+	if !bytes.Equal(s1.Ciphertext, s2.Ciphertext) || !bytes.Equal(s1.Nonce, s2.Nonce) {
+		t.Error("two seals from one seed differ")
+	}
+}
+
+func TestARandomSourceThatFailsFailsTheCall(t *testing.T) {
+	src := newFixedSource(t)
+	if _, _, err := vault.Create(src, "dek_test", vault.Options{AllowDebug: true, Rand: bytes.NewReader(nil)}); err == nil {
+		t.Error("Create with an empty random source succeeded")
+	}
+	short := bytes.NewReader(make([]byte, vault.KeySize+12)) // the data key and its nonce, and no more
+	v, _, err := vault.Create(src, "dek_test", vault.Options{AllowDebug: true, Rand: short})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+	if _, err := v.Seal("cr_1", []byte("sk-sentinel")); err == nil {
+		t.Error("Seal with an empty random source succeeded")
+	}
+}
