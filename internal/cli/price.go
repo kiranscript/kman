@@ -122,35 +122,3 @@ func printPriceData(c *call, st admin.PriceDataStatus) {
 		fmt.Fprintln(c.env.Stdout, st.Notice)
 	}
 }
-
-// statusTimeout bounds how long the status summary waits for the server, which
-// may not be running.
-const statusTimeout = 3 * time.Second
-
-// Status prints the status summary (plain kman) and returns its exit code. It
-// shows how old the running server's price table is, or this binary's when no
-// server answers, and asks for an upgrade past 60 days. #36 adds the install's
-// stages.
-func Status(ctx context.Context, env Env) int {
-	c := &call{env: env, name: "status", configDir: env.ConfigDir}
-	st, ok := serverPriceData(ctx, c)
-	if !ok {
-		if env.LocalPriceData == nil {
-			return ExitOK
-		}
-		st = env.LocalPriceData()
-	}
-	printPriceData(c, st)
-	return ExitOK
-}
-
-func serverPriceData(ctx context.Context, c *call) (admin.PriceDataStatus, bool) {
-	cl, _, err := c.connect()
-	if err != nil {
-		return admin.PriceDataStatus{}, false
-	}
-	ctx, cancel := context.WithTimeout(ctx, statusTimeout)
-	defer cancel()
-	st, err := cl.PriceDataStatus(ctx)
-	return st, err == nil
-}

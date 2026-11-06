@@ -4,6 +4,7 @@ import (
 	"maps"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Upstream is one upstream as the request path reads it.
@@ -26,14 +27,16 @@ type Credential struct {
 	Generation int64
 }
 
-// Key is one virtual key as the request path reads it. #36 adds its policy
-// and expiry.
+// Key is one virtual key as the request path reads it.
 type Key struct {
-	ID           string
-	Name         string
-	CredentialID string // "" for a canary
-	Status       string
-	Generation   int64
+	ID            string
+	Name          string
+	CredentialID  string // "" for a canary
+	Status        string
+	ExpiresAt     time.Time
+	Policy        string // the policy as JSON, in the form policy.Normalize gives
+	PolicyVersion int
+	Generation    int64
 }
 
 // Route is what the request path needs to serve a key. Its pointers lead into

@@ -92,7 +92,7 @@ CREATE INDEX credentials_upstream ON credentials (upstream_id);
 
 CREATE TABLE virtual_keys (
 	key_id                    TEXT    PRIMARY KEY,
-	name                      TEXT    NOT NULL,
+	name                      TEXT,
 	credential_id             TEXT    REFERENCES credentials (id),
 	kind                      TEXT    NOT NULL CHECK (kind IN ('standard', 'canary')),
 	status                    TEXT    NOT NULL CHECK (status IN ('active', 'disabled', 'revoked')),

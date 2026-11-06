@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -57,7 +58,6 @@ var usageLine = "usage: kman <" + strings.Join(append(slices.Clone(offline), cli
 // run runs the command in args. ctx is cancelled by SIGINT or SIGTERM.
 func run(ctx context.Context, args []string, s *sys) int {
 	if len(args) == 0 {
-		// The status summary, which #36 builds out with the install's stages.
 		code := cli.Status(ctx, cliEnv(s))
 		fmt.Fprintln(s.stdout, usageLine)
 		return code
@@ -88,7 +88,11 @@ func cliEnv(s *sys) cli.Env {
 	}
 	return cli.Env{Stdout: s.stdout, Stderr: s.stderr, Stdin: s.stdin, Getenv: s.getenv,
 		ConfigDir: configDir, ReadSecret: s.readSecret,
-		LocalPriceData: func() admin.PriceDataStatus { return builtinPrices().Status(s.now()) }}
+		LocalPriceData: func() admin.PriceDataStatus { return builtinPrices().Status(s.now()) },
+		Initialised: func() bool {
+			_, err := os.Stat(filepath.Join(configDir, configFile))
+			return configDir != "" && err == nil
+		}}
 }
 
 // usage prints the usage line. A usage error is an error: exit code 1

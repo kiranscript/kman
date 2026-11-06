@@ -33,6 +33,9 @@ type Env struct {
 	// LocalPriceData is how old this binary's own price table is, for when
 	// the server can't be asked.
 	LocalPriceData func() admin.PriceDataStatus
+	// Initialised reports whether kman init has set up this machine, for the
+	// status summary. Nil means it has not.
+	Initialised func() bool
 }
 
 // command is one online command.
@@ -51,6 +54,7 @@ var commands = []command{
 	{"price", "list the price table, and set, remove or import price overrides", cmdPrice},
 	{"upstream", "add, list, show, update, remove or sync upstreams", cmdUpstream},
 	{"credential", "add, update or remove credentials", cmdCredential},
+	{"key", "create, list, show or update virtual keys", cmdKey},
 }
 
 // Commands names the online commands Run serves, for kman's usage line.

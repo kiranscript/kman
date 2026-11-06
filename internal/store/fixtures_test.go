@@ -103,6 +103,8 @@ type counts struct {
 	adminTokens int
 	settings    int
 	credentials int
+	keys        int
+	keySecrets  int
 	overrides   int
 }
 
@@ -117,6 +119,8 @@ func countRows(t *testing.T, path string) counts {
 		`SELECT count(*) FROM admin_tokens`:    &c.adminTokens,
 		`SELECT count(*) FROM settings`:        &c.settings,
 		`SELECT count(*) FROM credentials`:     &c.credentials,
+		`SELECT count(*) FROM virtual_keys`:    &c.keys,
+		`SELECT count(*) FROM key_secrets`:     &c.keySecrets,
 		`SELECT count(*) FROM price_overrides`: &c.overrides,
 	} {
 		if err := db.QueryRow(q).Scan(dst); err != nil {

@@ -79,6 +79,11 @@ var routes = []route{
 	op("POST", "/credentials", "addCredential", "Seal a secret as a credential on an upstream; it is never shown again", http.StatusCreated, Service.AddCredential),
 	op("PATCH", "/credentials/{ref}", "updateCredential", "Rename a credential or replace its secret", http.StatusOK, Service.UpdateCredential),
 	op("DELETE", "/credentials/{ref}", "removeCredential", "Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it", http.StatusOK, Service.RemoveCredential),
+
+	op("GET", "/keys", "listKeys", "List every virtual key, or the one with a name, never their secrets", http.StatusOK, Service.ListKeys),
+	op("POST", "/keys", "createKey", "Create a virtual key on an upstream; its secret is returned only this once", http.StatusCreated, Service.CreateKey),
+	op("GET", "/keys/{id}", "getKey", "Read one virtual key, by key id", http.StatusOK, Service.GetKey),
+	op("PATCH", "/keys/{id}", "updateKey", "Change a virtual key's name, note, tags, expiry or policy", http.StatusOK, Service.UpdateKey),
 }
 
 // docPath serves the OpenAPI document. It needs no token.

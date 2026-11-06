@@ -289,15 +289,16 @@ func TestDeleteIsRefusedWhileAKeyDependsOnTheItem(t *testing.T) {
 		t.Run(status, func(t *testing.T) {
 			in := withOpenAI(t)
 			c := in.addCredential(t, "main", "openai")
-			in.seedKey(t, "abcd1234", "my-app", c.ID, status)
+			k := in.createKey(t, admin.CreateKeyRequest{Name: "my-app", Upstream: "openai"}).Key
+			in.setKeyStatus(t, k.ID, status)
 			before := len(in.latest(t, 100))
 
 			_, err := in.svc.RemoveCredential(as("owner"), admin.CredentialRef{Ref: "main"})
-			if code(err) != admin.CodeConflict || !strings.Contains(err.Error(), "abcd1234") {
+			if code(err) != admin.CodeConflict || !strings.Contains(err.Error(), k.ID) {
 				t.Errorf("RemoveCredential = %v, want conflict naming the key", err)
 			}
 			_, err = in.svc.RemoveUpstream(as("owner"), admin.UpstreamRef{Ref: "openai"})
-			if code(err) != admin.CodeConflict || !strings.Contains(err.Error(), "abcd1234") {
+			if code(err) != admin.CodeConflict || !strings.Contains(err.Error(), k.ID) {
 				t.Errorf("RemoveUpstream = %v, want conflict naming the key", err)
 			}
 			if _, ok := in.vault.Credential(c.ID); !ok {
@@ -315,8 +316,9 @@ func TestDeleteIsRefusedWhileAKeyDependsOnTheItem(t *testing.T) {
 
 func TestARevokedKeyDoesNotHoldADelete(t *testing.T) {
 	in := withOpenAI(t)
-	c := in.addCredential(t, "main", "openai")
-	in.seedKey(t, "abcd1234", "my-app", c.ID, "revoked")
+	in.addCredential(t, "main", "openai")
+	k := in.createKey(t, admin.CreateKeyRequest{Name: "my-app", Upstream: "openai"}).Key
+	in.setKeyStatus(t, k.ID, "revoked")
 	if _, err := in.svc.RemoveCredential(as("owner"), admin.CredentialRef{Ref: "main"}); err != nil {
 		t.Errorf("RemoveCredential = %v", err)
 	}
@@ -327,12 +329,14 @@ func TestARevokedKeyDoesNotHoldADelete(t *testing.T) {
 
 func TestARefusalNamesAFewKeysAndCountsTheRest(t *testing.T) {
 	in := withOpenAI(t)
-	c := in.addCredential(t, "main", "openai")
+	in.addCredential(t, "main", "openai")
+	var ids []string
 	for i := range 8 {
-		in.seedKey(t, fmt.Sprintf("key%05d", i), fmt.Sprintf("app-%d", i), c.ID, "active")
+		ids = append(ids, in.createKey(t, admin.CreateKeyRequest{Name: fmt.Sprintf("app-%d", i), Upstream: "openai"}).Key.ID)
 	}
+	slices.Sort(ids)
 	_, err := in.svc.RemoveCredential(as("owner"), admin.CredentialRef{Ref: "main"})
-	if code(err) != admin.CodeConflict || !strings.Contains(err.Error(), "8 virtual keys") || strings.Contains(err.Error(), "key00007") {
+	if code(err) != admin.CodeConflict || !strings.Contains(err.Error(), "8 virtual keys") || strings.Contains(err.Error(), ids[7]) {
 		t.Errorf("RemoveCredential = %v", err)
 	}
 }
