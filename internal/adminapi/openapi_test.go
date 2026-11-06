@@ -126,15 +126,45 @@ func TestTheOpenAPIDocumentDescribesTheTypes(t *testing.T) {
 		"patch /admin/v1/settings":                  "updateSettings",
 		"get /admin/v1/audit":                       "listAudit",
 		"get /admin/v1/openapi.json":                "openapi",
+		"get /admin/v1/upstreams":                   "listUpstreams",
+		"post /admin/v1/upstreams":                  "addUpstream",
+		"get /admin/v1/upstreams/{ref}":             "getUpstream",
+		"patch /admin/v1/upstreams/{ref}":           "updateUpstream",
+		"delete /admin/v1/upstreams/{ref}":          "removeUpstream",
+		"get /admin/v1/upstreams/{ref}/sync":        "planUpstreamSync",
+		"post /admin/v1/upstreams/{ref}/sync":       "syncUpstream",
+		"post /admin/v1/credentials":                "addCredential",
+		"patch /admin/v1/credentials/{ref}":         "updateCredential",
+		"delete /admin/v1/credentials/{ref}":        "removeCredential",
 	} {
 		if ops[want] != id {
 			t.Errorf("%s has operationId %q, want %q", want, ops[want], id)
 		}
 	}
-	if len(ops) != 9 {
-		t.Errorf("the document has %d operations, want 9: %v", len(ops), ops)
+	if len(ops) != 19 {
+		t.Errorf("the document has %d operations, want 19: %v", len(ops), ops)
 	}
 
+	// The settings an upstream takes reach the document, embedded as they are.
+	addUpstream := doc.Components.Schemas["AddUpstreamRequest"]
+	for _, field := range []string{"name", "preset", "host", "port", "tls", "path_allowlist", "auth", "sdk_env"} {
+		if _, ok := addUpstream.Properties[field]; !ok {
+			t.Errorf("AddUpstreamRequest has no %s: %v", field, addUpstream.Properties)
+		}
+	}
+	// A credential's secret goes in, and never comes out.
+	if _, ok := doc.Components.Schemas["AddCredentialRequest"].Properties["secret"]; !ok {
+		t.Error("AddCredentialRequest has no secret")
+	}
+	for _, name := range []string{"Credential", "Upstream", "UpstreamList", "UpstreamSyncPlan"} {
+		schema, ok := doc.Components.Schemas[name]
+		if !ok {
+			t.Errorf("no %s schema", name)
+		}
+		if _, ok := schema.Properties["secret"]; ok {
+			t.Errorf("%s has a secret", name)
+		}
+	}
 	create := doc.Paths["/admin/v1/admin-tokens"]["post"]
 	if ref := create.RequestBody.Content["application/json"].Schema.Ref; ref != "#/components/schemas/CreateAdminTokenRequest" {
 		t.Errorf("createAdminToken's body is %q", ref)
