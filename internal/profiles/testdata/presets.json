@@ -1,0 +1,86 @@
+{
+  "anthropic": {
+    "version": 1,
+    "sha256": "c9d5d023c90a79f2b53dd2513bc87c78ef5f9fa2c0c5282f05766233c6629f8b"
+  },
+  "cerebras": {
+    "version": 1,
+    "sha256": "66d6a42eb3b05dbce82aca35c62e0cb4935a99d39a9dbf8429796aa3bbb6cf2f"
+  },
+  "cloudflare": {
+    "version": 1,
+    "sha256": "21884eb6d10f91d40de1d4fec5c01ad2f71dce8d22b96390e53ef1971664f8f3"
+  },
+  "deepseek": {
+    "version": 1,
+    "sha256": "0d87a82aede4b66592a82ce7a51d870c849bb0b55678fded53ba1460e20d8924"
+  },
+  "fireworks": {
+    "version": 1,
+    "sha256": "deddaad1ff48aa961406bb085be883a87052ac62e6faad371d4f053a77937401"
+  },
+  "gemini": {
+    "version": 1,
+    "sha256": "25e6007083cf4c906fd9ce8cb7051cd845df0ac9b05a18dc6a2b584ad14fa336"
+  },
+  "github": {
+    "version": 1,
+    "sha256": "a37ad27578a66851201bdaafd88bc1f5edef8bf813f7a8a4b47fce3fd7fde2fe"
+  },
+  "groq": {
+    "version": 1,
+    "sha256": "b5f2bcabf539c8ab2fede470accd2d91b3d3fff761dd2012b7e972e4e8303dbc"
+  },
+  "linear": {
+    "version": 1,
+    "sha256": "fe4fa32bbf44231750bec239d2565450e31a63908b62d22d59aa45265afa138b"
+  },
+  "mistral": {
+    "version": 1,
+    "sha256": "ce4eb66da5cafcb6bc4290151f2044517b20046f4779fd6372334d669c82a92c"
+  },
+  "notion": {
+    "version": 1,
+    "sha256": "e92c19245e58f5bed7a9b49a7152665d26dd8a02ab1392873af116f0f178993b"
+  },
+  "openai": {
+    "version": 1,
+    "sha256": "baa7f5c136a6968ac06d2d4ed530f91470003bf5da54222fd62cff587d71ac8c"
+  },
+  "openrouter": {
+    "version": 1,
+    "sha256": "4ad8d67051f51cbec839bd25946aab841455515bd4862161840e6f91e437cd27"
+  },
+  "postmark": {
+    "version": 1,
+    "sha256": "9b35ad7c53872847dbba2218057ceb2ce807f8df2e0b6597484d3a780bdf7609"
+  },
+  "resend": {
+    "version": 1,
+    "sha256": "f486359d1c897623ac8690375595cba1552c066f355250d828b165d17c9eec70"
+  },
+  "sendgrid": {
+    "version": 1,
+    "sha256": "1126f3f80a21cb4cd3ba6cf38222dfcc79bc27472c2044e66bdd5592435f8ad0"
+  },
+  "slack": {
+    "version": 1,
+    "sha256": "cbc3c85dd2277249f026c8638341d52960ac35d5c6ace5530958484fe43302d5"
+  },
+  "stripe": {
+    "version": 1,
+    "sha256": "0481309d31c7e1cf75dfd09ad8a12489917f76016ce0681c18ef4919be87c0bc"
+  },
+  "together": {
+    "version": 1,
+    "sha256": "f6a397362a2cf3703117b46d89d2ea0a79f1bbe308325da2e3bcbeef56a4cab7"
+  },
+  "twilio": {
+    "version": 1,
+    "sha256": "58e149d617ce069e731353b82e8e60958f9c49dbfa16d7ca999feb42170a91b3"
+  },
+  "xai": {
+    "version": 1,
+    "sha256": "12f12a065d05cdc5ea20e4b81d93f76600557b04cb1b1c69cd992f82284da848"
+  }
+}
