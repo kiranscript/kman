@@ -101,7 +101,7 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	}
 	defer v.Close()
 
-	svc := admin.New(admin.Options{Store: st, Now: s.now})
+	svc := admin.New(admin.Options{Store: st, Now: s.now, Prices: builtinPrices})
 	ls, err := listen(cfg, log, adminHandler(svc, log))
 	if err != nil {
 		return err

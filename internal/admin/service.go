@@ -26,6 +26,9 @@ type API interface {
 	UpdateSettings(ctx context.Context, req SettingsUpdate) (Settings, error)
 
 	Audit(ctx context.Context, req AuditQuery) (AuditPage, error)
+
+	ListPrices(ctx context.Context, req PriceQuery) (PriceList, error)
+	PriceDataStatus(ctx context.Context) (PriceDataStatus, error)
 }
 
 var _ API = (*Service)(nil)
@@ -41,19 +44,23 @@ type Options struct {
 	// Apply publishes a committed change to the registry. Nil does
 	// nothing, which is all there is until the registry exists (#34).
 	Apply func(Change)
+	// Prices returns the price table this binary carries. The composition
+	// root adapts it, since admin may not import pricing (SPEC §2).
+	Prices func() PriceTable
 }
 
 // Service runs the admin commands.
 type Service struct {
-	store *store.Store
-	now   func() time.Time
-	rand  io.Reader
-	apply func(Change)
+	store  *store.Store
+	now    func() time.Time
+	rand   io.Reader
+	apply  func(Change)
+	prices func() PriceTable
 }
 
 // New returns the admin service over opts.Store.
 func New(opts Options) *Service {
-	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, apply: opts.Apply}
+	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, apply: opts.Apply, prices: opts.Prices}
 	if s.rand == nil {
 		s.rand = rand.Reader
 	}

@@ -29,14 +29,38 @@ type install struct {
 	svc       *admin.Service
 }
 
-func newInstall(t *testing.T) *install {
+// priceTableAt is when the test price table was generated: 3 days before t0.
+var priceTableAt = t0.AddDate(0, 0, -3)
+
+func withPricesGenerated(at time.Time) func(*admin.PriceTable) {
+	return func(p *admin.PriceTable) { p.GeneratedAt = at }
+}
+
+// testPrices is a small price table with one row of each shape.
+func testPrices() admin.PriceTable {
+	cached, webSearch := int64(250000), admin.PriceToolFee{Tool: "web_search", Micro: 10000}
+	return admin.PriceTable{GeneratedAt: priceTableAt, StaleAfter: 60 * 24 * time.Hour, Models: []admin.PriceModel{
+		{Model: "gpt-5.4", Mode: "chat", InputMicro: 2500000, OutputMicro: 15000000, CachedMicro: &cached, MaxOutput: 128000,
+			LongContext:  []admin.PriceBand{{AboveTokens: 272000, InputMicro: 5000000, OutputMicro: 22500000}},
+			ServiceTiers: []string{"flex", "priority"}, ToolFees: []admin.PriceToolFee{webSearch}},
+		{Model: "gpt-live-1", Mode: "realtime", PerMinuteMicro: 50000, PerTextInputMicro: 4000},
+		{Preset: "groq", Model: "openai/gpt-oss-120b", Mode: "chat", InputMicro: 150000, OutputMicro: 600000, MaxOutput: 65536, Reviewed: true},
+	}}
+}
+
+func newInstall(t *testing.T, opts ...func(*admin.PriceTable)) *install {
 	t.Helper()
+	prices := testPrices()
+	for _, o := range opts {
+		o(&prices)
+	}
 	st, err := store.Open(context.Background(), store.Options{Dir: t.TempDir(), Now: t0})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	svc := admin.New(admin.Options{Store: st, Now: func() time.Time { return t0 }})
+	svc := admin.New(admin.Options{Store: st, Now: func() time.Time { return t0 },
+		Prices: func() admin.PriceTable { return prices }})
 	owner, err := svc.CreateAdminToken(admin.WithCaller(context.Background(), admin.Caller{Actor: "system:init"}),
 		admin.CreateAdminTokenRequest{Name: "owner"})
 	if err != nil {
@@ -74,6 +98,19 @@ func (in *install) run(t *testing.T, env map[string]string, stdin string, args .
 		ConfigDir: in.configDir,
 	})
 	return result{stdout.String(), stderr.String(), code}
+}
+
+// status runs the status summary, with local as this binary's own price data.
+func (in *install) status(t *testing.T, local admin.PriceDataStatus) string {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	cli.Status(context.Background(), cli.Env{
+		Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader(""),
+		Getenv:         func(string) string { return "" },
+		ConfigDir:      in.configDir,
+		LocalPriceData: func() admin.PriceDataStatus { return local },
+	})
+	return stdout.String()
 }
 
 // kman runs the CLI logged in through the credentials file and fails the

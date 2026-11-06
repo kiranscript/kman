@@ -61,6 +61,9 @@ var routes = []route{
 	op("PATCH", "/settings", "updateSettings", "Change some settings; each change is audited", http.StatusOK, Service.UpdateSettings),
 
 	op("GET", "/audit", "listAudit", "Read a page of the audit log, oldest entry first", http.StatusOK, Service.Audit),
+
+	op("GET", "/prices", "listPrices", "List the built-in price table and how old it is", http.StatusOK, Service.ListPrices),
+	op0("GET", "/prices/status", "getPriceDataStatus", "Say how old the built-in price table is, and whether to upgrade", Service.PriceDataStatus),
 }
 
 // docPath serves the OpenAPI document. It needs no token.

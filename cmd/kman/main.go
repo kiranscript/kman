@@ -17,6 +17,7 @@ import (
 	"time"
 	_ "time/tzdata" // spend_timezone must resolve where the OS has no zone database, such as Windows
 
+	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/cli"
 	"github.com/kirank55/kman/internal/vault"
 )
@@ -56,7 +57,10 @@ var usageLine = "usage: kman <" + strings.Join(append(slices.Clone(offline), cli
 // run runs the command in args. ctx is cancelled by SIGINT or SIGTERM.
 func run(ctx context.Context, args []string, s *sys) int {
 	if len(args) == 0 {
-		return usage(s.stderr)
+		// The status summary, which #36 builds out with the install's stages.
+		code := cli.Status(ctx, cliEnv(s))
+		fmt.Fprintln(s.stdout, usageLine)
+		return code
 	}
 	switch name, rest := args[0], args[1:]; name {
 	case "init":
@@ -81,7 +85,8 @@ func cliEnv(s *sys) cli.Env {
 		configDir = "" // the CLI asks for --config-dir
 	}
 	return cli.Env{Stdout: s.stdout, Stderr: s.stderr, Stdin: s.stdin, Getenv: s.getenv,
-		ConfigDir: configDir, ReadSecret: s.readSecret}
+		ConfigDir: configDir, ReadSecret: s.readSecret,
+		LocalPriceData: func() admin.PriceDataStatus { return builtinPrices().Status(s.now()) }}
 }
 
 // usage prints the usage line. A usage error is an error: exit code 1
