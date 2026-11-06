@@ -38,6 +38,27 @@ func MintChildKey(id KeyID) (Minted, error) {
 	return mint(ChildKey, id, randomSecret())
 }
 
+// NewKeyIDFrom returns a key id from r, so a seeded source can make
+// reproducible fixtures. Use NewKeyID everywhere else.
+func NewKeyIDFrom(r io.Reader) (KeyID, error) {
+	var b [idLen]byte
+	if err := readBase62(r, b[:]); err != nil {
+		return "", fmt.Errorf("token: read key id: %w", err)
+	}
+	return KeyID(b[:]), nil
+}
+
+// MintVirtualKeyFrom mints a virtual key for the key id whose secret is the
+// next 32 bytes of r, so a seeded source can make reproducible fixtures. Use
+// MintVirtualKey everywhere else.
+func MintVirtualKeyFrom(id KeyID, r io.Reader) (Minted, error) {
+	var secret [32]byte
+	if _, err := io.ReadFull(r, secret[:]); err != nil {
+		return Minted{}, fmt.Errorf("token: read secret: %w", err)
+	}
+	return mint(VirtualKey, id, secret)
+}
+
 // MintAdminToken mints an admin token with a fresh secret.
 func MintAdminToken() Minted {
 	m, _ := mint(AdminToken, "", randomSecret()) // cannot fail without a key id

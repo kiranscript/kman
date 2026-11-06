@@ -1,6 +1,9 @@
 package token
 
-import "crypto/rand"
+import (
+	"crypto/rand"
+	"io"
+)
 
 // alphabet is base62 in the order of the scanner pattern's [0-9A-Za-z].
 const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -56,9 +59,16 @@ func encodeUint(dst []byte, n uint64) {
 
 // randomBase62 fills dst with uniformly random base62 characters.
 func randomBase62(dst []byte) {
+	readBase62(rand.Reader, dst) // never fails (crypto/rand, Go 1.24+)
+}
+
+// readBase62 fills dst with uniformly random base62 characters drawn from r.
+func readBase62(r io.Reader, dst []byte) error {
 	var buf [64]byte
 	for i := 0; i < len(dst); {
-		rand.Read(buf[:]) // never fails (crypto/rand, Go 1.24+)
+		if _, err := io.ReadFull(r, buf[:]); err != nil {
+			return err
+		}
 		for _, c := range buf {
 			// 248 is the largest multiple of 62 that fits a byte, so
 			// rejecting bytes at or above it keeps every digit equally likely.
@@ -68,4 +78,5 @@ func randomBase62(dst []byte) {
 			}
 		}
 	}
+	return nil
 }

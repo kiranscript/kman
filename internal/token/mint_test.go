@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"regexp"
 	"strings"
 	"testing"
@@ -171,5 +172,43 @@ func TestMintAdminTokenFromReadsItsSecretFromTheReader(t *testing.T) {
 	}
 	if _, err := token.MintAdminTokenFrom(bytes.NewReader(secret[:31])); err == nil {
 		t.Error("MintAdminTokenFrom a short reader succeeded")
+	}
+}
+
+// TestMintingFromASourceIsReproducibleAndParses covers the seeded forms the
+// fixture generator uses: the same source gives the same key.
+func TestMintingFromASourceIsReproducibleAndParses(t *testing.T) {
+	mintFrom := func() token.Minted {
+		src := rand.NewChaCha8([32]byte{1, 2, 3})
+		id, err := token.NewKeyIDFrom(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := token.MintVirtualKeyFrom(id, src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	a, b := mintFrom(), mintFrom()
+	if a.Reveal() != b.Reveal() {
+		t.Errorf("the same source minted %s and %s", a, b)
+	}
+	got, err := token.Parse(a.Reveal())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Kind != token.VirtualKey || got.ID != a.ID || !got.Hash.Equal(a.Hash) {
+		t.Errorf("Parse = %+v, minted %+v", got, a.Token)
+	}
+}
+
+func TestMintingFromAFailingSourceFails(t *testing.T) {
+	empty := strings.NewReader("")
+	if _, err := token.NewKeyIDFrom(empty); err == nil {
+		t.Error("NewKeyIDFrom from an empty source succeeded")
+	}
+	if _, err := token.MintVirtualKeyFrom("abcd1234", empty); err == nil {
+		t.Error("MintVirtualKeyFrom from an empty source succeeded")
 	}
 }
