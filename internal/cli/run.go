@@ -48,7 +48,7 @@ var commands = []command{
 	{"admin-token", "create, list, rotate or revoke admin tokens", cmdAdminToken},
 	{"settings", "get or set the install's settings", cmdSettings},
 	{"audit", "list the audit log, or export it", cmdAudit},
-	{"price", "list the price table and how old it is", cmdPrice},
+	{"price", "list the price table, and set, remove or import price overrides", cmdPrice},
 	{"upstream", "add, list, show, update, remove or sync upstreams", cmdUpstream},
 	{"credential", "add, update or remove credentials", cmdCredential},
 }
