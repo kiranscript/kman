@@ -53,6 +53,27 @@ It leaves the table alone, `generated_at` included, when no price changed. It re
 
 It wins over the sources in both directions, since they overstate (a context window listed as the max output) and understate (Cerebras's free-tier limit). A provider that publishes no separate limit gets `equals_context`, saying so. Add an entry only after reading the page.
 
+## Price overrides
+
+An operator can price a model the table lacks, or correct one, without waiting for a release. An override needs an input price, an output price and a max output, all in one go, and wins until it's removed, even after a release adds the model.
+
+```sh
+kman price set new-model --input 2.50 --output 15 --max-output 128000   # the whole install
+kman price set new-model --upstream eu --input 3 --output 18 --max-output 128000   # one upstream
+kman price rm new-model --upstream eu
+kman price import overrides.json   # all or nothing; - reads stdin
+kman price list   # the overrides follow the table, marked "hides built-in: ..." when they hide an entry
+```
+
+- **Lookup order:** the upstream's override, the install's override, the preset's built-in entry, the global built-in entry.
+- **An override replaces the whole entry.** The built-in's long-context bands, service tiers and per-call tool fees don't apply under it, so correcting one price of a model that has them means pricing it for its dearest case. Optional prices (`--cached`, `--cache-write`, `--cache-write-1h`, `--audio-input`, `--audio-output`, `--audio-cached`) fall back as the table's do. An override can't express a per-minute voice price yet.
+- **Import format:** `{"overrides": [{"model": "m", "upstream": "eu", "input_micro": 2500000, "output_micro": 15000000, "max_output": 128000}]}`, in microdollars per million tokens, with `upstream` left out for the whole install. `kman price list --json` prints the same shape, so its output imports as it is. Unknown fields are refused.
+- **Changes** go through the admin API, and each one is audited as `price_override.set` or `price_override.delete`, naming its actor. Setting the same prices again records nothing. Removing an upstream removes its overrides, each audited.
+
+## Price multiplier
+
+`kman upstream update eu --price-multiplier 1.1` (the API's `price_multiplier_ppm`, 1000000 being ×1) scales built-in prices and install-wide overrides on one upstream, for a regional uplift. It's above 0 and at most 100, and defaults to 1. It doesn't touch that upstream's own overrides, which are its price already, or a cost the provider reports. It scales every price of an entry, tool fees and voice minutes included. `kman upstream sync` keeps it.
+
 ## Staleness
 
 The table carries `generated_at`. `kman price list` and plain `kman` show its age, and past 60 days they say `price data is N days old, upgrade kman`. Age never changes what kman enforces.

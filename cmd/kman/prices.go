@@ -20,6 +20,25 @@ var builtinPrices = sync.OnceValue(func() admin.PriceTable {
 	return out
 })
 
+// publishOverrides puts admin's overrides in force, adapting them because admin
+// may not import pricing.
+func publishOverrides(prices *pricing.Prices) func([]admin.PriceOverride) error {
+	return func(rows []admin.PriceOverride) error {
+		overrides := make([]pricing.Override, 0, len(rows))
+		for _, o := range rows {
+			overrides = append(overrides, pricing.Override{
+				UpstreamID: o.UpstreamID, Model: o.Model, MaxOutput: o.MaxOutput,
+				Rates: pricing.Rates{
+					Input: o.InputMicro, Output: o.OutputMicro,
+					Cached: o.CachedMicro, CacheWrite: o.CacheWriteMicro, CacheWrite1h: o.CacheWrite1hMicro,
+					AudioInput: o.AudioInputMicro, AudioOutput: o.AudioOutputMicro, AudioCached: o.AudioCachedMicro,
+				},
+			})
+		}
+		return prices.SetOverrides(overrides)
+	}
+}
+
 func priceModel(row pricing.Listed) admin.PriceModel {
 	e := row.Entry
 	m := admin.PriceModel{

@@ -9,6 +9,7 @@ import (
 
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/pricing"
+	"github.com/kirank55/kman/internal/store"
 )
 
 func TestAnUnknownCommandIsAUsageErrorNamingEveryCommand(t *testing.T) {
@@ -81,5 +82,67 @@ func TestPlainKmanAsksForAnUpgradePastSixtyDays(t *testing.T) {
 	run(context.Background(), nil, s)
 	if out := stdout.String(); !strings.Contains(out, "price data is 61 days old, upgrade kman") {
 		t.Errorf("plain kman printed:\n%s", out)
+	}
+}
+
+func TestAdminsOverridesReachThePricesInForce(t *testing.T) {
+	ctx := admin.WithCaller(t.Context(), admin.Caller{Actor: "owner"})
+	at := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	now := func() time.Time { return at }
+	st, err := store.Open(ctx, store.Options{Dir: t.TempDir(), Now: at})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	prices := pricing.NewPrices(pricing.Builtin())
+	svc := admin.New(admin.Options{Store: st, Now: now, ApplyPrices: publishOverrides(prices)})
+	micro := func(n int64) *int64 { return &n }
+	cached := micro(500_000)
+	req := admin.PriceOverrideSet{Model: "gpt-5.4", InputMicro: micro(1_000_000), OutputMicro: micro(2_000_000), MaxOutput: micro(1000)}
+	req.CachedMicro = cached
+	if _, err := svc.SetPriceOverride(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	e, origin, ok := prices.Table().Resolve("", "", "gpt-5.4")
+	if !ok || origin != pricing.OriginInstallOverride || e.Input != 1_000_000 || e.Output != 2_000_000 || e.MaxOutput != 1000 || e.Cached == nil || *e.Cached != 500_000 {
+		t.Errorf("after set: %+v, %v, %v", e, origin, ok)
+	}
+
+	// A restart loads them from the store.
+	restarted := pricing.NewPrices(pricing.Builtin())
+	if err := admin.New(admin.Options{Store: st, Now: now, ApplyPrices: publishOverrides(restarted)}).Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, origin, _ := restarted.Table().Resolve("", "", "gpt-5.4"); origin != pricing.OriginInstallOverride {
+		t.Errorf("after a restart, origin = %v", origin)
+	}
+
+	if _, err := svc.RemovePriceOverride(ctx, admin.PriceOverrideRef{Model: "gpt-5.4"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, origin, ok := prices.Table().Resolve("", "", "gpt-5.4"); !ok || origin != pricing.OriginGlobal {
+		t.Errorf("after rm: origin %v, %v", origin, ok)
+	}
+}
+
+func TestPublishOverridesKeepsUpstreamsApart(t *testing.T) {
+	prices := pricing.NewPrices(pricing.Builtin())
+	err := publishOverrides(prices)([]admin.PriceOverride{{UpstreamID: "up_a", Model: "m", InputMicro: 1, OutputMicro: 2, MaxOutput: 3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, origin, ok := prices.Table().Resolve("up_a", "", "m"); !ok || origin != pricing.OriginUpstreamOverride {
+		t.Errorf("on its upstream: %v, %v", origin, ok)
+	}
+	if _, _, ok := prices.Table().Resolve("up_b", "", "m"); ok {
+		t.Error("it reached another upstream")
+	}
+}
+
+func TestABadOverrideIsRefusedAndNamed(t *testing.T) {
+	prices := pricing.NewPrices(pricing.Builtin())
+	err := publishOverrides(prices)([]admin.PriceOverride{{Model: "m", MaxOutput: 0}})
+	if err == nil || !strings.Contains(err.Error(), "m") {
+		t.Errorf("err = %v", err)
 	}
 }

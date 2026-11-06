@@ -41,6 +41,7 @@ func (p *pathList) Set(v string) error { *p = append(*p, v); return nil }
 type upstreamFlags struct {
 	fs                                                         *flag.FlagSet
 	profile, host, serverName, header, username, env, basePath *string
+	multiplier                                                 *string
 	port                                                       *int
 	tls, noTLS, inject, noInject, basic                        *bool
 	paths                                                      pathList
@@ -62,6 +63,7 @@ func newUpstreamFlags(fs *flag.FlagSet) *upstreamFlags {
 	f.username = fs.String("basic-username", "", "present the secret as the password of HTTP Basic auth with this username")
 	f.env = fs.String("sdk-env", "", "the variable an SDK reads its key from")
 	f.basePath = fs.String("sdk-base-path", "", "appended to kman's proxy URL to make an SDK's base URL")
+	f.multiplier = fs.String("price-multiplier", "", "what built-in prices and install-wide overrides are multiplied by here, such as 1.1 for a regional uplift (default 1)")
 	return f
 }
 
@@ -82,6 +84,13 @@ func (f *upstreamFlags) settings() (admin.UpstreamSettings, error) {
 		s.Port = f.port
 	}
 	var err error
+	if given["price-multiplier"] {
+		ppm, err := parseMillionths(*f.multiplier)
+		if err != nil {
+			return s, fmt.Errorf("--price-multiplier: %v", err)
+		}
+		s.PriceMultiplierPPM = &ppm
+	}
 	if s.TLS, err = onOff(given, "tls", f.tls, "no-tls", f.noTLS); err != nil {
 		return s, err
 	}
@@ -278,6 +287,7 @@ func printUpstream(c *call, u admin.Upstream) {
 	line("inject usage", fmt.Sprint(u.InjectUsage))
 	line("sdk env", u.SDKEnv)
 	line("sdk base path", u.SDKBasePath)
+	line("price multiplier", "x"+decimal(u.PriceMultiplierPPM))
 	created := u.CreatedAt
 	updated := u.UpdatedAt
 	line("created", when(&created))
@@ -348,7 +358,7 @@ func upstreamUpdate(ctx context.Context, c *call) error {
 }
 
 func upstreamRm(ctx context.Context, c *call) error {
-	fs := c.flags("upstream rm <name> [--json]\n\nRemoves its credentials too. Refused while a virtual key that is not revoked depends on one.", true)
+	fs := c.flags("upstream rm <name> [--json]\n\nRemoves its credentials and price overrides too. Refused while a virtual key that is not revoked depends on one.", true)
 	pos, err := c.parse(fs, 1, 1)
 	if err != nil {
 		return err

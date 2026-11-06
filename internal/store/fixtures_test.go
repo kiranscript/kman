@@ -103,6 +103,7 @@ type counts struct {
 	adminTokens int
 	settings    int
 	credentials int
+	overrides   int
 }
 
 func countRows(t *testing.T, path string) counts {
@@ -110,12 +111,13 @@ func countRows(t *testing.T, path string) counts {
 	db := rawOpen(t, path)
 	var c counts
 	for q, dst := range map[string]any{
-		`SELECT install_id FROM meta`:       &c.installID,
-		`SELECT count(*) FROM audit_log`:    &c.audit,
-		`SELECT count(*) FROM upstreams`:    &c.upstreams,
-		`SELECT count(*) FROM admin_tokens`: &c.adminTokens,
-		`SELECT count(*) FROM settings`:     &c.settings,
-		`SELECT count(*) FROM credentials`:  &c.credentials,
+		`SELECT install_id FROM meta`:          &c.installID,
+		`SELECT count(*) FROM audit_log`:       &c.audit,
+		`SELECT count(*) FROM upstreams`:       &c.upstreams,
+		`SELECT count(*) FROM admin_tokens`:    &c.adminTokens,
+		`SELECT count(*) FROM settings`:        &c.settings,
+		`SELECT count(*) FROM credentials`:     &c.credentials,
+		`SELECT count(*) FROM price_overrides`: &c.overrides,
 	} {
 		if err := db.QueryRow(q).Scan(dst); err != nil {
 			t.Fatalf("%s: %v", q, err)

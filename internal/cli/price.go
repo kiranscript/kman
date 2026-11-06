@@ -12,9 +12,22 @@ import (
 )
 
 func cmdPrice(ctx context.Context, c *call) error {
-	if _, err := c.sub("list", "list"); err != nil {
+	sub, err := c.sub("<list|set|rm|import> ...", "list", "set", "rm", "import")
+	if err != nil {
 		return err
 	}
+	switch sub {
+	case "set":
+		return priceSet(ctx, c)
+	case "rm":
+		return priceRm(ctx, c)
+	case "import":
+		return priceImport(ctx, c)
+	}
+	return priceList(ctx, c)
+}
+
+func priceList(ctx context.Context, c *call) error {
 	fs := c.flags("price list [--preset name] [--model part-of-id] [--json]", true)
 	preset := fs.String("preset", "", "only this preset's entries, or global for the global ones")
 	model := fs.String("model", "", "only models whose id contains this")
@@ -53,7 +66,11 @@ func cmdPrice(ctx context.Context, c *call) error {
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", section, m.Model, input, output, cached, maxOutput, priceNotes(m))
 	}
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	printOverrides(c, list.Overrides)
+	return nil
 }
 
 // priceNotes names what a flat price doesn't say.

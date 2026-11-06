@@ -91,7 +91,7 @@ func TestTheEmbeddedMaxOutputsAgreeWithTheProviderPages(t *testing.T) {
 		{"cerebras", "gpt-oss-120b", 40960}, // the paid tier; LiteLLM has the free tier's 32,768
 		{"deepseek", "deepseek-v4-pro", 393216},
 	} {
-		e, ok := pricing.Builtin().Lookup(tt.preset, tt.model)
+		e, ok := pricing.Builtin().BuiltinEntry(tt.preset, tt.model)
 		if !ok {
 			t.Errorf("%s/%s is not in the table", tt.preset, tt.model)
 			continue
@@ -122,11 +122,11 @@ func TestDatedIDsAndAliasesAreInTheEmbeddedTable(t *testing.T) {
 		{"openai", "gpt-4o-2024-05-13"},
 		{"anthropic", "claude-haiku-4-5-20251001"},
 	} {
-		if _, ok := pricing.Builtin().Lookup(tt[0], tt[1]); !ok {
+		if _, ok := pricing.Builtin().BuiltinEntry(tt[0], tt[1]); !ok {
 			t.Errorf("%s/%s is not in the table", tt[0], tt[1])
 		}
 	}
-	if _, ok := pricing.Builtin().Lookup("openai", "gpt-5.4-unknown"); ok {
+	if _, ok := pricing.Builtin().BuiltinEntry("openai", "gpt-5.4-unknown"); ok {
 		t.Error("an id no source lists matched")
 	}
 }

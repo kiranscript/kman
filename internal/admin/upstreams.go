@@ -21,24 +21,25 @@ type Auth struct {
 
 // Upstream is an upstream as the admin API shows it.
 type Upstream struct {
-	ID              string       `json:"id"`
-	Name            string       `json:"name"`
-	Preset          string       `json:"preset,omitempty" doc:"The preset it was copied from. Absent for a custom upstream."`
-	PresetVersion   int          `json:"preset_version,omitempty" doc:"The version of the preset it was last copied from."`
-	UpdateAvailable bool         `json:"update_available,omitempty" doc:"Whether this kman holds a newer version of the preset: see the sync operation."`
-	Profile         string       `json:"profile" doc:"openai, anthropic or generic."`
-	Host            string       `json:"host"`
-	Port            int          `json:"port"`
-	TLS             bool         `json:"tls"`
-	ServerName      string       `json:"server_name,omitempty" doc:"The TLS server name, when it is not the host."`
-	Paths           []string     `json:"path_allowlist" doc:"The rules a request must match, as METHOD /path: * is any method or one segment, and a last segment of ** is the rest of the path."`
-	InjectUsage     bool         `json:"inject_usage" doc:"Whether OpenAI-style streams get stream_options.include_usage."`
-	Auth            Auth         `json:"auth"`
-	SDKEnv          string       `json:"sdk_env,omitempty" doc:"The variable an SDK for this upstream reads its key from."`
-	SDKBasePath     string       `json:"sdk_base_path,omitempty" doc:"Appended to kman's proxy URL to make an SDK's base URL."`
-	Credentials     []Credential `json:"credentials,omitempty" doc:"Its credentials, by name. Never a secret."`
-	CreatedAt       time.Time    `json:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
+	ID                 string       `json:"id"`
+	Name               string       `json:"name"`
+	Preset             string       `json:"preset,omitempty" doc:"The preset it was copied from. Absent for a custom upstream."`
+	PresetVersion      int          `json:"preset_version,omitempty" doc:"The version of the preset it was last copied from."`
+	UpdateAvailable    bool         `json:"update_available,omitempty" doc:"Whether this kman holds a newer version of the preset: see the sync operation."`
+	Profile            string       `json:"profile" doc:"openai, anthropic or generic."`
+	Host               string       `json:"host"`
+	Port               int          `json:"port"`
+	TLS                bool         `json:"tls"`
+	ServerName         string       `json:"server_name,omitempty" doc:"The TLS server name, when it is not the host."`
+	Paths              []string     `json:"path_allowlist" doc:"The rules a request must match, as METHOD /path: * is any method or one segment, and a last segment of ** is the rest of the path."`
+	InjectUsage        bool         `json:"inject_usage" doc:"Whether OpenAI-style streams get stream_options.include_usage."`
+	Auth               Auth         `json:"auth"`
+	SDKEnv             string       `json:"sdk_env,omitempty" doc:"The variable an SDK for this upstream reads its key from."`
+	SDKBasePath        string       `json:"sdk_base_path,omitempty" doc:"Appended to kman's proxy URL to make an SDK's base URL."`
+	PriceMultiplierPPM int64        `json:"price_multiplier_ppm" doc:"What built-in prices and install-wide overrides are multiplied by on this upstream, in parts per million: 1000000 is x1."`
+	Credentials        []Credential `json:"credentials,omitempty" doc:"Its credentials, by name. Never a secret."`
+	CreatedAt          time.Time    `json:"created_at"`
+	UpdatedAt          time.Time    `json:"updated_at"`
 }
 
 // UpstreamList is every upstream that is not deleted, by name.
@@ -65,6 +66,9 @@ type UpstreamSettings struct {
 	Auth        *Auth     `json:"auth,omitempty" doc:"A custom upstream defaults to Authorization: Bearer {key}, or x-api-key: {key} on the anthropic profile."`
 	SDKEnv      *string   `json:"sdk_env,omitempty"`
 	SDKBasePath *string   `json:"sdk_base_path,omitempty"`
+	// PriceMultiplierPPM is no part of what a preset supplies, so apply leaves
+	// it to the command.
+	PriceMultiplierPPM *int64 `json:"price_multiplier_ppm,omitempty" doc:"What built-in prices and install-wide overrides are multiplied by on this upstream, in parts per million, for a regional uplift: 1000000 is x1, the default, and 1100000 is x1.1. Above 0, up to x100. It does not touch a per-upstream override or a cost the provider reports."`
 }
 
 // AddUpstreamRequest is a new upstream, from a preset or built by hand.
@@ -107,6 +111,16 @@ func (u UpstreamSettings) apply(spec *registry.Spec) {
 	}
 	set(&spec.SDKEnv, u.SDKEnv)
 	set(&spec.SDKBasePath, u.SDKBasePath)
+}
+
+// maxPriceMultiplierPPM is ×100, which a percentage typed by mistake exceeds.
+const maxPriceMultiplierPPM = 100_000_000
+
+func checkPriceMultiplier(ppm *int64) error {
+	if ppm != nil && (*ppm <= 0 || *ppm > maxPriceMultiplierPPM) {
+		return errorf(CodeInvalid, "price_multiplier_ppm %d is out of range: it is above 0 and at most %d (x100), and 1000000 is x1", *ppm, int64(maxPriceMultiplierPPM))
+	}
+	return nil
 }
 
 func set[T any](dst *T, v *T) {
@@ -177,6 +191,9 @@ func (s *Service) AddUpstream(ctx context.Context, req AddUpstreamRequest) (Upst
 	if err := checkName("upstream", req.Name); err != nil {
 		return Upstream{}, err
 	}
+	if err := checkPriceMultiplier(req.PriceMultiplierPPM); err != nil {
+		return Upstream{}, err
+	}
 	var credName, credID string
 	if req.Credential != nil {
 		credName = req.Credential.Name
@@ -194,6 +211,7 @@ func (s *Service) AddUpstream(ctx context.Context, req AddUpstreamRequest) (Upst
 	fx := &effects{}
 	err = s.commandWith(ctx, fx, func(tx *store.Tx, now time.Time) ([]audit, error) {
 		row := store.Upstream{Name: req.Name, Preset: req.Preset, PresetVersion: version, PriceMultiplierPPM: defaultPriceMultiplierPPM, CreatedAt: now, UpdatedAt: now}
+		set(&row.PriceMultiplierPPM, req.PriceMultiplierPPM)
 		if err := writeSpec(&row, spec); err != nil {
 			return nil, err
 		}
@@ -275,6 +293,9 @@ func (s *Service) UpdateUpstream(ctx context.Context, req UpstreamUpdate) (Upstr
 			return Upstream{}, err
 		}
 	}
+	if err := checkPriceMultiplier(req.PriceMultiplierPPM); err != nil {
+		return Upstream{}, err
+	}
 	var out Upstream
 	fx := &effects{}
 	err := s.commandWith(ctx, fx, func(tx *store.Tx, now time.Time) ([]audit, error) {
@@ -294,6 +315,7 @@ func (s *Service) UpdateUpstream(ctx context.Context, req UpstreamUpdate) (Upstr
 		}
 		row := before
 		set(&row.Name, req.Name)
+		set(&row.PriceMultiplierPPM, req.PriceMultiplierPPM)
 		row.UpdatedAt = now
 		if err := writeSpec(&row, spec); err != nil {
 			return nil, err
@@ -328,8 +350,8 @@ func (s *Service) UpdateUpstream(ctx context.Context, req UpstreamUpdate) (Upstr
 	return out, err
 }
 
-// RemoveUpstream deletes an upstream and its credentials, unless a virtual key
-// that is not revoked depends on one of them.
+// RemoveUpstream deletes an upstream, its credentials and its price overrides,
+// unless a virtual key that is not revoked depends on a credential.
 func (s *Service) RemoveUpstream(ctx context.Context, req UpstreamRef) (Upstream, error) {
 	var out Upstream
 	fx := &effects{}
@@ -361,6 +383,11 @@ func (s *Service) RemoveUpstream(ctx context.Context, req UpstreamRef) (Upstream
 			return nil, fromStore(err, "upstream "+req.Ref)
 		}
 		fx.change.DeletedUpstreams = append(fx.change.DeletedUpstreams, u.ID)
+		removed, err := s.removeOverridesOf(tx, fx, u)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, removed...)
 		before := out
 		before.Credentials = nil
 		return append(entries, audit{action: "upstream.delete", kind: "upstream", id: u.ID, before: before}), nil
@@ -427,7 +454,7 @@ func (s *Service) upstreamDTO(p registry.Upstream, u store.Upstream) Upstream {
 		ID: p.ID, Name: p.Name, Preset: p.Preset, PresetVersion: p.PresetVersion,
 		Profile: p.Profile, Host: p.Host, Port: p.Port, TLS: p.TLS, ServerName: p.ServerName,
 		Paths: slices.Clone(p.Paths), InjectUsage: p.InjectUsage, Auth: Auth(p.Auth),
-		SDKEnv: p.SDKEnv, SDKBasePath: p.SDKBasePath, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
+		SDKEnv: p.SDKEnv, SDKBasePath: p.SDKBasePath, PriceMultiplierPPM: p.PriceMultiplierPPM, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
 	}
 	if preset, ok := s.preset(p.Preset); ok && preset.Version > p.PresetVersion {
 		out.UpdateAvailable = true
