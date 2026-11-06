@@ -42,6 +42,9 @@ type API interface {
 	AddCredential(ctx context.Context, req AddCredentialRequest) (Credential, error)
 	UpdateCredential(ctx context.Context, req CredentialUpdate) (Credential, error)
 	RemoveCredential(ctx context.Context, req CredentialRef) (Credential, error)
+
+	ListPrices(ctx context.Context, req PriceQuery) (PriceList, error)
+	PriceDataStatus(ctx context.Context) (PriceDataStatus, error)
 }
 
 var _ API = (*Service)(nil)
@@ -64,6 +67,9 @@ type Options struct {
 	// (*registry.Registry).Apply. Nil does nothing, for init, which serves
 	// nothing, and tools that run no request path.
 	Apply func(registry.Change)
+	// Prices returns the price table this binary carries. The composition
+	// root adapts it, since admin may not import pricing (SPEC §2).
+	Prices func() PriceTable
 }
 
 // Service runs the admin commands.
@@ -74,6 +80,7 @@ type Service struct {
 	vault   *vault.Vault
 	presets []registry.Preset
 	apply   func(registry.Change)
+	prices  func() PriceTable
 
 	// publishing holds a command from its transaction to its publish, so
 	// memory sees commands in the order they committed. The request path
@@ -83,7 +90,7 @@ type Service struct {
 
 // New returns the admin service over opts.Store.
 func New(opts Options) *Service {
-	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply}
+	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices}
 	if s.rand == nil {
 		s.rand = rand.Reader
 	}

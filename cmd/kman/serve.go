@@ -105,7 +105,7 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 
 	// The gateway (#37) will read reg and v on the request path.
 	reg := registry.New()
-	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply})
+	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices})
 	if err := svc.Load(ctx); err != nil {
 		return err
 	}

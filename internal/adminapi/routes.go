@@ -62,6 +62,9 @@ var routes = []route{
 
 	op("GET", "/audit", "listAudit", "Read a page of the audit log, oldest entry first", http.StatusOK, Service.Audit),
 
+	op("GET", "/prices", "listPrices", "List the built-in price table and how old it is", http.StatusOK, Service.ListPrices),
+	op0("GET", "/prices/status", "getPriceDataStatus", "Say how old the built-in price table is, and whether to upgrade", Service.PriceDataStatus),
+
 	op0("GET", "/upstreams", "listUpstreams", "List every upstream with its credentials, never their secrets", Service.ListUpstreams),
 	op("POST", "/upstreams", "addUpstream", "Add an upstream, copying a preset or built from the settings", http.StatusCreated, Service.AddUpstream),
 	op("GET", "/upstreams/{ref}", "getUpstream", "Read one upstream, by name or id", http.StatusOK, Service.GetUpstream),

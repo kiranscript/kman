@@ -8,6 +8,8 @@ import (
 	"io"
 	"slices"
 	"strings"
+
+	"github.com/kirank55/kman/internal/admin"
 )
 
 // Exit codes (SPEC §12).
@@ -28,6 +30,9 @@ type Env struct {
 	// ReadSecret prompts for a secret and reads it without echo. Nil reads
 	// one line of Stdin, as when a token is piped in.
 	ReadSecret func(prompt string) ([]byte, error)
+	// LocalPriceData is how old this binary's own price table is, for when
+	// the server can't be asked.
+	LocalPriceData func() admin.PriceDataStatus
 }
 
 // command is one online command.
@@ -43,6 +48,7 @@ var commands = []command{
 	{"admin-token", "create, list, rotate or revoke admin tokens", cmdAdminToken},
 	{"settings", "get or set the install's settings", cmdSettings},
 	{"audit", "list the audit log, or export it", cmdAudit},
+	{"price", "list the price table and how old it is", cmdPrice},
 	{"upstream", "add, list, show, update, remove or sync upstreams", cmdUpstream},
 	{"credential", "add, update or remove credentials", cmdCredential},
 }

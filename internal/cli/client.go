@@ -151,6 +151,23 @@ func (c *client) UpdateSettings(ctx context.Context, req admin.SettingsUpdate) (
 	return out, c.do(ctx, "PATCH", "/settings", nil, req, &out)
 }
 
+func (c *client) ListPrices(ctx context.Context, req admin.PriceQuery) (admin.PriceList, error) {
+	q := url.Values{}
+	if req.Preset != "" {
+		q.Set("preset", req.Preset)
+	}
+	if req.Model != "" {
+		q.Set("model", req.Model)
+	}
+	var out admin.PriceList
+	return out, c.do(ctx, "GET", "/prices", q, nil, &out)
+}
+
+func (c *client) PriceDataStatus(ctx context.Context) (admin.PriceDataStatus, error) {
+	var out admin.PriceDataStatus
+	return out, c.do(ctx, "GET", "/prices/status", nil, nil, &out)
+}
+
 func (c *client) Audit(ctx context.Context, req admin.AuditQuery) (admin.AuditPage, error) {
 	q := url.Values{}
 	if req.After != 0 {
