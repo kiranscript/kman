@@ -78,6 +78,35 @@ jobs:
         if: runner.os == 'Linux'
         run: go -C tools test ./...
 
+  sdk-e2e:
+    # SPEC §17: the pinned official SDKs, through the real binary. KMAN_E2E_SDK
+    # makes a missing SDK fail instead of skip, which it does in the test job.
+    # It runs on Linux only: what's under test is kman, not the SDKs' OS support.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install the pinned SDKs
+        run: e2e/testdata/sdk/install.sh
+      - name: SDKs through kman
+        env:
+          KMAN_E2E_SDK: required
+        run: go test -count=1 -run '^TestOfficialSDKs' ./e2e
+
   race:
     runs-on: ubuntu-latest
     steps:
@@ -237,7 +266,7 @@ jobs:
 
   required:
     if: always()
-    needs: [lint, test, race, cross-compile, price-flags, systemd-creds, bench]
+    needs: [lint, test, sdk-e2e, race, cross-compile, price-flags, systemd-creds, bench]
     runs-on: ubuntu-latest
     steps:
       - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3

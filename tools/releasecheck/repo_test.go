@@ -41,7 +41,10 @@ func TestDependabotUpdatesEveryEcosystemAfterACooldown(t *testing.T) {
 			t.Errorf("%s: no schedule", u.PackageEcosystem)
 		}
 	}
-	want := map[string][]string{"gomod": {"/", "/tools"}, "github-actions": {"/"}, "docker": {"/"}}
+	want := map[string][]string{
+		"gomod": {"/", "/tools"}, "github-actions": {"/"}, "docker": {"/"},
+		"npm": {"/e2e/testdata/sdk/node"}, "pip": {"/e2e/testdata/sdk/python"},
+	}
 	for eco, dirs := range want {
 		g := slices.Clone(got[eco])
 		slices.Sort(g)
