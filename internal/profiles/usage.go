@@ -205,17 +205,23 @@ type cost struct {
 	ok    bool
 }
 
-const maxCostDollars = 1e9
+const (
+	maxCostDollars = 1e9
+	maxCostLen     = 64 // with a number in range, this bounds the exponent too
+)
 
 // UnmarshalJSON reads the number exactly, because the float nearest to $0.0038
 // is a hair over it, and rounding up would charge another microdollar.
 func (c *cost) UnmarshalJSON(b []byte) error {
+	if len(b) > maxCostLen {
+		return nil
+	}
 	f, err := strconv.ParseFloat(string(b), 64)
 	if err != nil || f < 0 || f > maxCostDollars {
 		return nil
 	}
 	if f == 0 {
-		c.ok = true // also spares SetString an exponent like 1e-999999
+		c.micro, c.ok = 0, true // also spares SetString an exponent like 1e-999999
 		return nil
 	}
 	exact, ok := new(big.Rat).SetString(string(b))
