@@ -56,8 +56,8 @@ func TestTheHeaderDoesNotShareMemoryWithTheSecret(t *testing.T) {
 	}
 }
 
-// Until the OpenAI and Anthropic profiles arrive with metering (#40), every
-// profile presents credentials as the generic one does.
+// Every profile presents credentials the way the upstream's Auth says, since a
+// metered one differs only in what it reads.
 func TestEveryProfilePresentsACredential(t *testing.T) {
 	for _, name := range []string{registry.ProfileOpenAI, registry.ProfileAnthropic, registry.ProfileGeneric} {
 		h := http.Header{}
