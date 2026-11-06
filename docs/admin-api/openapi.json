@@ -70,6 +70,11 @@
             "description": "The preset to copy. Absent to build a custom upstream from the settings.",
             "type": "string"
           },
+          "price_multiplier_ppm": {
+            "description": "What built-in prices and install-wide overrides are multiplied by on this upstream, in parts per million, for a regional uplift: 1000000 is x1, the default, and 1100000 is x1.1. Above 0, up to x100. It does not touch a per-upstream override or a cost the provider reports.",
+            "format": "int64",
+            "type": "integer"
+          },
           "profile": {
             "description": "openai, anthropic or generic. A custom upstream defaults to generic.",
             "type": "string"
@@ -421,8 +426,16 @@
         "additionalProperties": false,
         "properties": {
           "models": {
+            "description": "The built-in entries. An override below may hide one.",
             "items": {
               "$ref": "#/components/schemas/PriceModel"
+            },
+            "type": "array"
+          },
+          "overrides": {
+            "description": "The price overrides, which win over the built-in entries until removed.",
+            "items": {
+              "$ref": "#/components/schemas/PriceOverride"
             },
             "type": "array"
           },
@@ -432,7 +445,8 @@
         },
         "required": [
           "status",
-          "models"
+          "models",
+          "overrides"
         ],
         "type": "object"
       },
@@ -531,6 +545,195 @@
           "output_micro",
           "max_output",
           "reviewed"
+        ],
+        "type": "object"
+      },
+      "PriceOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "Who last set it.",
+            "type": "string"
+          },
+          "audio_cached_micro": {
+            "description": "Cached audio input. Absent: billed at the audio input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "audio_input_micro": {
+            "description": "Audio input. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "audio_output_micro": {
+            "description": "Audio output. Absent: billed at the output price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_write_1h_micro": {
+            "description": "One-hour cache writes. Absent: billed at the cache write price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_write_micro": {
+            "description": "Cache writes. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cached_micro": {
+            "description": "Cached input. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "hides": {
+            "description": "The sections of the price table whose built-in entry for this model it hides: global or a preset's name.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "input_micro": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_output": {
+            "description": "The most tokens one response can output, which sizes reservations.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "model": {
+            "description": "The model id, matched exactly.",
+            "type": "string"
+          },
+          "output_micro": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "upstream": {
+            "description": "The upstream it applies to, by name. Absent for an install-wide override.",
+            "type": "string"
+          },
+          "upstream_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "input_micro",
+          "output_micro",
+          "max_output",
+          "actor",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "PriceOverrideImport": {
+        "additionalProperties": false,
+        "properties": {
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/PriceOverrideSet"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "overrides"
+        ],
+        "type": "object"
+      },
+      "PriceOverrideImportResult": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "description": "How many it added or changed, each with its own audit entry.",
+            "type": "integer"
+          },
+          "overrides": {
+            "description": "Every override it named, as it now stands.",
+            "items": {
+              "$ref": "#/components/schemas/PriceOverride"
+            },
+            "type": "array"
+          },
+          "unchanged": {
+            "description": "How many already had these prices.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changed",
+          "unchanged",
+          "overrides"
+        ],
+        "type": "object"
+      },
+      "PriceOverrideSet": {
+        "additionalProperties": false,
+        "properties": {
+          "audio_cached_micro": {
+            "description": "Cached audio input. Absent: billed at the audio input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "audio_input_micro": {
+            "description": "Audio input. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "audio_output_micro": {
+            "description": "Audio output. Absent: billed at the output price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_write_1h_micro": {
+            "description": "One-hour cache writes. Absent: billed at the cache write price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_write_micro": {
+            "description": "Cache writes. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cached_micro": {
+            "description": "Cached input. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "input_micro": {
+            "description": "Input, in microdollars per million tokens.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_output": {
+            "description": "The most tokens one response can output, which sizes reservations.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "model": {
+            "description": "The model id, matched exactly.",
+            "type": "string"
+          },
+          "output_micro": {
+            "description": "Output, in microdollars per million tokens.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "upstream": {
+            "description": "The upstream to price it on, by name or id. Absent for the whole install.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "input_micro",
+          "output_micro",
+          "max_output"
         ],
         "type": "object"
       },
@@ -656,6 +859,11 @@
             "description": "The version of the preset it was last copied from.",
             "type": "integer"
           },
+          "price_multiplier_ppm": {
+            "description": "What built-in prices and install-wide overrides are multiplied by on this upstream, in parts per million: 1000000 is x1.",
+            "format": "int64",
+            "type": "integer"
+          },
           "profile": {
             "description": "openai, anthropic or generic.",
             "type": "string"
@@ -694,6 +902,7 @@
           "path_allowlist",
           "inject_usage",
           "auth",
+          "price_multiplier_ppm",
           "created_at",
           "updated_at"
         ],
@@ -831,6 +1040,11 @@
           },
           "port": {
             "description": "A custom upstream defaults to 443 with TLS and 80 without.",
+            "type": "integer"
+          },
+          "price_multiplier_ppm": {
+            "description": "What built-in prices and install-wide overrides are multiplied by on this upstream, in parts per million, for a regional uplift: 1000000 is x1, the default, and 1100000 is x1.1. Above 0, up to x100. It does not touch a per-upstream override or a cost the provider reports.",
+            "format": "int64",
             "type": "integer"
           },
           "profile": {
@@ -1227,12 +1441,134 @@
         "summary": "This document. It needs no admin token."
       }
     },
+    "/admin/v1/price-overrides": {
+      "delete": {
+        "operationId": "removePriceOverride",
+        "parameters": [
+          {
+            "description": "The upstream it is on, by name or id. Absent for an install-wide override.",
+            "in": "query",
+            "name": "upstream",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The model id, matched exactly.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceOverride"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Remove a price override"
+      },
+      "put": {
+        "operationId": "setPriceOverride",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceOverrideSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceOverride"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Set a price override, install-wide or on one upstream; it wins over the built-in entries until removed"
+      }
+    },
+    "/admin/v1/price-overrides/import": {
+      "post": {
+        "operationId": "importPriceOverrides",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceOverrideImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceOverrideImportResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Set many price overrides, all or none"
+      }
+    },
     "/admin/v1/prices": {
       "get": {
         "operationId": "listPrices",
         "parameters": [
           {
-            "description": "Only this preset's entries, or global for the global ones.",
+            "description": "Only this preset's entries, or global for the global ones, and the overrides that reach them: install-wide ones and those on an upstream built from it.",
             "in": "query",
             "name": "preset",
             "required": false,
@@ -1241,7 +1577,7 @@
             }
           },
           {
-            "description": "Only models whose id contains this, in any case.",
+            "description": "Only models whose id contains this, in any case. It narrows the overrides too.",
             "in": "query",
             "name": "model",
             "required": false,
@@ -1272,7 +1608,7 @@
             "description": "An error"
           }
         },
-        "summary": "List the built-in price table and how old it is"
+        "summary": "List the built-in price table, how old it is, and the price overrides"
       }
     },
     "/admin/v1/prices/status": {
@@ -1467,7 +1803,7 @@
             "description": "An error"
           }
         },
-        "summary": "Delete an upstream and its credentials; refused while a virtual key that is not revoked depends on one"
+        "summary": "Delete an upstream, its credentials and its price overrides; refused while a virtual key that is not revoked depends on one"
       },
       "get": {
         "operationId": "getUpstream",

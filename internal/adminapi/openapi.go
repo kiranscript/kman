@@ -175,7 +175,7 @@ func (g *schemas) object(t reflect.Type) map[string]any {
 			}
 		}
 		props[name] = s
-		if f.Type.Kind() != reflect.Pointer && !strings.Contains(f.Tag.Get("json"), ",omitempty") {
+		if f.Tag.Get("required") == "true" || (f.Type.Kind() != reflect.Pointer && !strings.Contains(f.Tag.Get("json"), ",omitempty")) {
 			required = append(required, name)
 		}
 	}

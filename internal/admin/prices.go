@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/kirank55/kman/internal/store"
 )
 
 // PriceTable is the built-in price table as admin serves it.
@@ -52,8 +54,8 @@ type PriceToolFee struct {
 
 // PriceQuery narrows the price table.
 type PriceQuery struct {
-	Preset string `json:"-" query:"preset" doc:"Only this preset's entries, or global for the global ones."`
-	Model  string `json:"-" query:"model" doc:"Only models whose id contains this, in any case."`
+	Preset string `json:"-" query:"preset" doc:"Only this preset's entries, or global for the global ones, and the overrides that reach them: install-wide ones and those on an upstream built from it."`
+	Model  string `json:"-" query:"model" doc:"Only models whose id contains this, in any case. It narrows the overrides too."`
 }
 
 // PriceDataStatus says how old the price table is. Age never changes what kman
@@ -66,10 +68,11 @@ type PriceDataStatus struct {
 	Notice      string    `json:"notice,omitempty" doc:"What to tell the operator when it is stale."`
 }
 
-// PriceList is the price table and how old it is.
+// PriceList is the price table, how old it is, and the overrides in front of it.
 type PriceList struct {
-	Status PriceDataStatus `json:"status"`
-	Models []PriceModel    `json:"models"`
+	Status    PriceDataStatus `json:"status"`
+	Models    []PriceModel    `json:"models" doc:"The built-in entries. An override below may hide one."`
+	Overrides []PriceOverride `json:"overrides" doc:"The price overrides, which win over the built-in entries until removed."`
 }
 
 // Status says how old the table is at now.
@@ -87,13 +90,14 @@ func (t PriceTable) Status(now time.Time) PriceDataStatus {
 	return st
 }
 
-// ListPrices returns the price table, narrowed by q, and how old it is.
+// ListPrices returns the price table and the overrides, narrowed by q, and how
+// old the table is.
 func (s *Service) ListPrices(ctx context.Context, q PriceQuery) (PriceList, error) {
 	t, err := s.priceTable(ctx)
 	if err != nil {
 		return PriceList{}, err
 	}
-	out := PriceList{Status: t.Status(s.now()), Models: []PriceModel{}}
+	out := PriceList{Status: t.Status(s.now()), Models: []PriceModel{}, Overrides: []PriceOverride{}}
 	want := strings.ToLower(q.Model)
 	for _, m := range t.Models {
 		section := m.Preset
@@ -103,6 +107,13 @@ func (s *Service) ListPrices(ctx context.Context, q PriceQuery) (PriceList, erro
 		if (q.Preset == "" || q.Preset == section) && strings.Contains(strings.ToLower(m.Model), want) {
 			out.Models = append(out.Models, m)
 		}
+	}
+	err = s.read(ctx, func(tx *store.Tx) error {
+		out.Overrides, err = listedOverrides(tx, sectionsOf(t), q.Preset, want)
+		return err
+	})
+	if err != nil {
+		return PriceList{}, err
 	}
 	return out, nil
 }

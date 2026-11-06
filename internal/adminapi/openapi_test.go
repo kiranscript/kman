@@ -138,13 +138,16 @@ func TestTheOpenAPIDocumentDescribesTheTypes(t *testing.T) {
 		"post /admin/v1/credentials":                "addCredential",
 		"patch /admin/v1/credentials/{ref}":         "updateCredential",
 		"delete /admin/v1/credentials/{ref}":        "removeCredential",
+		"put /admin/v1/price-overrides":             "setPriceOverride",
+		"delete /admin/v1/price-overrides":          "removePriceOverride",
+		"post /admin/v1/price-overrides/import":     "importPriceOverrides",
 	} {
 		if ops[want] != id {
 			t.Errorf("%s has operationId %q, want %q", want, ops[want], id)
 		}
 	}
-	if len(ops) != 21 {
-		t.Errorf("the document has %d operations, want 21: %v", len(ops), ops)
+	if len(ops) != 24 {
+		t.Errorf("the document has %d operations, want 24: %v", len(ops), ops)
 	}
 
 	// The settings an upstream takes reach the document, embedded as they are.
@@ -214,6 +217,17 @@ func TestTheOpenAPIDocumentDescribesTheTypes(t *testing.T) {
 	}
 	if got := doc.Components.Schemas["SettingsUpdate"].Required; len(got) != 0 {
 		t.Errorf("SettingsUpdate requires %v, want nothing", got)
+	}
+	// An override's prices are pointers so that absent isn't zero, and required
+	// all the same; its optional prices are not.
+	if got, want := doc.Components.Schemas["PriceOverrideSet"].Required, []string{"model", "input_micro", "output_micro", "max_output"}; !equalSet(got, want) {
+		t.Errorf("PriceOverrideSet requires %v, want %v", got, want)
+	}
+	if _, ok := doc.Components.Schemas["PriceOverrideSet"].Properties["cached_micro"]; !ok {
+		t.Error("PriceOverrideSet lacks cached_micro")
+	}
+	if _, ok := doc.Components.Schemas["PriceList"].Properties["overrides"]; !ok {
+		t.Error("PriceList lacks overrides")
 	}
 }
 

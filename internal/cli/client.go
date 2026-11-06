@@ -168,6 +168,25 @@ func (c *client) PriceDataStatus(ctx context.Context) (admin.PriceDataStatus, er
 	return out, c.do(ctx, "GET", "/prices/status", nil, nil, &out)
 }
 
+func (c *client) SetPriceOverride(ctx context.Context, req admin.PriceOverrideSet) (admin.PriceOverride, error) {
+	var out admin.PriceOverride
+	return out, c.do(ctx, "PUT", "/price-overrides", nil, req, &out)
+}
+
+func (c *client) RemovePriceOverride(ctx context.Context, req admin.PriceOverrideRef) (admin.PriceOverride, error) {
+	q := url.Values{"model": {req.Model}}
+	if req.Upstream != "" {
+		q.Set("upstream", req.Upstream)
+	}
+	var out admin.PriceOverride
+	return out, c.do(ctx, "DELETE", "/price-overrides", q, nil, &out)
+}
+
+func (c *client) ImportPriceOverrides(ctx context.Context, req admin.PriceOverrideImport) (admin.PriceOverrideImportResult, error) {
+	var out admin.PriceOverrideImportResult
+	return out, c.do(ctx, "POST", "/price-overrides/import", nil, req, &out)
+}
+
 func (c *client) Audit(ctx context.Context, req admin.AuditQuery) (admin.AuditPage, error) {
 	q := url.Values{}
 	if req.After != 0 {
