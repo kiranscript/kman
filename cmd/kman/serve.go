@@ -16,6 +16,7 @@ import (
 
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
+	"github.com/kirank55/kman/internal/gateway"
 	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/pricing"
 	"github.com/kirank55/kman/internal/profiles"
@@ -105,8 +106,7 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	}
 	defer v.Close()
 
-	// The gateway (#37) will read reg and v on the request path, and the meter
-	// (#41) prices.
+	// The meter (#41) will read prices on the request path.
 	reg := registry.New()
 	prices := pricing.NewPrices(pricing.Builtin())
 	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices,
@@ -114,7 +114,8 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	if err := svc.Load(ctx); err != nil {
 		return err
 	}
-	ls, err := listen(cfg, log, adminHandler(svc, log))
+	proxy := gateway.New(gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log})
+	ls, err := listen(cfg, log, proxy, adminHandler(svc, log))
 	if err != nil {
 		return err
 	}
@@ -165,8 +166,8 @@ func (l *listener) serve() error {
 }
 
 // listen binds the proxy and admin listeners, or neither.
-func listen(cfg Config, log *slog.Logger, adminH http.Handler) ([]*listener, error) {
-	proxy, err := newListener("proxy", cfg.ProxyListen, cfg.TLS.Proxy, notYet("the proxy"), log)
+func listen(cfg Config, log *slog.Logger, proxyH, adminH http.Handler) ([]*listener, error) {
+	proxy, err := newListener("proxy", cfg.ProxyListen, cfg.TLS.Proxy, proxyH, log)
 	if err != nil {
 		return nil, err
 	}
@@ -243,8 +244,7 @@ func listenUnix(path string) (net.Listener, error) {
 	return l, nil
 }
 
-// notYet answers every request until the module that serves this listener
-// is wired in.
+// notYet answers every request that nothing on the admin listener serves yet.
 func notYet(what string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

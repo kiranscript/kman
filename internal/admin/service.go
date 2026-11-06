@@ -256,7 +256,11 @@ func (s *Service) Load(ctx context.Context) error {
 			return err
 		}
 		for _, k := range keys {
-			change.Keys = append(change.Keys, publishedKey(k))
+			published, err := publishedKey(tx, k)
+			if err != nil {
+				return err
+			}
+			change.Keys = append(change.Keys, published)
 		}
 		overrides, err = allOverrides(tx)
 		return err

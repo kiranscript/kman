@@ -5,6 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/kirank55/kman/internal/token"
 )
 
 // Upstream is one upstream as the request path reads it.
@@ -33,10 +35,17 @@ type Key struct {
 	Name          string
 	CredentialID  string // "" for a canary
 	Status        string
+	Secrets       []KeySecret // those that can authenticate: never a retired one
 	ExpiresAt     time.Time
 	Policy        string // the policy as JSON, in the form policy.Normalize gives
 	PolicyVersion int
 	Generation    int64
+}
+
+// KeySecret is the hash of a secret that can authenticate a key.
+type KeySecret struct {
+	Hash       token.Hash
+	ValidUntil time.Time // when a grace period ends; zero for no limit
 }
 
 // Route is what the request path needs to serve a key. Its pointers lead into

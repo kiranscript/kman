@@ -216,7 +216,11 @@ func (s *Service) CreateKey(ctx context.Context, req CreateKeyRequest) (CreatedK
 		if err != nil {
 			return nil, fromStore(err, "key "+cmp.Or(req.Name, string(id)))
 		}
-		fx.change.Keys = append(fx.change.Keys, publishedKey(k))
+		published, err := publishedKey(tx, k)
+		if err != nil {
+			return nil, err
+		}
+		fx.change.Keys = append(fx.change.Keys, published)
 		dto, err := keyDTO(k, now, keyNames{cred.ID: {u.ID, u.Name, cred.Name}})
 		if err != nil {
 			return nil, err
@@ -384,7 +388,11 @@ func (s *Service) UpdateKey(ctx context.Context, req KeyUpdate) (Key, error) {
 		if err != nil {
 			return nil, fromStore(err, "key "+row.Name)
 		}
-		fx.change.Keys = append(fx.change.Keys, publishedKey(k))
+		published, err := publishedKey(tx, k)
+		if err != nil {
+			return nil, err
+		}
+		fx.change.Keys = append(fx.change.Keys, published)
 		if out, err = keyDTO(k, now, names); err != nil {
 			return nil, err
 		}
@@ -454,8 +462,24 @@ func keyDTO(k store.VirtualKey, now time.Time, names keyNames) (Key, error) {
 		Policy: json.RawMessage(k.PolicyJSON), PolicyVersion: k.PolicyVersion, ExpiresAt: k.ExpiresAt, CreatedAt: k.CreatedAt}, nil
 }
 
-// publishedKey is the row as the request path reads it.
-func publishedKey(k store.VirtualKey) registry.Key {
-	return registry.Key{ID: k.ID, Name: k.Name, CredentialID: k.CredentialID, Status: k.Status, ExpiresAt: k.ExpiresAt,
-		Policy: k.PolicyJSON, PolicyVersion: k.PolicyVersion, Generation: k.Generation}
+// publishedKey is the row as the request path reads it, with the hashes of the
+// secrets that can authenticate it, so a request needs no store read. A retired
+// secret never authenticates, so it stays in the store.
+func publishedKey(tx *store.Tx, k store.VirtualKey) (registry.Key, error) {
+	stored, err := tx.KeySecrets(k.ID)
+	if err != nil {
+		return registry.Key{}, err
+	}
+	secrets := make([]registry.KeySecret, 0, len(stored))
+	for _, s := range stored {
+		if s.State == store.SecretRetired {
+			continue
+		}
+		if len(s.Hash) != len(token.Hash{}) {
+			return registry.Key{}, fmt.Errorf("key %s: a secret hash of %d bytes", k.ID, len(s.Hash))
+		}
+		secrets = append(secrets, registry.KeySecret{Hash: token.Hash(s.Hash), ValidUntil: s.ValidUntil})
+	}
+	return registry.Key{ID: k.ID, Name: k.Name, CredentialID: k.CredentialID, Status: k.Status, Secrets: secrets, ExpiresAt: k.ExpiresAt,
+		Policy: k.PolicyJSON, PolicyVersion: k.PolicyVersion, Generation: k.Generation}, nil
 }
