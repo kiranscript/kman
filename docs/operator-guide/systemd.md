@@ -44,6 +44,22 @@ systemctl enable --now kman
 
 Check the service with `systemctl status kman` and `journalctl -u kman`.
 
+## Replace the master key
+
+`kman rekey` needs the service stopped, and runs as a transient service to get the old key, as `kman init` did:
+
+```sh
+systemctl stop kman
+(umask 077; kman keygen > /root/master.key.next)
+systemd-run --pipe --wait --collect --quiet \
+  -p LoadCredentialEncrypted=master.key:/etc/kman/master.key.cred \
+  /usr/bin/kman rekey --config-dir /etc/kman --new-key-file /root/master.key.next
+systemd-creds encrypt --name=master.key /root/master.key.next /etc/kman/master.key.cred
+systemctl start kman
+```
+
+Then back up `/root/master.key.next` apart from the data directory and remove it from there. Backups made before the rekey open only with the old key, so keep that key for as long as you keep them, and if it leaked, destroy them both.
+
 ## Change the settings
 
 Edit `/etc/kman/kman.yaml` and run `systemctl restart kman`; serve reads it only at startup. For TLS, pass the certificate and key in as credentials too, with `systemctl edit kman`:

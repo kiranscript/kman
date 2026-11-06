@@ -39,6 +39,20 @@ docker compose up -d
 - **The volume** is mounted on `/home/nonroot`, the image's home directory, which holds kman's default config directory (`~/.config/kman`) and data directory (`~/.local/share/kman`). Docker gives a new named volume the owner of the directory it is mounted on, which here is UID 65532.
 - **`/tmp`** is a tmpfs, for SQLite's temporary files on a read-only root.
 
+## Replace the master key
+
+`kman rekey` needs the server stopped. In a container it never makes a key, so make the new one on the host and mount it for the one run:
+
+```sh
+docker compose stop kman
+docker run --rm ghcr.io/kirank55/kman keygen > master.key.next
+docker compose run --rm -v "$PWD/master.key.next:/next.key:ro" kman rekey --new-key-file /next.key
+mv master.key.next master.key
+docker compose up -d
+```
+
+The new key must be readable by the container's user. Backups made before the rekey open only with the old key, so keep that key for as long as you keep them, and if it leaked, destroy them both.
+
 ## Upgrade
 
 Set `KMAN_VERSION` to pin a release (such as `KMAN_VERSION=0.1.0`); without it the example runs `latest`. Then:
