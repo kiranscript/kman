@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http/httptest"
@@ -15,7 +16,10 @@ import (
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
 	"github.com/kirank55/kman/internal/cli"
+	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/store"
+	"github.com/kirank55/kman/internal/vault"
 )
 
 var t0 = time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
@@ -26,7 +30,43 @@ type install struct {
 	url       string
 	owner     string // the owner token's secret
 	configDir string
+	dataDir   string
 	svc       *admin.Service
+	logs      *bytes.Buffer
+	serve     func(*testing.T, []registry.Preset)
+}
+
+// upgrade restarts the API with other presets, as a new release of kman would
+// run. The credentials file follows it.
+func (in *install) upgrade(t *testing.T, presets []registry.Preset) {
+	t.Helper()
+	in.serve(t, presets)
+	in.loggedIn(t)
+}
+
+// sqlExec runs a statement against the database from outside the store.
+func (in *install) sqlExec(t *testing.T, query string, args ...any) {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(in.dataDir, store.FileName))+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(query, args...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// seedKey writes a virtual key on a credential: until #36 no command makes one.
+func (in *install) seedKey(t *testing.T, keyID, credentialID, status string) {
+	t.Helper()
+	in.sqlExec(t, `INSERT INTO virtual_keys (key_id, name, credential_id, kind, status, policy_version, created_at, generation)
+		VALUES (?, ?, ?, 'standard', ?, 1, 0, 1)`, keyID, "key-"+keyID, credentialID, status)
+}
+
+func (in *install) seedKeyStatus(t *testing.T, keyID, status string) {
+	t.Helper()
+	in.sqlExec(t, `UPDATE virtual_keys SET status = ? WHERE key_id = ?`, status, keyID)
 }
 
 // priceTableAt is when the test price table was generated: 3 days before t0.
@@ -50,25 +90,57 @@ func testPrices() admin.PriceTable {
 
 func newInstall(t *testing.T, opts ...func(*admin.PriceTable)) *install {
 	t.Helper()
+	return newInstallWith(t, profiles.Presets(), opts...)
+}
+
+// masterKey is a key source holding a fixed master key.
+type masterKey struct{}
+
+func (masterKey) MasterKey() ([]byte, error) { return make([]byte, vault.KeySize), nil }
+func (masterKey) String() string             { return "the test's master key" }
+
+func newInstallWith(t *testing.T, presets []registry.Preset, opts ...func(*admin.PriceTable)) *install {
+	t.Helper()
 	prices := testPrices()
 	for _, o := range opts {
 		o(&prices)
 	}
-	st, err := store.Open(context.Background(), store.Options{Dir: t.TempDir(), Now: t0})
+	dataDir := t.TempDir()
+	st, err := store.Open(context.Background(), store.Options{Dir: dataDir, Now: t0})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	svc := admin.New(admin.Options{Store: st, Now: func() time.Time { return t0 },
-		Prices: func() admin.PriceTable { return prices }})
+	v, wk, err := vault.Create(masterKey{}, "dek_test", vault.Options{AllowDebug: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(v.Close)
+	err = st.Do(context.Background(), func(tx *store.Tx) error {
+		return tx.CreateDataKey(store.DataKey{ID: wk.ID, Wrapped: wk.Wrapped, Nonce: wk.Nonce, KEKFingerprint: wk.Fingerprint, CreatedAt: t0})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newService := func(presets []registry.Preset) *admin.Service {
+		return admin.New(admin.Options{Store: st, Now: func() time.Time { return t0 }, Vault: v, Presets: presets,
+			Prices: func() admin.PriceTable { return prices }})
+	}
+	svc := newService(presets)
 	owner, err := svc.CreateAdminToken(admin.WithCaller(context.Background(), admin.Caller{Actor: "system:init"}),
 		admin.CreateAdminTokenRequest{Name: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := httptest.NewServer(adminapi.Handler(svc, slog.New(slog.DiscardHandler)))
-	t.Cleanup(ts.Close)
-	return &install{url: ts.URL, owner: owner.Secret, configDir: t.TempDir(), svc: svc}
+	in := &install{owner: owner.Secret, configDir: t.TempDir(), dataDir: dataDir, svc: svc, logs: &bytes.Buffer{}}
+	in.serve = func(t *testing.T, presets []registry.Preset) {
+		in.svc = newService(presets)
+		ts := httptest.NewServer(adminapi.Handler(in.svc, slog.New(slog.NewTextHandler(in.logs, nil))))
+		t.Cleanup(ts.Close)
+		in.url = ts.URL
+	}
+	in.serve(t, presets)
+	return in
 }
 
 // loggedIn writes the credentials file as init or login would.

@@ -161,8 +161,7 @@ func (g *schemas) of(t reflect.Type) map[string]any {
 func (g *schemas) object(t reflect.Type) map[string]any {
 	props := map[string]any{}
 	required := []string{}
-	for i := range t.NumField() {
-		f := t.Field(i)
+	for _, f := range reflect.VisibleFields(t) {
 		name := jsonName(f)
 		if name == "" {
 			continue

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 )
@@ -34,6 +35,18 @@ type Options struct {
 	// AllowDebug skips the process hardening that otherwise runs before the
 	// master key is read. It is the --allow-debug flag.
 	AllowDebug bool
+	// Rand is where the data key and every nonce come from. It defaults to
+	// crypto/rand. The fixture generator passes a seeded one, so a rerun writes
+	// the same bytes; nothing else should.
+	Rand io.Reader
+}
+
+// source is opts.Rand, or crypto/rand.
+func (o Options) source() io.Reader {
+	if o.Rand != nil {
+		return o.Rand
+	}
+	return rand.Reader
 }
 
 // WrappedKey is the data key as it is stored: sealed under the master key.
@@ -57,6 +70,7 @@ type Sealed struct {
 // credential it has been given.
 type Vault struct {
 	dekID string
+	rand  io.Reader
 
 	mu    sync.Mutex // serializes writers; Credential takes no lock
 	aead  cipher.AEAD
@@ -78,16 +92,20 @@ func Create(src KeySource, dekID string, opts Options) (*Vault, WrappedKey, erro
 	defer clear(mk)
 	dek := make([]byte, KeySize)
 	defer clear(dek)
-	rand.Read(dek)
+	if _, err := io.ReadFull(opts.source(), dek); err != nil {
+		return nil, WrappedKey{}, fmt.Errorf("vault: random data key: %w", err)
+	}
 	wk := WrappedKey{ID: dekID, Fingerprint: fingerprint(mk)}
 	kek, err := newAEAD(mk)
 	if err != nil {
 		return nil, WrappedKey{}, err
 	}
 	wk.Nonce = make([]byte, kek.NonceSize())
-	rand.Read(wk.Nonce)
+	if _, err := io.ReadFull(opts.source(), wk.Nonce); err != nil {
+		return nil, WrappedKey{}, fmt.Errorf("vault: random nonce: %w", err)
+	}
 	wk.Wrapped = kek.Seal(nil, wk.Nonce, dek, wrapAAD(wk.ID))
-	v, err := newVault(wk.ID, dek)
+	v, err := newVault(wk.ID, dek, opts.source())
 	return v, wk, err
 }
 
@@ -112,7 +130,7 @@ func Unlock(src KeySource, wk WrappedKey, opts Options) (*Vault, error) {
 		return nil, fmt.Errorf("unlock with the master key from %s: %w", src, ErrWrongMasterKey)
 	}
 	defer clear(dek)
-	return newVault(wk.ID, dek)
+	return newVault(wk.ID, dek, opts.source())
 }
 
 func readMasterKey(src KeySource, opts Options) ([]byte, error) {
@@ -130,12 +148,12 @@ func readMasterKey(src KeySource, opts Options) ([]byte, error) {
 	return mk, nil
 }
 
-func newVault(dekID string, dek []byte) (*Vault, error) {
+func newVault(dekID string, dek []byte, random io.Reader) (*Vault, error) {
 	aead, err := newAEAD(dek)
 	if err != nil {
 		return nil, err
 	}
-	v := &Vault{dekID: dekID, aead: aead}
+	v := &Vault{dekID: dekID, rand: random, aead: aead}
 	v.cache.Store(&map[string][]byte{})
 	return v, nil
 }
@@ -180,7 +198,9 @@ func (v *Vault) Seal(id string, plaintext []byte) (Sealed, error) {
 		return Sealed{}, ErrClosed
 	}
 	s := Sealed{DataKeyID: v.dekID, Nonce: make([]byte, v.aead.NonceSize())}
-	rand.Read(s.Nonce)
+	if _, err := io.ReadFull(v.rand, s.Nonce); err != nil {
+		return Sealed{}, fmt.Errorf("vault: random nonce: %w", err)
+	}
 	s.Ciphertext = v.aead.Seal(nil, s.Nonce, plaintext, []byte(id))
 	return s, nil
 }

@@ -49,6 +49,8 @@ var commands = []command{
 	{"settings", "get or set the install's settings", cmdSettings},
 	{"audit", "list the audit log, or export it", cmdAudit},
 	{"price", "list the price table and how old it is", cmdPrice},
+	{"upstream", "add, list, show, update, remove or sync upstreams", cmdUpstream},
+	{"credential", "add, update or remove credentials", cmdCredential},
 }
 
 // Commands names the online commands Run serves, for kman's usage line.

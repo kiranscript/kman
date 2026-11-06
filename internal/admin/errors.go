@@ -50,3 +50,5 @@ func fromStore(err error, what string) error {
 	}
 	return err
 }
+
+func isNotFound(err error) bool { return errors.Is(err, store.ErrNotFound) }

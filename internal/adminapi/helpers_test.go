@@ -14,7 +14,9 @@ import (
 
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
+	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/store"
+	"github.com/kirank55/kman/internal/vault"
 )
 
 var t0 = time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
@@ -33,7 +35,7 @@ func newServer(t *testing.T) *server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	svc := admin.New(admin.Options{Store: st, Now: func() time.Time { return t0 }})
+	svc := admin.New(admin.Options{Store: st, Now: func() time.Time { return t0 }, Vault: newVault(t, st), Presets: profiles.Presets()})
 	owner, err := svc.CreateAdminToken(admin.WithCaller(context.Background(), admin.Caller{Actor: "system:init"}),
 		admin.CreateAdminTokenRequest{Name: "owner"})
 	if err != nil {
@@ -43,6 +45,29 @@ func newServer(t *testing.T) *server {
 	ts := httptest.NewServer(adminapi.Handler(svc, slog.New(slog.NewTextHandler(&logs, nil))))
 	t.Cleanup(ts.Close)
 	return &server{url: ts.URL, owner: owner.Secret, logs: &logs}
+}
+
+// masterKey is a key source holding a fixed master key.
+type masterKey struct{}
+
+func (masterKey) MasterKey() ([]byte, error) { return make([]byte, vault.KeySize), nil }
+func (masterKey) String() string             { return "the test's master key" }
+
+// newVault makes a data key in st and a vault holding it.
+func newVault(t *testing.T, st *store.Store) *vault.Vault {
+	t.Helper()
+	v, wk, err := vault.Create(masterKey{}, "dek_test", vault.Options{AllowDebug: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(v.Close)
+	err = st.Do(context.Background(), func(tx *store.Tx) error {
+		return tx.CreateDataKey(store.DataKey{ID: wk.ID, Wrapped: wk.Wrapped, Nonce: wk.Nonce, KEKFingerprint: wk.Fingerprint, CreatedAt: t0})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
 }
 
 // response is one answer from the server.

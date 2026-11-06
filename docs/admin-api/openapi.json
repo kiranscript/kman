@@ -1,6 +1,97 @@
 {
   "components": {
     "schemas": {
+      "AddCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit, unique among credentials not deleted.",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The real secret. kman seals it and never shows it again. For basic auth without a username, the whole user:password.",
+            "type": "string"
+          },
+          "upstream": {
+            "description": "The upstream's name or id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "upstream",
+          "secret"
+        ],
+        "type": "object"
+      },
+      "AddUpstreamRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "auth": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Auth"
+              }
+            ],
+            "description": "A custom upstream defaults to Authorization: Bearer {key}, or x-api-key: {key} on the anthropic profile."
+          },
+          "credential": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NewCredential"
+              }
+            ],
+            "description": "A first credential, added in the same transaction: a bad secret adds no upstream either."
+          },
+          "host": {
+            "description": "A host name or IP address, with no scheme, port or path. A custom upstream needs one.",
+            "type": "string"
+          },
+          "inject_usage": {
+            "description": "Only for the openai profile.",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit. With a preset, it defaults to the preset's name.",
+            "type": "string"
+          },
+          "path_allowlist": {
+            "description": "The rules a request must match, as METHOD /path. A custom upstream needs at least one; * /** allows everything.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "port": {
+            "description": "A custom upstream defaults to 443 with TLS and 80 without.",
+            "type": "integer"
+          },
+          "preset": {
+            "description": "The preset to copy. Absent to build a custom upstream from the settings.",
+            "type": "string"
+          },
+          "profile": {
+            "description": "openai, anthropic or generic. A custom upstream defaults to generic.",
+            "type": "string"
+          },
+          "sdk_base_path": {
+            "type": "string"
+          },
+          "sdk_env": {
+            "type": "string"
+          },
+          "server_name": {
+            "description": "The TLS server name, when it is not the host.",
+            "type": "string"
+          },
+          "tls": {
+            "description": "A custom upstream defaults to true.",
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "AdminToken": {
         "additionalProperties": false,
         "properties": {
@@ -114,6 +205,27 @@
         ],
         "type": "object"
       },
+      "Auth": {
+        "additionalProperties": false,
+        "properties": {
+          "basic_username": {
+            "description": "For the basic style, the username. When absent, a credential's secret is the whole user:password.",
+            "type": "string"
+          },
+          "header": {
+            "description": "For the header style, the template: Name: value {key}.",
+            "type": "string"
+          },
+          "style": {
+            "description": "header or basic.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "style"
+        ],
+        "type": "object"
+      },
       "CreateAdminTokenRequest": {
         "additionalProperties": false,
         "properties": {
@@ -142,6 +254,60 @@
           "token",
           "secret"
         ],
+        "type": "object"
+      },
+      "Credential": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last4": {
+            "description": "The end of the secret, to tell credentials apart. Absent for a secret too short to show any of.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rotated_at": {
+            "description": "When the secret was last replaced.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "upstream": {
+            "description": "The upstream's name.",
+            "type": "string"
+          },
+          "upstream_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "upstream_id",
+          "upstream",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "CredentialUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "A new name.",
+            "type": "string"
+          },
+          "secret": {
+            "description": "A new secret, which overwrites the old one. The credential keeps its id, so virtual keys on it are not touched.",
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       },
       "Error": {
@@ -176,6 +342,23 @@
         },
         "required": [
           "error"
+        ],
+        "type": "object"
+      },
+      "NewCredential": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Defaults to the upstream's name.",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The real secret. kman seals it and never shows it again. For basic auth without a username, the whole user:password.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret"
         ],
         "type": "object"
       },
@@ -425,6 +608,253 @@
         "required": [],
         "type": "object"
       },
+      "Upstream": {
+        "additionalProperties": false,
+        "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/Auth"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "credentials": {
+            "description": "Its credentials, by name. Never a secret.",
+            "items": {
+              "$ref": "#/components/schemas/Credential"
+            },
+            "type": "array"
+          },
+          "host": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "inject_usage": {
+            "description": "Whether OpenAI-style streams get stream_options.include_usage.",
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path_allowlist": {
+            "description": "The rules a request must match, as METHOD /path: * is any method or one segment, and a last segment of ** is the rest of the path.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "preset": {
+            "description": "The preset it was copied from. Absent for a custom upstream.",
+            "type": "string"
+          },
+          "preset_version": {
+            "description": "The version of the preset it was last copied from.",
+            "type": "integer"
+          },
+          "profile": {
+            "description": "openai, anthropic or generic.",
+            "type": "string"
+          },
+          "sdk_base_path": {
+            "description": "Appended to kman's proxy URL to make an SDK's base URL.",
+            "type": "string"
+          },
+          "sdk_env": {
+            "description": "The variable an SDK for this upstream reads its key from.",
+            "type": "string"
+          },
+          "server_name": {
+            "description": "The TLS server name, when it is not the host.",
+            "type": "string"
+          },
+          "tls": {
+            "type": "boolean"
+          },
+          "update_available": {
+            "description": "Whether this kman holds a newer version of the preset: see the sync operation.",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "profile",
+          "host",
+          "port",
+          "tls",
+          "path_allowlist",
+          "inject_usage",
+          "auth",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "UpstreamChange": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "description": "The upstream's field, by its name in the API.",
+            "type": "string"
+          },
+          "from": {
+            "description": "What it holds now. Absent if nothing.",
+            "type": "string"
+          },
+          "to": {
+            "description": "What the sync would set. Absent if nothing.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "type": "object"
+      },
+      "UpstreamList": {
+        "additionalProperties": false,
+        "properties": {
+          "upstreams": {
+            "items": {
+              "$ref": "#/components/schemas/Upstream"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "upstreams"
+        ],
+        "type": "object"
+      },
+      "UpstreamSyncPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "description": "What the sync would change, which undoes any edit made since the last copy. Empty when up to date, and possibly when only the version moves.",
+            "items": {
+              "$ref": "#/components/schemas/UpstreamChange"
+            },
+            "type": "array"
+          },
+          "from_version": {
+            "description": "The version of the preset the upstream was last copied from.",
+            "type": "integer"
+          },
+          "generation": {
+            "description": "The upstream's generation: pass it to the sync, which refuses if the upstream has changed since.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "preset": {
+            "type": "string"
+          },
+          "to_version": {
+            "description": "The version of the preset this kman holds.",
+            "type": "integer"
+          },
+          "up_to_date": {
+            "description": "Whether this kman holds no newer version, so there is nothing to sync.",
+            "type": "boolean"
+          },
+          "upstream": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "upstream",
+          "preset",
+          "from_version",
+          "to_version",
+          "up_to_date",
+          "generation",
+          "changes"
+        ],
+        "type": "object"
+      },
+      "UpstreamSyncRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "description": "The plan's generation.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "to_version": {
+            "description": "The plan's to_version.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "to_version",
+          "generation"
+        ],
+        "type": "object"
+      },
+      "UpstreamUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "auth": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Auth"
+              }
+            ],
+            "description": "A custom upstream defaults to Authorization: Bearer {key}, or x-api-key: {key} on the anthropic profile."
+          },
+          "host": {
+            "description": "A host name or IP address, with no scheme, port or path. A custom upstream needs one.",
+            "type": "string"
+          },
+          "inject_usage": {
+            "description": "Only for the openai profile.",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "A new name.",
+            "type": "string"
+          },
+          "path_allowlist": {
+            "description": "The rules a request must match, as METHOD /path. A custom upstream needs at least one; * /** allows everything.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "port": {
+            "description": "A custom upstream defaults to 443 with TLS and 80 without.",
+            "type": "integer"
+          },
+          "profile": {
+            "description": "openai, anthropic or generic. A custom upstream defaults to generic.",
+            "type": "string"
+          },
+          "sdk_base_path": {
+            "type": "string"
+          },
+          "sdk_env": {
+            "type": "string"
+          },
+          "server_name": {
+            "description": "The TLS server name, when it is not the host.",
+            "type": "string"
+          },
+          "tls": {
+            "description": "A custom upstream defaults to true.",
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "Whoami": {
         "additionalProperties": false,
         "properties": {
@@ -654,6 +1084,130 @@
         "summary": "Read a page of the audit log, oldest entry first"
       }
     },
+    "/admin/v1/credentials": {
+      "post": {
+        "operationId": "addCredential",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Seal a secret as a credential on an upstream; it is never shown again"
+      }
+    },
+    "/admin/v1/credentials/{ref}": {
+      "delete": {
+        "operationId": "removeCredential",
+        "parameters": [
+          {
+            "description": "The credential's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it"
+      },
+      "patch": {
+        "operationId": "updateCredential",
+        "parameters": [
+          {
+            "description": "The credential's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Rename a credential or replace its secret"
+      }
+    },
     "/admin/v1/openapi.json": {
       "get": {
         "operationId": "openapi",
@@ -811,6 +1365,279 @@
           }
         },
         "summary": "Change some settings; each change is audited"
+      }
+    },
+    "/admin/v1/upstreams": {
+      "get": {
+        "operationId": "listUpstreams",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpstreamList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List every upstream with its credentials, never their secrets"
+      },
+      "post": {
+        "operationId": "addUpstream",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddUpstreamRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upstream"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Add an upstream, copying a preset or built from the settings"
+      }
+    },
+    "/admin/v1/upstreams/{ref}": {
+      "delete": {
+        "operationId": "removeUpstream",
+        "parameters": [
+          {
+            "description": "The upstream's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upstream"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Delete an upstream and its credentials; refused while a virtual key that is not revoked depends on one"
+      },
+      "get": {
+        "operationId": "getUpstream",
+        "parameters": [
+          {
+            "description": "The upstream's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upstream"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Read one upstream, by name or id"
+      },
+      "patch": {
+        "operationId": "updateUpstream",
+        "parameters": [
+          {
+            "description": "The upstream's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpstreamUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upstream"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Change some of an upstream's settings"
+      }
+    },
+    "/admin/v1/upstreams/{ref}/sync": {
+      "get": {
+        "operationId": "planUpstreamSync",
+        "parameters": [
+          {
+            "description": "The upstream's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpstreamSyncPlan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Show how an upstream differs from a newer version of its preset, changing nothing"
+      },
+      "post": {
+        "operationId": "syncUpstream",
+        "parameters": [
+          {
+            "description": "The upstream's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpstreamSyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upstream"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Apply a sync plan; refused if the upstream or the preset has moved since"
       }
     },
     "/admin/v1/whoami": {

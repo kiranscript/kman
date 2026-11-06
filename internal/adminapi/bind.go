@@ -56,8 +56,8 @@ func bind(r *http.Request, t reflect.Type) (any, error) {
 
 // hasBody reports whether t has any field the body sets.
 func hasBody(t reflect.Type) bool {
-	for i := range t.NumField() {
-		if name := jsonName(t.Field(i)); name != "" {
+	for _, f := range reflect.VisibleFields(t) {
+		if jsonName(f) != "" {
 			return true
 		}
 	}

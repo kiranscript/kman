@@ -50,27 +50,43 @@ func cmdLogin(ctx context.Context, c *call) error {
 // readToken reads an admin token from the terminal without echo, or a line
 // of stdin.
 func (c *call) readToken() (string, error) {
-	var raw []byte
-	var err error
-	if c.env.ReadSecret != nil {
-		raw, err = c.env.ReadSecret("Admin token: ")
-	} else {
-		var line string
-		line, err = bufio.NewReader(c.env.Stdin).ReadString('\n')
-		if errors.Is(err, io.EOF) {
-			err = nil
-		}
-		raw = []byte(line)
-	}
+	tok, err := c.readSecret("Admin token: ")
 	if err != nil {
 		return "", fmt.Errorf("read the admin token: %w", err)
 	}
-	tok := strings.TrimSpace(string(raw))
-	clear(raw)
 	if tok == "" {
 		return "", errors.New("no admin token given")
 	}
 	return tok, nil
+}
+
+// readSecret prompts for a secret and reads it from the terminal without echo,
+// or a line of stdin. It may return "".
+func (c *call) readSecret(prompt string) (string, error) {
+	var raw []byte
+	var err error
+	if c.env.ReadSecret != nil {
+		raw, err = c.env.ReadSecret(prompt)
+	} else {
+		var line string
+		line, err = c.readLine()
+		raw = []byte(line)
+	}
+	if err != nil {
+		return "", err
+	}
+	tok := strings.TrimSpace(string(raw))
+	clear(raw)
+	return tok, nil
+}
+
+// readLine reads one line of stdin. The end of the input is not an error.
+func (c *call) readLine() (string, error) {
+	line, err := bufio.NewReader(c.env.Stdin).ReadString('\n')
+	if errors.Is(err, io.EOF) {
+		err = nil
+	}
+	return line, err
 }
 
 // plainRemote reports whether u is plain HTTP to a host that is not

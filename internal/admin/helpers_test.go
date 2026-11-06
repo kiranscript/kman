@@ -2,46 +2,137 @@ package admin_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kirank55/kman/internal/admin"
+	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/store"
+	"github.com/kirank55/kman/internal/vault"
 )
 
 var t0 = time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 
-// install is an admin service over its own store, with a clock the test
-// moves and the owner token already made, as init leaves it.
+// install is an admin service over its own store, vault and registry, with
+// the real presets and a clock the test moves, and the owner token already
+// made, as init leaves it.
 type install struct {
 	svc     *admin.Service
 	store   *store.Store
+	vault   *vault.Vault
+	reg     *registry.Registry
+	dir     string
 	now     time.Time
 	owner   string // the owner token's secret
-	applied []admin.Change
+	applied []registry.Change
 }
 
 func newInstall(t *testing.T) *install {
 	t.Helper()
-	st, err := store.Open(context.Background(), store.Options{Dir: t.TempDir(), Now: t0})
+	return newInstallWith(t, profiles.Presets())
+}
+
+func newInstallWith(t *testing.T, presets []registry.Preset) *install {
+	t.Helper()
+	dir := t.TempDir()
+	st, err := store.Open(context.Background(), store.Options{Dir: dir, Now: t0})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	in := &install{store: st, now: t0}
-	in.svc = admin.New(admin.Options{
-		Store: st,
-		Now:   func() time.Time { return in.now },
-		Apply: func(c admin.Change) { in.applied = append(in.applied, c) },
-	})
+	in := &install{store: st, dir: dir, now: t0, reg: registry.New(), vault: newVault(t, st)}
+	in.svc = in.service(presets)
 	created, err := in.svc.CreateAdminToken(as("system:init"), admin.CreateAdminTokenRequest{Name: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	in.owner = created.Secret
 	return in
+}
+
+// service is another admin service over the install, as a later release of
+// kman would be with its own presets.
+func (in *install) service(presets []registry.Preset) *admin.Service {
+	return admin.New(admin.Options{
+		Store:   in.store,
+		Now:     func() time.Time { return in.now },
+		Vault:   in.vault,
+		Presets: presets,
+		Apply: func(c registry.Change) {
+			in.applied = append(in.applied, c)
+			in.reg.Apply(c)
+		},
+	})
+}
+
+// masterKey is a key source holding a fixed master key.
+type masterKey struct{}
+
+func (masterKey) MasterKey() ([]byte, error) { return make([]byte, vault.KeySize), nil }
+func (masterKey) String() string             { return "the test's master key" }
+
+// newVault makes a data key in st and a vault holding it.
+func newVault(t *testing.T, st *store.Store) *vault.Vault {
+	t.Helper()
+	v, wk, err := vault.Create(masterKey{}, "dek_test", vault.Options{AllowDebug: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(v.Close)
+	err = st.Do(context.Background(), func(tx *store.Tx) error {
+		return tx.CreateDataKey(store.DataKey{ID: wk.ID, Wrapped: wk.Wrapped, Nonce: wk.Nonce, KEKFingerprint: wk.Fingerprint, CreatedAt: t0})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// unlockVault opens the data key in st, as serve does at startup.
+func unlockVault(t *testing.T, st *store.Store) *vault.Vault {
+	t.Helper()
+	var dk store.DataKey
+	err := st.Do(context.Background(), func(tx *store.Tx) error {
+		var err error
+		dk, err = tx.CurrentDataKey()
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := vault.Unlock(masterKey{}, vault.WrappedKey{ID: dk.ID, Nonce: dk.Nonce, Wrapped: dk.Wrapped, Fingerprint: dk.KEKFingerprint}, vault.Options{AllowDebug: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(v.Close)
+	return v
+}
+
+// sqlExec runs a statement against the install's database from outside the
+// store, to seed what no command makes yet or to damage what one made.
+func (in *install) sqlExec(t *testing.T, query string, args ...any) {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(in.dir, store.FileName))+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(query, args...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// seedKey writes a virtual key on a credential: until #36 no command makes
+// one.
+func (in *install) seedKey(t *testing.T, keyID, name, credentialID, status string) {
+	t.Helper()
+	in.sqlExec(t, `INSERT INTO virtual_keys (key_id, name, credential_id, kind, status, policy_version, created_at, generation)
+		VALUES (?, ?, ?, 'standard', ?, 1, 0, 1)`, keyID, name, credentialID, status)
 }
 
 // as is a context whose caller is actor.

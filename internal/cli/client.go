@@ -183,6 +183,56 @@ func (c *client) Audit(ctx context.Context, req admin.AuditQuery) (admin.AuditPa
 	return out, c.do(ctx, "GET", "/audit", q, nil, &out)
 }
 
+func (c *client) AddUpstream(ctx context.Context, req admin.AddUpstreamRequest) (admin.Upstream, error) {
+	var out admin.Upstream
+	return out, c.do(ctx, "POST", "/upstreams", nil, req, &out)
+}
+
+func (c *client) ListUpstreams(ctx context.Context) (admin.UpstreamList, error) {
+	var out admin.UpstreamList
+	return out, c.do(ctx, "GET", "/upstreams", nil, nil, &out)
+}
+
+func (c *client) GetUpstream(ctx context.Context, req admin.UpstreamRef) (admin.Upstream, error) {
+	var out admin.Upstream
+	return out, c.do(ctx, "GET", "/upstreams/"+url.PathEscape(req.Ref), nil, nil, &out)
+}
+
+func (c *client) UpdateUpstream(ctx context.Context, req admin.UpstreamUpdate) (admin.Upstream, error) {
+	var out admin.Upstream
+	return out, c.do(ctx, "PATCH", "/upstreams/"+url.PathEscape(req.Ref), nil, req, &out)
+}
+
+func (c *client) RemoveUpstream(ctx context.Context, req admin.UpstreamRef) (admin.Upstream, error) {
+	var out admin.Upstream
+	return out, c.do(ctx, "DELETE", "/upstreams/"+url.PathEscape(req.Ref), nil, nil, &out)
+}
+
+func (c *client) PlanUpstreamSync(ctx context.Context, req admin.UpstreamRef) (admin.UpstreamSyncPlan, error) {
+	var out admin.UpstreamSyncPlan
+	return out, c.do(ctx, "GET", "/upstreams/"+url.PathEscape(req.Ref)+"/sync", nil, nil, &out)
+}
+
+func (c *client) SyncUpstream(ctx context.Context, req admin.UpstreamSyncRequest) (admin.Upstream, error) {
+	var out admin.Upstream
+	return out, c.do(ctx, "POST", "/upstreams/"+url.PathEscape(req.Ref)+"/sync", nil, req, &out)
+}
+
+func (c *client) AddCredential(ctx context.Context, req admin.AddCredentialRequest) (admin.Credential, error) {
+	var out admin.Credential
+	return out, c.do(ctx, "POST", "/credentials", nil, req, &out)
+}
+
+func (c *client) UpdateCredential(ctx context.Context, req admin.CredentialUpdate) (admin.Credential, error) {
+	var out admin.Credential
+	return out, c.do(ctx, "PATCH", "/credentials/"+url.PathEscape(req.Ref), nil, req, &out)
+}
+
+func (c *client) RemoveCredential(ctx context.Context, req admin.CredentialRef) (admin.Credential, error) {
+	var out admin.Credential
+	return out, c.do(ctx, "DELETE", "/credentials/"+url.PathEscape(req.Ref), nil, nil, &out)
+}
+
 // connect returns a client logged in from the credentials file or the
 // environment.
 func (c *call) connect() (*client, login, error) {

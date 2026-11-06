@@ -64,6 +64,18 @@ var routes = []route{
 
 	op("GET", "/prices", "listPrices", "List the built-in price table and how old it is", http.StatusOK, Service.ListPrices),
 	op0("GET", "/prices/status", "getPriceDataStatus", "Say how old the built-in price table is, and whether to upgrade", Service.PriceDataStatus),
+
+	op0("GET", "/upstreams", "listUpstreams", "List every upstream with its credentials, never their secrets", Service.ListUpstreams),
+	op("POST", "/upstreams", "addUpstream", "Add an upstream, copying a preset or built from the settings", http.StatusCreated, Service.AddUpstream),
+	op("GET", "/upstreams/{ref}", "getUpstream", "Read one upstream, by name or id", http.StatusOK, Service.GetUpstream),
+	op("PATCH", "/upstreams/{ref}", "updateUpstream", "Change some of an upstream's settings", http.StatusOK, Service.UpdateUpstream),
+	op("DELETE", "/upstreams/{ref}", "removeUpstream", "Delete an upstream and its credentials; refused while a virtual key that is not revoked depends on one", http.StatusOK, Service.RemoveUpstream),
+	op("GET", "/upstreams/{ref}/sync", "planUpstreamSync", "Show how an upstream differs from a newer version of its preset, changing nothing", http.StatusOK, Service.PlanUpstreamSync),
+	op("POST", "/upstreams/{ref}/sync", "syncUpstream", "Apply a sync plan; refused if the upstream or the preset has moved since", http.StatusOK, Service.SyncUpstream),
+
+	op("POST", "/credentials", "addCredential", "Seal a secret as a credential on an upstream; it is never shown again", http.StatusCreated, Service.AddCredential),
+	op("PATCH", "/credentials/{ref}", "updateCredential", "Rename a credential or replace its secret", http.StatusOK, Service.UpdateCredential),
+	op("DELETE", "/credentials/{ref}", "removeCredential", "Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it", http.StatusOK, Service.RemoveCredential),
 }
 
 // docPath serves the OpenAPI document. It needs no token.
