@@ -352,7 +352,7 @@ The whole strategy is in [testing strategy and quality gates](https://github.com
 - Time is an argument; timer-driven code is tested in `testing/synctest`. Only `main` reads the clock.
 - Each module is tested through its interface: table tests, fuzz targets, and property tests as listed in that ticket. Each test gets its own SQLite database.
 - **E2E** on every PR: the real binary against a mock upstream whose responses are recorded transcripts, plus the pinned official Python and Node SDKs. A weekly job runs the latest SDKs. A live suite runs before each release.
-- **Required gates:** `go vet`, `staticcheck`, `govulncheck`, `go mod tidy` and `templ generate` with no diff, the dependency-rule test, no package under `internal/` without tests, `-race` as its own job, a `CGO_ENABLED=0` cross-compile, the canary deadline gate, the secret-leak sweep, the benchmark gate (allocations, or >10% by `benchstat`). No coverage-percentage gate.
+- **Required gates:** `go vet`, `staticcheck`, `govulncheck`, `go mod tidy` and `templ generate` with no diff, the dependency-rule test, no package under `internal/` without tests, `-race` as its own job, a `CGO_ENABLED=0` cross-compile, the canary deadline gate (M2), the secret-leak sweep (after `v0.1.0`; the M1 security review runs it once by hand), the benchmark gate (allocations, or >10% by `benchstat`). No coverage-percentage gate.
 - **OS matrix:** Linux runs everything; macOS and Windows run unit and e2e tests; systemd-creds tests run on Linux in a systemd container.
 - **Dashboard tests** (M3) drive a headless browser from Go with `chromedp`, so no Node enters the toolchain.
 - **Regression tests** named for keman's bugs: `TestRegression_F1_…` through `F9`.
@@ -374,19 +374,20 @@ Put real keys behind kman and kill a leak.
 4. **Registry and catalog:** the snapshot; presets as data; upstream and credential CRUD; `upstream sync`; key create, list, show, and update.
 5. **Gateway tracer bullet:** token parsing with checksum, `key_secrets` lookup, forwarding through the generic profile, header stripping, redirect blocking, the bounded body buffer, the error table.
 6. **Metering:** the OpenAI and Anthropic profiles with streaming usage; the price-table generator and embedded table; `pricing`; `meter` with reservations, settlement, increments, and fail-closed; caps; the unmetered rule; price overrides and the staleness line.
-6. **Policy and limits:** allowlists, CIDR and country locks with `geoip update`, `limiter` with bounded memory, `trusted_proxies`.
-7. **Lifecycle:** disable, enable, revoke, expiry, maximum key lifetime, rotate with grace and retired-secret storage, credential compromise.
-7. **Events and alerts:** `events` with the priority lane, the store writer and `usage_hourly`, the outbox, Slack and webhook channels, soft budgets and the projection, expiry and credential warnings, `/metrics`.
-7. **Tools:** `scan`, `exposure`, `backup`, `restore`, `prune`, retention.
+6. **Policy and limits:** allowlists, `limiter` with bounded memory, `trusted_proxies`.
+7. **Lifecycle:** disable, enable, revoke, expiry, maximum key lifetime.
+7. **Security review:** one focused review of everything `v0.1.0` ships ([#59](https://github.com/kirank55/kman/issues/59)).
 8. **Ship:** the release pipeline, `install.sh`, the image and Compose example, the Homebrew formula and packages, `README`, quickstart, operator guide, `SECURITY.md`, `THREAT-MODEL.md`, the quickstart CI test, the `v0.1.0` fixture.
+
+**Deferred past `v0.1.0`** (these sections of the spec still describe where kman is going, not what `v0.1.0` does): CIDR and country locks ([#43](https://github.com/kirank55/kman/issues/43)); key rotation and credential compromise ([#45](https://github.com/kirank55/kman/issues/45)); events, `usage_hourly` and `/metrics` ([#46](https://github.com/kirank55/kman/issues/46)); the alert outbox and channels ([#47](https://github.com/kirank55/kman/issues/47)); soft budgets and warnings ([#48](https://github.com/kirank55/kman/issues/48)); `scan` and `exposure` ([#49](https://github.com/kirank55/kman/issues/49)); `backup`, `restore`, `prune` and retention ([#50](https://github.com/kirank55/kman/issues/50)). M2 needs events and alerts, so #46 and #47 return before it starts.
 
 **Done when:**
 - The quickstart test passes on Linux and macOS, word for word from the docs.
-- Pinned OpenAI and Anthropic SDKs (Python and Node, streaming and not) work through kman in e2e, with spend metered.
-- Regression tests F1 (modelless bypass), F2 (errors charge caps), F3 (counters only for capped keys), F4 (rotation resets), F6 (unbounded maps), F7 (lossy alert pipeline, for M1's alerts), and F8 (rekey keeps the data key) are green.
-- E2E containment: disable and revoke stop the next request; rotate with grace keeps both secrets for the grace and then only the new one; credential compromise rotates every key on the credential in one transaction.
+- Pinned OpenAI and Anthropic SDKs (Python and Node, streaming and not) work through kman in e2e, with spend metered and visible per key.
+- Regression tests F1 (modelless bypass), F2 (errors charge caps), F3 (counters only for capped keys), F6 (unbounded maps), and F8 (rekey keeps the data key) are green.
+- E2E containment: disable, revoke and expiry stop the next request.
 - `meter` property tests hold under concurrency, and the kill-mid-stream and locked-store failure tests pass.
-- The invariant tests pass: master key in the data directory refused, no listener public by default, the secret-leak sweep clean, no outbound call without configuration.
+- The security review is finished, with its critical and high findings fixed.
 - `v0.1.0` is published, the post-release verification job is green, and the repo is public.
 
 ### M2 Detect (`v0.2.0`)
