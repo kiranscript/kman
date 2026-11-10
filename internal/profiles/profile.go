@@ -14,15 +14,35 @@ type Profile interface {
 	// anything already under that name. It keeps no reference to secret, which
 	// the vault wipes in place.
 	Authorize(h http.Header, a registry.Auth, secret []byte)
+	// Prepare readies a request so that its response can be metered, setting h and
+	// returning the body to send, which is the one given if nothing changes. It
+	// doesn't change the body given. path is the request's. injectUsage is the
+	// upstream's setting.
+	Prepare(h http.Header, path string, body []byte, injectUsage bool) []byte
+	// UsageReader returns what reads usage out of a response with these headers
+	// as it passes through, or nil when kman can't read it or doesn't meter it.
+	UsageReader(h http.Header) *UsageReader
 }
 
-// For returns the profile with this name. Until metering brings the OpenAI and
-// Anthropic profiles (#40), all of them are the generic one, which forwards
-// without reading what passes through.
-func For(string) Profile { return generic{} }
+// For returns the profile with this name, which is an upstream's Profile and not
+// its Name or Preset. An unknown name is the generic profile.
+func For(name string) Profile {
+	switch name {
+	case registry.ProfileOpenAI:
+		return openAI{}
+	case registry.ProfileAnthropic:
+		return anthropic{}
+	}
+	return generic{}
+}
 
-// generic is the generic HTTP profile (SPEC §6): header or Basic auth.
+// generic is the generic HTTP profile (SPEC §6): header or Basic auth. It is
+// unmetered: it forwards without reading what passes through.
 type generic struct{}
+
+func (generic) Prepare(_ http.Header, _ string, body []byte, _ bool) []byte { return body }
+
+func (generic) UsageReader(http.Header) *UsageReader { return nil }
 
 func (generic) Authorize(h http.Header, a registry.Auth, secret []byte) {
 	if a.Style == registry.AuthBasic {

@@ -1,0 +1,36 @@
+{
+  "note": "Written by hand, not captured from the live API (no credentials were to hand): the shape follows the types in the pinned SDKs under e2e/testdata/sdk. Message.",
+  "profile": "anthropic",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ],
+          "Request-Id": [
+            "req_e2e"
+          ]
+        },
+        "chunks": [
+          "{\"id\":\"msg_e2e\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-5-5\",\"stop_sequence\":null,\"content\":[{\"type\":\"text\",\"text\":\"Hello there\"}],\"stop_reason\":\"end_turn\",\"usage\":{\"input_tokens\":25,\"output_tokens\":9,\"cache_read_input_tokens\":10,\"cache_creation_input_tokens\":6,\"cache_creation\":{\"ephemeral_5m_input_tokens\":4,\"ephemeral_1h_input_tokens\":2},\"service_tier\":\"standard\",\"speed\":\"standard\",\"server_tool_use\":null,\"inference_geo\":null}}"
+        ]
+      },
+      "usage": {
+        "Seen": true,
+        "Model": "claude-sonnet-5-5",
+        "ServiceTier": "standard",
+        "InputTokens": 25,
+        "OutputTokens": 9,
+        "CachedTokens": 10,
+        "CacheWriteTokens": 4,
+        "CacheWrite1hTokens": 2
+      }
+    }
+  ]
+}

@@ -23,7 +23,10 @@ func (g *Gateway) forward(x *exchange) *refusal {
 	if r.Method == http.MethodTrace || r.Method == http.MethodConnect || !strings.HasPrefix(r.URL.Path, "/") {
 		return &refusal{code: codePathNotAllowed}
 	}
-	out, err := http.NewRequestWithContext(r.Context(), r.Method, "", bytes.NewReader(x.body))
+	profile := profiles.For(up.Profile)
+	header := outboundHeaders(r.Header)
+	body := profile.Prepare(header, r.URL.Path, x.body, up.InjectUsage)
+	out, err := http.NewRequestWithContext(r.Context(), r.Method, "", bytes.NewReader(body))
 	if err != nil {
 		return &refusal{code: codeUpstreamUnavailable}
 	}
@@ -35,13 +38,13 @@ func (g *Gateway) forward(x *exchange) *refusal {
 	if up.ServerName != "" {
 		out.Host = address(up, up.ServerName) // the name the upstream knows itself by
 	}
-	out.Header = outboundHeaders(r.Header)
+	out.Header = header
 	secret, ok := g.opts.Vault.Credential(x.route.Credential.ID)
 	if !ok {
 		g.opts.Log.Error("the vault does not hold a credential", "credential", x.route.Credential.ID, "key", x.route.Key.ID)
 		return &refusal{code: codeUpstreamUnavailable}
 	}
-	profiles.For(up.Profile).Authorize(out.Header, up.Auth, secret)
+	profile.Authorize(out.Header, up.Auth, secret)
 
 	// RoundTrip and not http.Client, whose errors quote the URL and its query.
 	resp, err := g.transportFor(up).RoundTrip(out)
@@ -58,6 +61,7 @@ func (g *Gateway) forward(x *exchange) *refusal {
 		g.opts.Log.Warn("blocked a redirect off the upstream", "key", x.route.Key.ID, "upstream", up.Name, "status", resp.StatusCode)
 		return &refusal{code: codeUpstreamUnavailable, message: "The upstream answered with a redirect to somewhere else, which kman does not follow."}
 	}
+	x.usage = profile.UsageReader(resp.Header)
 	g.respond(x, resp)
 	return nil
 }
@@ -66,7 +70,7 @@ func (g *Gateway) forward(x *exchange) *refusal {
 var copyBuffers = sync.Pool{New: func() any { return new([32 << 10]byte) }}
 
 // respond passes the upstream's response to the app as it arrives, so a stream
-// stays a stream. If either side breaks off, the app's connection is cut, so
+// stays a stream, reading usage on the way. If either side breaks off, the app's connection is cut, so
 // that it can't take part of an answer for the whole.
 func (g *Gateway) respond(x *exchange, resp *http.Response) {
 	h := x.w.Header()
@@ -83,6 +87,9 @@ func (g *Gateway) respond(x *exchange, resp *http.Response) {
 	for {
 		n, err := resp.Body.Read(buf[:])
 		if n > 0 {
+			if x.usage != nil {
+				x.usage.Feed(buf[:n])
+			}
 			if _, werr := x.w.Write(buf[:n]); werr != nil {
 				x.abort = true
 				return

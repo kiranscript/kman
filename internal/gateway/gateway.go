@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/vault"
 )
@@ -32,6 +33,10 @@ type Options struct {
 	RootCAs *x509.CertPool
 	// Transport replaces the real one. It is for tests.
 	Transport http.RoundTripper
+	// OnUsage is told what each response it could read reported, once it has ended.
+	// It is how tests see the usage until metering settles it (#41), which reads
+	// the same exchange field.
+	OnUsage func(registry.Route, profiles.Usage)
 }
 
 // Gateway is the proxy listener's http.Handler.
@@ -58,6 +63,10 @@ type exchange struct {
 	r     *http.Request
 	route registry.Route
 	body  []byte
+	// usage reads usage from the response as it passes. It is nil before there's a
+	// response, and for one that can't be read or isn't metered. What it holds
+	// stands after a broken response too, when abort is also set.
+	usage *profiles.UsageReader
 	// abort means the response can't be finished properly: the connection is cut,
 	// so the app can't take what it got for the whole of it.
 	abort bool
@@ -109,14 +118,19 @@ func (g *Gateway) policy(*exchange) *refusal { return nil }
 // limit will hold a key to its RPM limit (#43).
 func (g *Gateway) limit(*exchange) *refusal { return nil }
 
-// reserve will take a reservation against the key's caps (#40, #41). Pricing
+// reserve will take a reservation against the key's caps (#41). Pricing
 // goes by the upstream's ID, Preset and PriceMultiplierPPM, never its Name, which
 // the operator chooses.
 func (g *Gateway) reserve(*exchange) *refusal { return nil }
 
 // settle will charge what the upstream reported, or release the reservation
-// (#41). It runs for every request, refused or not.
-func (g *Gateway) settle(*exchange) {}
+// (#41). It runs for every request, refused or not. For now it only hands on the
+// usage read from the response, which is priced by nothing yet.
+func (g *Gateway) settle(x *exchange) {
+	if x.usage != nil && g.opts.OnUsage != nil {
+		g.opts.OnUsage(x.route, x.usage.Usage())
+	}
+}
 
 // emit will publish the request's event (#46). It runs for every request.
 func (g *Gateway) emit(*exchange) {}
