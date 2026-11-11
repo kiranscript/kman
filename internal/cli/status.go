@@ -110,7 +110,7 @@ func runningStage(upstreams []admin.Upstream, keys []admin.Key) stage {
 	}
 	usable := 0
 	for _, k := range keys {
-		if keyState(k) == "active" {
+		if keyState(k) == admin.KeyActive {
 			usable++
 		}
 	}

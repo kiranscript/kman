@@ -157,7 +157,7 @@ func keyLabel(k admin.Key) string {
 
 // keyState is a key's status, or expired for a key that would otherwise work.
 func keyState(k admin.Key) string {
-	if k.Expired && k.Status == "active" {
+	if k.Expired && k.Status == admin.KeyActive {
 		return "expired"
 	}
 	return k.Status

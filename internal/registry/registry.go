@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kirank55/kman/internal/policy"
+	"github.com/kirank55/kman/internal/store"
 	"github.com/kirank55/kman/internal/token"
 )
 
@@ -32,6 +33,14 @@ type Credential struct {
 	Name       string
 	Generation int64
 }
+
+// A key's statuses are the store's, which owns them. They are here for the
+// gateway, which may not import the store.
+const (
+	KeyActive   = store.KeyActive
+	KeyDisabled = store.KeyDisabled
+	KeyRevoked  = store.KeyRevoked
+)
 
 // Key is one virtual key as the request path reads it.
 type Key struct {
