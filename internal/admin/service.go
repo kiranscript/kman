@@ -58,6 +58,11 @@ type API interface {
 	SetPriceOverride(ctx context.Context, req PriceOverrideSet) (PriceOverride, error)
 	RemovePriceOverride(ctx context.Context, req PriceOverrideRef) (PriceOverride, error)
 	ImportPriceOverrides(ctx context.Context, req PriceOverrideImport) (PriceOverrideImportResult, error)
+
+	Backup(ctx context.Context) (Download, error)
+	Prune(ctx context.Context, req PruneRequest) (PruneResult, error)
+
+	UpdateStatus(ctx context.Context) (UpdateStatus, error)
 }
 
 var _ API = (*Service)(nil)
@@ -97,6 +102,9 @@ type Options struct {
 	// from its policy as stored. The composition root adapts the meter, which
 	// admin may not import. Nil shows no spend, for what runs no request path.
 	Spend func(keyID, policy string) KeySpend
+	// Update reports what the opt-in update check has learned. The composition
+	// root passes it only when update_check is on; nil says the check is off.
+	Update func() UpdateStatus
 }
 
 // Service runs the admin commands.
@@ -111,6 +119,7 @@ type Service struct {
 	policy  func(raw []byte) (int, []byte, error)
 	publish func([]PriceOverride) error
 	spend   func(keyID, policy string) KeySpend
+	update  func() UpdateStatus
 
 	// publishing holds a command from its transaction to its publish, so
 	// memory sees commands in the order they committed. The request path
@@ -123,7 +132,7 @@ type Service struct {
 
 // New returns the admin service over opts.Store.
 func New(opts Options) *Service {
-	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices, spend: opts.Spend}
+	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices, spend: opts.Spend, update: opts.Update}
 	s.settle = make(chan struct{}, 1)
 	if s.rand == nil {
 		s.rand = rand.Reader

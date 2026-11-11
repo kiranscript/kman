@@ -16,6 +16,7 @@ import (
 
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
+	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/gateway"
 	"github.com/kirank55/kman/internal/meter"
 	"github.com/kirank55/kman/internal/policy"
@@ -110,9 +111,19 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	reg := registry.New()
 	prices := pricing.NewPrices(pricing.Builtin())
 	var spend *meter.Meter // made once the settings are read, which the service reads
-	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices,
+	// The update check is the one thing kman asks the network by itself, and only
+	// when the operator turned it on (ADR 0008).
+	var updates *updateChecker
+	adminOpts := admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices,
 		ApplyPrices: publishOverrides(prices), NormalizePolicy: policy.Normalize,
-		Spend: func(keyID, policyJSON string) admin.KeySpend { return keySpend(spend, s.now(), keyID, policyJSON) }})
+		Spend: func(keyID, policyJSON string) admin.KeySpend { return keySpend(spend, s.now(), keyID, policyJSON) }}
+	if cfg.UpdateCheck {
+		current, _, _, _ := stamp()
+		hc := releaseClient(s)
+		updates = newUpdateChecker(current, s.now, func(ctx context.Context) (release, error) { return fetchLatest(ctx, hc, current) })
+		adminOpts.Update = updates.Status
+	}
+	svc := admin.New(adminOpts)
 	if err := svc.Load(ctx); err != nil {
 		return err
 	}
@@ -120,6 +131,23 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	settleDone := make(chan struct{})
 	go func() { svc.RunSettling(settleCtx); close(settleDone) }() // a grace that has ended turns its secret into a retired one
 	defer func() { stopSettling(); <-settleDone }()
+	// Retention prunes at startup and then daily, unless the operator keeps everything.
+	retainCtx, stopRetaining := context.WithCancel(ctx)
+	retainDone := make(chan struct{})
+	if windows, prune := cfg.retention(); prune {
+		go func() { svc.RunRetention(retainCtx, windows, retentionReport(log)); close(retainDone) }()
+	} else {
+		close(retainDone)
+	}
+	defer func() { stopRetaining(); <-retainDone }()
+	updateCtx, stopUpdates := context.WithCancel(ctx)
+	updateDone := make(chan struct{})
+	if updates != nil {
+		go func() { updates.Run(updateCtx); close(updateDone) }()
+	} else {
+		close(updateDone)
+	}
+	defer func() { stopUpdates(); <-updateDone }()
 	spend, err = startMeter(ctx, s, log, svc, st, prices)
 	if err != nil {
 		return err
@@ -130,7 +158,11 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	go func() { spend.Run(meterCtx); close(meterDone) }()
 	pipe := startEvents(ctx, st, log)
 	defer pipe.stop() // a second time is harmless: the first stop is below
-	metrics := pipe.handler(s.now, priceDataGenerated())
+	var more []events.Metric
+	if updates != nil {
+		more = append(more, updateMetric(updates))
+	}
+	metrics := pipe.handler(s.now, priceDataGenerated(), more...)
 	proxy := gateway.New(gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, Meter: spend, Events: pipe.bus, TrustedProxies: cfg.trustedProxies()})
 	ls, err := listen(cfg, log, proxy, adminHandler(svc, log, metrics))
 	if err != nil {
@@ -180,6 +212,18 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 		log.Error("the last spend could not be saved", "err", ferr)
 	}
 	return err
+}
+
+// retentionReport logs what each retention pass deleted, or why it failed.
+func retentionReport(log *slog.Logger) func(admin.PruneResult, error) {
+	return func(r admin.PruneResult, err error) {
+		switch {
+		case err != nil:
+			log.Error("retention could not prune; it tries again in an hour", "err", err)
+		case r.Events+r.HourlyUsage+r.DeliveredAlerts > 0:
+			log.Info("retention pruned", "events", r.Events, "hourly_usage", r.HourlyUsage, "delivered_alerts", r.DeliveredAlerts)
+		}
+	}
 }
 
 // listener is one bound listener and the server for it.

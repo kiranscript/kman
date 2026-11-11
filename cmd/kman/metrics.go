@@ -51,11 +51,12 @@ func (p *eventPipeline) stop() {
 	p.done.Wait()
 }
 
-// handler serves /metrics: what was counted, the bus's and the writer's own, and
-// the age of the price data.
-func (p *eventPipeline) handler(now func() time.Time, priceDataGenerated time.Time) http.Handler {
+// handler serves /metrics: what was counted, the bus's and the writer's own, the
+// age of the price data, and any metric more adds.
+func (p *eventPipeline) handler(now func() time.Time, priceDataGenerated time.Time, more ...events.Metric) http.Handler {
 	extra := append(events.BusMetrics(p.bus), events.WriterMetrics(p.writer)...)
 	extra = append(extra, priceAgeMetric(now, priceDataGenerated))
+	extra = append(extra, more...)
 	return p.metrics.Handler(extra...)
 }
 

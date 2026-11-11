@@ -34,6 +34,9 @@ func Status(ctx context.Context, env Env) int {
 		fmt.Fprintln(env.Stdout, n)
 	}
 	printBinaryAge(c)
+	if cl != nil {
+		printUpdate(ctx, c, cl)
+	}
 	var prices admin.PriceDataStatus
 	var err error = errNoServer
 	if cl != nil {
@@ -63,6 +66,17 @@ func printBinaryAge(c *call) {
 		}
 	}
 	fmt.Fprintln(c.env.Stdout, "This kman binary carries no build date, so its age is unknown.")
+}
+
+// printUpdate says so when the running server's opt-in update check has found a
+// newer release. It says nothing when the check is off or finds none: the summary
+// never reaches for the network, and neither does asking the server.
+func printUpdate(ctx context.Context, c *call, cl *client) {
+	u, err := cl.UpdateStatus(ctx)
+	if err != nil || !u.Available {
+		return
+	}
+	fmt.Fprintf(c.env.Stdout, "A newer kman is available: %s (you have %s). %s\n", u.Latest, u.Current, u.URL)
 }
 
 var errNoServer = errors.New("no server")

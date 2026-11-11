@@ -26,13 +26,13 @@ var offlineSummaries = map[string]string{
 	"serve":   "run the proxy and the admin API",
 	"keygen":  "print a new master key and store nothing",
 	"rekey":   "replace the master key and the data key, with the server stopped",
-	"version": "print the version, the commit and the build date",
+	"restore": "replace the database with a backup, with the server stopped",
+	"version": "print the version, the commit and the build date; --check asks GitHub for a newer release",
 }
 
 // staticUsage is the usage of the commands that take no flags.
 var staticUsage = map[string]string{
-	"keygen":  "usage: kman keygen\n",
-	"version": "usage: kman version\n",
+	"keygen": "usage: kman keygen\n",
 }
 
 // unlistedSubcommands are subcommands a command's usage does not list in

@@ -10,7 +10,7 @@ The time, the key id (none when the request presented no key kman could identify
 - A request kman refused before it reached an upstream is kind `blocked`, with its error code.
 - A **disabled key**, and a **canary** (a key with no credential), take a priority lane inside kman, so that a later alert never waits behind ordinary traffic.
 
-Events are written to the store in batches every 5 seconds, and when kman stops. They are kept 30 days by default once retention ships; v0.1.0 does not prune them yet.
+Events are written to the store in batches every 5 seconds, and when kman stops. They are kept 30 days by default, and hourly usage 400 days; [retention](backup.md#retention) prunes them daily, and `retention: keep_everything` turns that off.
 
 If the store cannot be written to, kman keeps the unsaved events in memory (up to 10,000) and retries. Past that it gives up the oldest and counts them in `kman_events_lost_total`.
 

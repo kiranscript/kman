@@ -150,13 +150,16 @@ func TestTheOpenAPIDocumentDescribesTheTypes(t *testing.T) {
 		"post /admin/v1/price-overrides/import":       "importPriceOverrides",
 		"post /admin/v1/keys/{id}/rotate":             "rotateKey",
 		"post /admin/v1/credentials/{ref}/compromise": "compromiseCredential",
+		"post /admin/v1/backup":                       "createBackup",
+		"post /admin/v1/prune":                        "pruneData",
+		"get /admin/v1/update":                        "getUpdateStatus",
 	} {
 		if ops[want] != id {
 			t.Errorf("%s has operationId %q, want %q", want, ops[want], id)
 		}
 	}
-	if len(ops) != 33 {
-		t.Errorf("the document has %d operations, want 33: %v", len(ops), ops)
+	if len(ops) != 36 {
+		t.Errorf("the document has %d operations, want 36: %v", len(ops), ops)
 	}
 
 	// The settings an upstream takes reach the document, embedded as they are.
