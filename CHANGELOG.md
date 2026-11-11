@@ -7,6 +7,10 @@ All notable changes to kman are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-11
+
+The first release: put real API keys behind kman and kill a leak. kman is a key manager and proxy for LLM API keys. You keep the real keys in kman, hand apps virtual keys that cap spend and expire, and turn one off the moment it leaks.
+
 ### Added
 
 - `kman init` sets up an install without asking anything: `kman.yaml` and a `0600` master key in the config directory, the data directory, and the `owner` admin token, printed once and saved to a `0600` credentials file. `--data-dir`, `--key-source file|systemd-creds|passphrase|env` and `--no-save-token`. In a container it needs a key from outside and never saves the token.

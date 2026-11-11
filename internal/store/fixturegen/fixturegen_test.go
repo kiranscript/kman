@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -67,8 +68,35 @@ func TestGenerateWritesAnOpenableInstall(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if len(keys) != 2 {
-			t.Errorf("keys = %+v, want 2", keys)
+		status := map[string]string{}
+		for _, k := range keys {
+			status[k.Name] = k.Status
+		}
+		wantStatus := map[string]string{"": "active", "billing": "active", "ci-bot": "active", "paused": "disabled", "back": "active", "retired": "revoked"}
+		if !maps.Equal(status, wantStatus) {
+			t.Errorf("key statuses = %v, want %v (one lifecycle state each)", status, wantStatus)
+		}
+		ciBot, err := tx.KeyByName("ci-bot")
+		if err != nil {
+			return err
+		}
+		for _, want := range []string{`"allowed_paths"`, `"allowed_models"`, `"rpm_limit"`, `"daily_cap_micro"`, `"monthly_cap_micro"`} {
+			if !strings.Contains(ciBot.PolicyJSON, want) {
+				t.Errorf("ci-bot's policy %s lacks %s", ciBot.PolicyJSON, want)
+			}
+		}
+		spend, err := tx.SpendSince("0000-00-00")
+		if err != nil {
+			return err
+		}
+		var cost, estimated, requests, unmetered int64
+		days := map[string]bool{}
+		for _, r := range spend {
+			cost, estimated, requests, unmetered = cost+r.CostMicro, estimated+r.EstimatedMicro, requests+r.Requests, unmetered+r.Unmetered
+			days[r.Day] = true
+		}
+		if len(spend) != 3 || len(days) != 2 || cost != 4_500_000 || estimated != 500_000 || requests != 30 || unmetered != 2 {
+			t.Errorf("spend = %+v, want 3 key-days over 2 days: 4.5 USD (0.5 estimated), 30 requests, 2 unmetered", spend)
 		}
 		billing, err := tx.KeyByName("billing")
 		if err != nil {

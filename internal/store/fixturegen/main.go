@@ -20,6 +20,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -230,6 +231,21 @@ func seedAdmin(ctx context.Context, s *store.Store, rng io.Reader) error {
 			return err
 		},
 		func() error {
+			// A key with every policy field the release ships, set after creation
+			// as an operator would, so the policy lives in the fixture as well.
+			policyJSON := json.RawMessage(`{"allowed_paths":["POST /v1/chat/completions","GET /v1/models"],"allowed_models":["gpt-4.1*","gpt-4o"],"rpm_limit":60,"daily_cap_micro":5000000,"monthly_cap_micro":50000000}`)
+			created, err := svc.CreateKey(as("owner"), admin.CreateKeyRequest{Name: "ci-bot", Upstream: "openai", Tags: []string{"ci"}})
+			if err != nil {
+				return err
+			}
+			_, err = svc.UpdateKey(as("ci"), admin.KeyUpdate{ID: created.Key.ID, Policy: policyJSON})
+			return err
+		},
+		func() error { return lifecycle(ctx, svc, as("owner"), "paused", true, false, false) },
+		func() error { return lifecycle(ctx, svc, as("owner"), "back", true, true, false) },
+		func() error { return lifecycle(ctx, svc, as("owner"), "retired", false, false, true) },
+		func() error { return seedSpend(ctx, s) },
+		func() error {
 			req := admin.PriceOverrideSet{Model: "fixture-model", InputMicro: &inputPrice, OutputMicro: &outputPrice, MaxOutput: &maxOutput}
 			req.CachedMicro = &cachedPrice
 			_, err := svc.SetPriceOverride(as("owner"), req)
@@ -273,4 +289,51 @@ func copyNew(src, dst string) (err error) {
 	defer func() { err = errors.Join(err, out.Close()) }()
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// lifecycle creates a key and moves it: disabled, enabled again, revoked, as
+// asked, so the fixture holds a key in each state a release can leave one in.
+func lifecycle(ctx context.Context, svc *admin.Service, as context.Context, name string, disable, enable, revoke bool) error {
+	created, err := svc.CreateKey(as, admin.CreateKeyRequest{Name: name, Upstream: "openai"})
+	if err != nil {
+		return err
+	}
+	ref := admin.KeyRef{ID: created.Key.ID}
+	if disable {
+		if _, err := svc.DisableKey(as, ref); err != nil {
+			return err
+		}
+	}
+	if enable {
+		if _, err := svc.EnableKey(as, ref); err != nil {
+			return err
+		}
+	}
+	if revoke {
+		if _, err := svc.RevokeKey(as, ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// seedSpend writes the day counters the meter flushes: two keys over two
+// days, one day with estimated spend and unmetered requests, so a migration
+// that drops or rewrites a total shows. Money is microdollars.
+func seedSpend(ctx context.Context, s *store.Store) error {
+	return s.Do(ctx, func(tx *store.Tx) error {
+		billing, err := tx.KeyByName("billing")
+		if err != nil {
+			return err
+		}
+		ciBot, err := tx.KeyByName("ci-bot")
+		if err != nil {
+			return err
+		}
+		return tx.AddSpend([]store.SpendRow{
+			{KeyID: billing.ID, Day: "2025-12-31", CostMicro: 1_000_000, Requests: 10},
+			{KeyID: ciBot.ID, Day: "2025-12-31", CostMicro: 2_500_000, EstimatedMicro: 500_000, Requests: 15, Unmetered: 2},
+			{KeyID: ciBot.ID, Day: "2026-01-01", CostMicro: 1_000_000, Requests: 5},
+		})
+	})
 }
