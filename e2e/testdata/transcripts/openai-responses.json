@@ -1,0 +1,40 @@
+{
+  "note": "Written by hand, not captured from the live API (no credentials were to hand): the shape follows the types in the pinned SDKs under e2e/testdata/sdk. Responses API, with a web search in its output.",
+  "profile": "openai",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/responses"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Request-Id": [
+            "req_e2e"
+          ]
+        },
+        "chunks": [
+          "{\"id\":\"resp_e2e\",\"object\":\"response\",\"created_at\":1767225600,\"status\":\"completed\",\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"model\":\"gpt-5-2026-01-01\",\"service_tier\":\"default\",\"output\":[{\"id\":\"ws_e2e\",\"type\":\"web_search_call\",\"status\":\"completed\",\"action\":{\"type\":\"search\",\"query\":\"hello\"}},{\"id\":\"msg_e2e\",\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hello there\",\"annotations\":[]}]}],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"store\":false,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"}},\"tool_choice\":\"auto\",\"tools\":[],\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":20,\"input_tokens_details\":{\"cached_tokens\":5},\"output_tokens\":7,\"output_tokens_details\":{\"reasoning_tokens\":2},\"total_tokens\":27},\"metadata\":{}}"
+        ]
+      },
+      "usage": {
+        "Seen": true,
+        "Model": "gpt-5-2026-01-01",
+        "ServiceTier": "default",
+        "InputTokens": 15,
+        "CachedTokens": 5,
+        "OutputTokens": 7,
+        "Tools": [
+          {
+            "Name": "web_search",
+            "Calls": 1
+          }
+        ]
+      }
+    }
+  ]
+}

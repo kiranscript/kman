@@ -1,0 +1,13 @@
+{
+  "note": "Written by hand: an upstream that points the app at another host.",
+  "exchanges": [
+    {
+      "request": {"method": "GET", "path": "/v1/things"},
+      "response": {
+        "status": 302,
+        "headers": {"Location": ["https://elsewhere.example/v1/things"]},
+        "chunks": []
+      }
+    }
+  ]
+}

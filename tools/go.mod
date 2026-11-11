@@ -2,7 +2,7 @@ module github.com/kirank55/kman/tools
 
 go 1.27.0
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 tool (
 	golang.org/x/perf/cmd/benchstat
@@ -10,7 +10,10 @@ tool (
 	honnef.co/go/tools/cmd/staticcheck
 )
 
-require golang.org/x/perf v0.0.0-20261009192801-be2c69fb417e
+require (
+	go.yaml.in/yaml/v3 v3.0.6
+	golang.org/x/perf v0.0.0-20261009192801-be2c69fb417e
+)
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect

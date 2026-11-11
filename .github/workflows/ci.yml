@@ -1,11 +1,16 @@
 # The required gates of SPEC §17. The dependency rule, the no-untested-package
-# gate and the clock seam run inside go test (package gates). Branch
+# gate and the clock seam run inside go test (package gates), and so does
+# the check that the committed admin API OpenAPI document is current
+# (internal/adminapi, TestTheOpenAPIDocumentIsCurrent). The docs are gated the
+# same way: the generated CLI and admin API references, the doc-to-command and
+# link checks (cmd/kman), and the quickstart test, which runs docs/quickstart.md
+# line for line on Linux and macOS (e2e, TestTheQuickstartRunsAsWritten). Branch
 # protection requires the "required" job, which passes only when every other
 # job passed.
 #
 # Three gates of SPEC §17 join later, with the code they check: templ generate
-# with no diff (the dashboard, M3), and the secret-leak sweep and the canary
-# deadline gate (the e2e harness and alerts, M1).
+# with no diff (the dashboard, M3), the canary deadline gate (alerts, M2), and
+# the secret-leak sweep (after v0.1.0).
 name: CI
 
 on:
@@ -28,6 +33,9 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -57,6 +65,9 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -70,9 +81,41 @@ jobs:
         if: runner.os == 'Linux'
         run: go -C tools test ./...
 
+  sdk-e2e:
+    # SPEC §17: the pinned official SDKs, through the real binary. KMAN_E2E_SDK
+    # makes a missing SDK fail instead of skip, which it does in the test job.
+    # It runs on Linux only: what's under test is kman, not the SDKs' OS support.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install the pinned SDKs
+        run: e2e/testdata/sdk/install.sh
+      - name: SDKs through kman
+        env:
+          KMAN_E2E_SDK: required
+        run: go test -count=1 -run '^(TestOfficialSDKs|TestTheSDKDocSnippets)' ./e2e
+
   race:
     runs-on: ubuntu-latest
     steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -92,6 +135,9 @@ jobs:
         target: [linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64]
     runs-on: ubuntu-latest
     steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -109,6 +155,9 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -136,11 +185,101 @@ jobs:
       - name: Benchmark gate (allocations, or a slowdown over 10%)
         run: go -C tools run ./benchgate -base "$RUNNER_TEMP/base.txt" -head "$RUNNER_TEMP/head.txt" -max-slowdown 0.10
 
-  required:
-    if: always()
-    needs: [lint, test, race, cross-compile, bench]
+  price-flags:
+    # ADR 0007: a person looks at any changed price or limit, and at any max
+    # output equal to the context window. The job summary lists them. It fails
+    # only on a reviewed max output equal to the context window with no
+    # explanation in the reviewed file; go test runs that check too.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: Flag price data for review
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base="$RUNNER_TEMP/base-table.json"
+          git show "$BASE_SHA:internal/pricing/table.json" > "$base" 2>/dev/null ||
+            cp internal/pricing/table.json "$base" # a base from before the table
+          go run ./internal/pricing/pricegen check --base "$base" --github >> "$GITHUB_STEP_SUMMARY"
+
+  systemd-creds:
+    # SPEC §17: the systemd-creds key-source tests run on Linux in a
+    # container booted with systemd. The vault test binary encrypts a master
+    # key with systemd-creds and runs itself as a transient service with
+    # LoadCredentialEncrypted= (internal/vault/systemd_linux_test.go).
+    # systemd-run --wait --pipe talks to systemd over the system D-Bus, not
+    # its private socket, so the container needs a bus daemon too. Under a
+    # container manager systemd leaves / with Docker's private propagation,
+    # and the credential mount it makes for a service in a helper namespace
+    # never reaches the service, so the container makes / shared first, as
+    # systemd itself does on a host.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: Build the vault tests
+        env:
+          CGO_ENABLED: "0"
+        run: go test -c -o "$RUNNER_TEMP/kman-systemd/vault.test" ./internal/vault
+      - name: Boot systemd in a container
+        env:
+          IMAGE: ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+        run: |
+          docker run -d --name systemd --privileged --cgroupns=private \
+            -e container=docker --tmpfs /run --tmpfs /run/lock \
+            -v "$RUNNER_TEMP/kman-systemd:/kman:ro" \
+            "$IMAGE" bash -c 'apt-get update -qq &&
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends systemd dbus >/dev/null &&
+              mount --make-rshared / &&
+              exec /usr/lib/systemd/systemd'
+          for _ in $(seq 1 90); do
+            state=$(docker exec systemd systemctl is-system-running 2>/dev/null || true)
+            case "$state" in running|degraded)
+              if docker exec systemd test -S /run/dbus/system_bus_socket; then
+                echo "systemd is $state, with a system bus"; exit 0
+              fi ;;
+            esac
+            sleep 2
+          done
+          echo "systemd did not boot (last state: ${state:-none})"
+          docker logs systemd | tail -50
+          exit 1
+      - name: systemd-creds key-source tests
+        run: docker exec -e KMAN_TEST_SYSTEMD=1 systemd /kman/vault.test -test.run 'Systemd' -test.v
+      - name: Container logs
+        if: failure()
+        run: |
+          docker logs systemd 2>&1 | tail -100
+          docker exec systemd journalctl --no-pager -n 100 || true
+
+  required:
+    if: always()
+    needs: [lint, test, sdk-e2e, race, cross-compile, price-flags, systemd-creds, bench]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
       - name: Every gate passed
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}

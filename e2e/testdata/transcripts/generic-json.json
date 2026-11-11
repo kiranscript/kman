@@ -1,0 +1,13 @@
+{
+  "note": "Written by hand for the generic profile: there is no real service behind it to record.",
+  "exchanges": [
+    {
+      "request": {"method": "POST", "path": "/v1/things"},
+      "response": {
+        "status": 201,
+        "headers": {"Content-Type": ["application/json"], "X-Request-Id": ["req_123"]},
+        "chunks": ["{\"id\":\"thing_1\",\"ok\":true}\n"]
+      }
+    }
+  ]
+}

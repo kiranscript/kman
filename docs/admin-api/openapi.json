@@ -1,0 +1,2544 @@
+{
+  "components": {
+    "schemas": {
+      "AddCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit, unique among credentials not deleted.",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The real secret. kman seals it and never shows it again. For basic auth without a username, the whole user:password.",
+            "type": "string"
+          },
+          "upstream": {
+            "description": "The upstream's name or id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "upstream",
+          "secret"
+        ],
+        "type": "object"
+      },
+      "AddUpstreamRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "auth": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Auth"
+              }
+            ],
+            "description": "A custom upstream defaults to Authorization: Bearer {key}, or x-api-key: {key} on the anthropic profile."
+          },
+          "credential": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NewCredential"
+              }
+            ],
+            "description": "A first credential, added in the same transaction: a bad secret adds no upstream either."
+          },
+          "host": {
+            "description": "A host name or IP address, with no scheme, port or path. A custom upstream needs one.",
+            "type": "string"
+          },
+          "inject_usage": {
+            "description": "Only for the openai profile.",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit. With a preset, it defaults to the preset's name.",
+            "type": "string"
+          },
+          "path_allowlist": {
+            "description": "The rules a request must match, as METHOD /path. A custom upstream needs at least one; * /** allows everything.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "port": {
+            "description": "A custom upstream defaults to 443 with TLS and 80 without.",
+            "type": "integer"
+          },
+          "preset": {
+            "description": "The preset to copy. Absent to build a custom upstream from the settings.",
+            "type": "string"
+          },
+          "price_multiplier_ppm": {
+            "description": "What built-in prices and install-wide overrides are multiplied by on this upstream, in parts per million, for a regional uplift: 1000000 is x1, the default, and 1100000 is x1.1. Above 0, up to x100. It does not touch a per-upstream override or a cost the provider reports.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "profile": {
+            "description": "openai, anthropic or generic. A custom upstream defaults to generic.",
+            "type": "string"
+          },
+          "sdk_base_path": {
+            "type": "string"
+          },
+          "sdk_env": {
+            "type": "string"
+          },
+          "server_name": {
+            "description": "The TLS server name, when it is not the host.",
+            "type": "string"
+          },
+          "tls": {
+            "description": "A custom upstream defaults to true.",
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "AdminToken": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_used_at": {
+            "description": "When the token last authenticated a request, to the minute. Absent if never.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "description": "The token's name, which is the actor of every change made with it.",
+            "type": "string"
+          },
+          "revoked_at": {
+            "description": "When the token was revoked. Absent while it is live.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "AdminTokenList": {
+        "additionalProperties": false,
+        "properties": {
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/AdminToken"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tokens"
+        ],
+        "type": "object"
+      },
+      "AuditEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "Such as admin_token.create or settings.set.",
+            "type": "string"
+          },
+          "actor": {
+            "description": "Who made the change: an admin token's name, or system:<what> for kman itself.",
+            "type": "string"
+          },
+          "after": {
+            "description": "The target after the change, where the action records it. Never a secret."
+          },
+          "before": {
+            "description": "The target before the change, where the action records it. Never a secret."
+          },
+          "client_ip": {
+            "type": "string"
+          },
+          "id": {
+            "description": "Rising with each entry; the cursor for paging.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "incident_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "target_kind": {
+            "type": "string"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "time",
+          "actor",
+          "action",
+          "target_kind",
+          "target_id"
+        ],
+        "type": "object"
+      },
+      "AuditPage": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            },
+            "type": "array"
+          },
+          "more": {
+            "description": "Whether the log holds more entries beyond this page: after it, or before it with latest.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entries",
+          "more"
+        ],
+        "type": "object"
+      },
+      "Auth": {
+        "additionalProperties": false,
+        "properties": {
+          "basic_username": {
+            "description": "For the basic style, the username. When absent, a credential's secret is the whole user:password.",
+            "type": "string"
+          },
+          "header": {
+            "description": "For the header style, the template: Name: value {key}.",
+            "type": "string"
+          },
+          "style": {
+            "description": "header or basic.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "style"
+        ],
+        "type": "object"
+      },
+      "CreateAdminTokenRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit. A revoked token's name stays taken.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateKeyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "credential": {
+            "description": "The credential's name or id. Needed when the upstream has more than one.",
+            "type": "string"
+          },
+          "name": {
+            "description": "An optional label: 1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit, unique among keys not revoked.",
+            "type": "string"
+          },
+          "note": {
+            "description": "Free text of at most 1024 bytes, with no control characters.",
+            "type": "string"
+          },
+          "policy": {
+            "description": "The key's policy, a JSON object. Defaults to the empty policy."
+          },
+          "tags": {
+            "description": "At most 32 labels of a-z, 0-9, '.', '_', ':' and '-'.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ttl_seconds": {
+            "description": "How long the key stays valid from now, at most the maximum key lifetime. Defaults to the default key TTL.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "upstream": {
+            "description": "The upstream's name or id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upstream"
+        ],
+        "type": "object"
+      },
+      "CreatedAdminToken": {
+        "additionalProperties": false,
+        "properties": {
+          "secret": {
+            "description": "The token itself (kma_...). kman keeps only its hash, so it is shown only this once.",
+            "type": "string"
+          },
+          "token": {
+            "$ref": "#/components/schemas/AdminToken"
+          }
+        },
+        "required": [
+          "token",
+          "secret"
+        ],
+        "type": "object"
+      },
+      "CreatedKey": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/Key"
+          },
+          "sdk_base_path": {
+            "description": "Appended to kman's proxy URL to make an SDK's base URL.",
+            "type": "string"
+          },
+          "sdk_env": {
+            "description": "The variable an SDK for its upstream reads the key from.",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The virtual key itself (kmn_...). kman keeps only its hash, so it is shown only this once.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "secret"
+        ],
+        "type": "object"
+      },
+      "Credential": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last4": {
+            "description": "The end of the secret, to tell credentials apart. Absent for a secret too short to show any of.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rotated_at": {
+            "description": "When the secret was last replaced.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "upstream": {
+            "description": "The upstream's name.",
+            "type": "string"
+          },
+          "upstream_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "upstream_id",
+          "upstream",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "CredentialUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "A new name.",
+            "type": "string"
+          },
+          "secret": {
+            "description": "A new secret, which overwrites the old one. The credential keeps its id, so virtual keys on it are not touched.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "Error": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "invalid",
+              "not_found",
+              "conflict",
+              "unauthorized",
+              "internal"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/Error"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "Key": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "credential": {
+            "description": "The credential's name. Absent once a revoked key's credential is deleted.",
+            "type": "string"
+          },
+          "credential_id": {
+            "type": "string"
+          },
+          "expired": {
+            "description": "Whether its expiry has passed, whatever its status.",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "description": "When the key stops working. Every key has one: there is no never.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "The key id: the non-secret handle inside the key, and how this API addresses it.",
+            "type": "string"
+          },
+          "name": {
+            "description": "An optional label, unique among keys not revoked.",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "policy": {
+            "description": "The key's policy, a JSON object: empty until it is edited."
+          },
+          "policy_version": {
+            "description": "The version of the policy format the policy is in.",
+            "type": "integer"
+          },
+          "spend": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KeySpend"
+              }
+            ],
+            "description": "What the key has spent today and this month, beside its caps. Shown when the key is read, and not in the audit log."
+          },
+          "status": {
+            "description": "active, disabled or revoked.",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "upstream": {
+            "description": "The upstream's name. Absent once a revoked key's upstream is deleted.",
+            "type": "string"
+          },
+          "upstream_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "expired",
+          "tags",
+          "policy",
+          "policy_version",
+          "expires_at",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "KeyList": {
+        "additionalProperties": false,
+        "properties": {
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/Key"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "type": "object"
+      },
+      "KeySpend": {
+        "additionalProperties": false,
+        "properties": {
+          "month": {
+            "$ref": "#/components/schemas/SpendPeriod"
+          },
+          "today": {
+            "$ref": "#/components/schemas/SpendPeriod"
+          }
+        },
+        "required": [
+          "today",
+          "month"
+        ],
+        "type": "object"
+      },
+      "KeyUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "A new name, or empty for none.",
+            "type": "string"
+          },
+          "note": {
+            "description": "A new note, or empty for none.",
+            "type": "string"
+          },
+          "policy": {
+            "description": "The new policy, a JSON object, which replaces the old one."
+          },
+          "tags": {
+            "description": "The new tags, which replace the old ones.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ttl_seconds": {
+            "description": "A new expiry, this long from now. It may not be later than the key's creation plus the maximum key lifetime, unless that shortens the key's life.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "NewCredential": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Defaults to the upstream's name.",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The real secret. kman seals it and never shows it again. For basic auth without a username, the whole user:password.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret"
+        ],
+        "type": "object"
+      },
+      "PriceBand": {
+        "additionalProperties": false,
+        "properties": {
+          "above_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "input_micro": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "output_micro": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "above_tokens",
+          "input_micro",
+          "output_micro"
+        ],
+        "type": "object"
+      },
+      "PriceDataStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "age_days": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "age_seconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "notice": {
+            "description": "What to tell the operator when it is stale.",
+            "type": "string"
+          },
+          "stale": {
+            "description": "Whether the table is past 60 days old.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "generated_at",
+          "age_seconds",
+          "age_days",
+          "stale"
+        ],
+        "type": "object"
+      },
+      "PriceList": {
+        "additionalProperties": false,
+        "properties": {
+          "models": {
+            "description": "The built-in entries. An override below may hide one.",
+            "items": {
+              "$ref": "#/components/schemas/PriceModel"
+            },
+            "type": "array"
+          },
+          "overrides": {
+            "description": "The price overrides, which win over the built-in entries until removed.",
+            "items": {
+              "$ref": "#/components/schemas/PriceOverride"
+            },
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PriceDataStatus"
+          }
+        },
+        "required": [
+          "status",
+          "models",
+          "overrides"
+        ],
+        "type": "object"
+      },
+      "PriceModel": {
+        "additionalProperties": false,
+        "properties": {
+          "audio_input_micro": {
+            "description": "Audio input. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "audio_output_micro": {
+            "description": "Audio output. Absent: billed at the output price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_write_micro": {
+            "description": "Cache writes. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cached_micro": {
+            "description": "Cached input. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "context_window": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "input_micro": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "long_context": {
+            "description": "Prices for a whole request whose input is over a size.",
+            "items": {
+              "$ref": "#/components/schemas/PriceBand"
+            },
+            "type": "array"
+          },
+          "max_output": {
+            "description": "The most tokens one response can output, which sizes reservations.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "mode": {
+            "description": "chat, responses, completion, embedding or realtime.",
+            "type": "string"
+          },
+          "model": {
+            "description": "The model id, matched exactly.",
+            "type": "string"
+          },
+          "output_micro": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "per_minute_micro": {
+            "description": "Voice: per minute, billed per second.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "per_text_input_micro": {
+            "description": "Voice: per text input.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "preset": {
+            "description": "The preset this entry belongs to. Absent for a global entry, which every upstream falls back to.",
+            "type": "string"
+          },
+          "reviewed": {
+            "description": "Whether a person checked max_output against the provider's docs.",
+            "type": "boolean"
+          },
+          "service_tiers": {
+            "description": "The service tiers with their own prices.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tool_fees": {
+            "description": "Server-tool fees, per call.",
+            "items": {
+              "$ref": "#/components/schemas/PriceToolFee"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "model",
+          "mode",
+          "input_micro",
+          "output_micro",
+          "max_output",
+          "reviewed"
+        ],
+        "type": "object"
+      },
+      "PriceOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "Who last set it.",
+            "type": "string"
+          },
+          "audio_cached_micro": {
+            "description": "Cached audio input. Absent: billed at the audio input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "audio_input_micro": {
+            "description": "Audio input. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "audio_output_micro": {
+            "description": "Audio output. Absent: billed at the output price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_write_1h_micro": {
+            "description": "One-hour cache writes. Absent: billed at the cache write price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_write_micro": {
+            "description": "Cache writes. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cached_micro": {
+            "description": "Cached input. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "hides": {
+            "description": "The sections of the price table whose built-in entry for this model it hides: global or a preset's name.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "input_micro": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_output": {
+            "description": "The most tokens one response can output, which sizes reservations.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "model": {
+            "description": "The model id, matched exactly.",
+            "type": "string"
+          },
+          "output_micro": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "upstream": {
+            "description": "The upstream it applies to, by name. Absent for an install-wide override.",
+            "type": "string"
+          },
+          "upstream_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "input_micro",
+          "output_micro",
+          "max_output",
+          "actor",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "PriceOverrideImport": {
+        "additionalProperties": false,
+        "properties": {
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/PriceOverrideSet"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "overrides"
+        ],
+        "type": "object"
+      },
+      "PriceOverrideImportResult": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "description": "How many it added or changed, each with its own audit entry.",
+            "type": "integer"
+          },
+          "overrides": {
+            "description": "Every override it named, as it now stands.",
+            "items": {
+              "$ref": "#/components/schemas/PriceOverride"
+            },
+            "type": "array"
+          },
+          "unchanged": {
+            "description": "How many already had these prices.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changed",
+          "unchanged",
+          "overrides"
+        ],
+        "type": "object"
+      },
+      "PriceOverrideSet": {
+        "additionalProperties": false,
+        "properties": {
+          "audio_cached_micro": {
+            "description": "Cached audio input. Absent: billed at the audio input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "audio_input_micro": {
+            "description": "Audio input. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "audio_output_micro": {
+            "description": "Audio output. Absent: billed at the output price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_write_1h_micro": {
+            "description": "One-hour cache writes. Absent: billed at the cache write price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cache_write_micro": {
+            "description": "Cache writes. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cached_micro": {
+            "description": "Cached input. Absent: billed at the input price.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "input_micro": {
+            "description": "Input, in microdollars per million tokens.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_output": {
+            "description": "The most tokens one response can output, which sizes reservations.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "model": {
+            "description": "The model id, matched exactly.",
+            "type": "string"
+          },
+          "output_micro": {
+            "description": "Output, in microdollars per million tokens.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "upstream": {
+            "description": "The upstream to price it on, by name or id. Absent for the whole install.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "input_micro",
+          "output_micro",
+          "max_output"
+        ],
+        "type": "object"
+      },
+      "PriceToolFee": {
+        "additionalProperties": false,
+        "properties": {
+          "micro": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool",
+          "micro"
+        ],
+        "type": "object"
+      },
+      "Settings": {
+        "additionalProperties": false,
+        "properties": {
+          "default_key_ttl_seconds": {
+            "description": "How long a new virtual key stays valid unless told otherwise. At most the maximum key lifetime. Default 90 days.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_key_lifetime_seconds": {
+            "description": "The longest any virtual key may stay valid. No key is created or extended past it. Default 365 days.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "soft_budget_defaults": {
+            "description": "The percentages of each spend cap that warn when crossed, rising, for keys that set none. Default 50, 80, 100.",
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "spend_timezone": {
+            "description": "The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC. A change takes effect when kman restarts.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "max_key_lifetime_seconds",
+          "default_key_ttl_seconds",
+          "spend_timezone",
+          "soft_budget_defaults"
+        ],
+        "type": "object"
+      },
+      "SettingsUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "default_key_ttl_seconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_key_lifetime_seconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "soft_budget_defaults": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "spend_timezone": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "SpendPeriod": {
+        "additionalProperties": false,
+        "properties": {
+          "cap_micro": {
+            "description": "The key's cap for the period, in microdollars. Absent for none.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cost_micro": {
+            "description": "What has been charged, in microdollars, estimated_micro included.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "estimated_micro": {
+            "description": "The part of cost_micro charged as an estimate: the whole reservation, for a response that was cut off or reported no usage.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "period": {
+            "description": "The day, such as 2026-11-11, or the month, such as 2026-11.",
+            "type": "string"
+          },
+          "requests": {
+            "description": "Requests charged.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "reserved_micro": {
+            "description": "Held for requests in flight. A cap counts it as it counts cost_micro.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "unmetered_requests": {
+            "description": "Requests forwarded that could not be metered, whose cost is unknown and so is not in cost_micro.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "period",
+          "cost_micro",
+          "estimated_micro",
+          "reserved_micro",
+          "requests",
+          "unmetered_requests"
+        ],
+        "type": "object"
+      },
+      "Upstream": {
+        "additionalProperties": false,
+        "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/Auth"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "credentials": {
+            "description": "Its credentials, by name. Never a secret.",
+            "items": {
+              "$ref": "#/components/schemas/Credential"
+            },
+            "type": "array"
+          },
+          "host": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "inject_usage": {
+            "description": "Whether OpenAI-style streams get stream_options.include_usage.",
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path_allowlist": {
+            "description": "The rules a request must match, as METHOD /path: * is any method or one segment, and a last segment of ** is the rest of the path.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "preset": {
+            "description": "The preset it was copied from. Absent for a custom upstream.",
+            "type": "string"
+          },
+          "preset_version": {
+            "description": "The version of the preset it was last copied from.",
+            "type": "integer"
+          },
+          "price_multiplier_ppm": {
+            "description": "What built-in prices and install-wide overrides are multiplied by on this upstream, in parts per million: 1000000 is x1.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "profile": {
+            "description": "openai, anthropic or generic.",
+            "type": "string"
+          },
+          "sdk_base_path": {
+            "description": "Appended to kman's proxy URL to make an SDK's base URL.",
+            "type": "string"
+          },
+          "sdk_env": {
+            "description": "The variable an SDK for this upstream reads its key from.",
+            "type": "string"
+          },
+          "server_name": {
+            "description": "The TLS server name, when it is not the host.",
+            "type": "string"
+          },
+          "tls": {
+            "type": "boolean"
+          },
+          "update_available": {
+            "description": "Whether this kman holds a newer version of the preset: see the sync operation.",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "profile",
+          "host",
+          "port",
+          "tls",
+          "path_allowlist",
+          "inject_usage",
+          "auth",
+          "price_multiplier_ppm",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "UpstreamChange": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "description": "The upstream's field, by its name in the API.",
+            "type": "string"
+          },
+          "from": {
+            "description": "What it holds now. Absent if nothing.",
+            "type": "string"
+          },
+          "to": {
+            "description": "What the sync would set. Absent if nothing.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "type": "object"
+      },
+      "UpstreamList": {
+        "additionalProperties": false,
+        "properties": {
+          "upstreams": {
+            "items": {
+              "$ref": "#/components/schemas/Upstream"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "upstreams"
+        ],
+        "type": "object"
+      },
+      "UpstreamSyncPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "description": "What the sync would change, which undoes any edit made since the last copy. Empty when up to date, and possibly when only the version moves.",
+            "items": {
+              "$ref": "#/components/schemas/UpstreamChange"
+            },
+            "type": "array"
+          },
+          "from_version": {
+            "description": "The version of the preset the upstream was last copied from.",
+            "type": "integer"
+          },
+          "generation": {
+            "description": "The upstream's generation: pass it to the sync, which refuses if the upstream has changed since.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "preset": {
+            "type": "string"
+          },
+          "to_version": {
+            "description": "The version of the preset this kman holds.",
+            "type": "integer"
+          },
+          "up_to_date": {
+            "description": "Whether this kman holds no newer version, so there is nothing to sync.",
+            "type": "boolean"
+          },
+          "upstream": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "upstream",
+          "preset",
+          "from_version",
+          "to_version",
+          "up_to_date",
+          "generation",
+          "changes"
+        ],
+        "type": "object"
+      },
+      "UpstreamSyncRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "description": "The plan's generation.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "to_version": {
+            "description": "The plan's to_version.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "to_version",
+          "generation"
+        ],
+        "type": "object"
+      },
+      "UpstreamUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "auth": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Auth"
+              }
+            ],
+            "description": "A custom upstream defaults to Authorization: Bearer {key}, or x-api-key: {key} on the anthropic profile."
+          },
+          "host": {
+            "description": "A host name or IP address, with no scheme, port or path. A custom upstream needs one.",
+            "type": "string"
+          },
+          "inject_usage": {
+            "description": "Only for the openai profile.",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "A new name.",
+            "type": "string"
+          },
+          "path_allowlist": {
+            "description": "The rules a request must match, as METHOD /path. A custom upstream needs at least one; * /** allows everything.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "port": {
+            "description": "A custom upstream defaults to 443 with TLS and 80 without.",
+            "type": "integer"
+          },
+          "price_multiplier_ppm": {
+            "description": "What built-in prices and install-wide overrides are multiplied by on this upstream, in parts per million, for a regional uplift: 1000000 is x1, the default, and 1100000 is x1.1. Above 0, up to x100. It does not touch a per-upstream override or a cost the provider reports.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "profile": {
+            "description": "openai, anthropic or generic. A custom upstream defaults to generic.",
+            "type": "string"
+          },
+          "sdk_base_path": {
+            "type": "string"
+          },
+          "sdk_env": {
+            "type": "string"
+          },
+          "server_name": {
+            "description": "The TLS server name, when it is not the host.",
+            "type": "string"
+          },
+          "tls": {
+            "description": "A custom upstream defaults to true.",
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "Whoami": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "The name of the admin token the request was made with.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "adminToken": {
+        "description": "An admin token (kma_...). A dashboard session cookie is never accepted here.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "The one way to change a running kman (ADR 0004). Every change is one store transaction, audited with its actor: the name of the admin token the request was made with. Generated from the Go types in internal/admin; do not edit by hand.",
+    "title": "kman admin API",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/admin/v1/admin-tokens": {
+      "get": {
+        "operationId": "listAdminTokens",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTokenList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List every admin token, live or revoked"
+      },
+      "post": {
+        "operationId": "createAdminToken",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAdminTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedAdminToken"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Create a named admin token; its secret is returned only this once"
+      }
+    },
+    "/admin/v1/admin-tokens/{name}/revoke": {
+      "post": {
+        "operationId": "revokeAdminToken",
+        "parameters": [
+          {
+            "description": "The admin token's name.",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminToken"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Revoke an admin token; the install's last live token cannot be revoked"
+      }
+    },
+    "/admin/v1/admin-tokens/{name}/rotate": {
+      "post": {
+        "operationId": "rotateAdminToken",
+        "parameters": [
+          {
+            "description": "The admin token's name.",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedAdminToken"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Give an admin token a new secret; the old one stops working at once"
+      }
+    },
+    "/admin/v1/audit": {
+      "get": {
+        "operationId": "listAudit",
+        "parameters": [
+          {
+            "description": "Return the entries after this id, from the start of the log when 0.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The most entries to return, 1 to 1000. Default 100.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Return the newest entries instead. after must then be 0.",
+            "in": "query",
+            "name": "latest",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Read a page of the audit log, oldest entry first"
+      }
+    },
+    "/admin/v1/credentials": {
+      "post": {
+        "operationId": "addCredential",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Seal a secret as a credential on an upstream; it is never shown again"
+      }
+    },
+    "/admin/v1/credentials/{ref}": {
+      "delete": {
+        "operationId": "removeCredential",
+        "parameters": [
+          {
+            "description": "The credential's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it"
+      },
+      "patch": {
+        "operationId": "updateCredential",
+        "parameters": [
+          {
+            "description": "The credential's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Rename a credential or replace its secret"
+      }
+    },
+    "/admin/v1/keys": {
+      "get": {
+        "operationId": "listKeys",
+        "parameters": [
+          {
+            "description": "Only the key not revoked with this name.",
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List every virtual key, or the one with a name, never their secrets"
+      },
+      "post": {
+        "operationId": "createKey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedKey"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Create a virtual key on an upstream; its secret is returned only this once"
+      }
+    },
+    "/admin/v1/keys/{id}": {
+      "get": {
+        "operationId": "getKey",
+        "parameters": [
+          {
+            "description": "The key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Key"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Read one virtual key, by key id"
+      },
+      "patch": {
+        "operationId": "updateKey",
+        "parameters": [
+          {
+            "description": "The key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Key"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Change a virtual key's name, note, tags, expiry or policy"
+      }
+    },
+    "/admin/v1/keys/{id}/disable": {
+      "post": {
+        "operationId": "disableKey",
+        "parameters": [
+          {
+            "description": "The key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Key"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Stop a virtual key from the next request until it is enabled again"
+      }
+    },
+    "/admin/v1/keys/{id}/enable": {
+      "post": {
+        "operationId": "enableKey",
+        "parameters": [
+          {
+            "description": "The key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Key"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Let a disabled virtual key work again; a revoked key cannot be enabled"
+      }
+    },
+    "/admin/v1/keys/{id}/revoke": {
+      "post": {
+        "operationId": "revokeKey",
+        "parameters": [
+          {
+            "description": "The key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Key"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "End a virtual key for good, from the next request; it cannot be undone"
+      }
+    },
+    "/admin/v1/openapi.json": {
+      "get": {
+        "operationId": "openapi",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "This document. It needs no admin token."
+      }
+    },
+    "/admin/v1/price-overrides": {
+      "delete": {
+        "operationId": "removePriceOverride",
+        "parameters": [
+          {
+            "description": "The upstream it is on, by name or id. Absent for an install-wide override.",
+            "in": "query",
+            "name": "upstream",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The model id, matched exactly.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceOverride"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Remove a price override"
+      },
+      "put": {
+        "operationId": "setPriceOverride",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceOverrideSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceOverride"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Set a price override, install-wide or on one upstream; it wins over the built-in entries until removed"
+      }
+    },
+    "/admin/v1/price-overrides/import": {
+      "post": {
+        "operationId": "importPriceOverrides",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceOverrideImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceOverrideImportResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Set many price overrides, all or none"
+      }
+    },
+    "/admin/v1/prices": {
+      "get": {
+        "operationId": "listPrices",
+        "parameters": [
+          {
+            "description": "Only this preset's entries, or global for the global ones, and the overrides that reach them: install-wide ones and those on an upstream built from it.",
+            "in": "query",
+            "name": "preset",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only models whose id contains this, in any case. It narrows the overrides too.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List the built-in price table, how old it is, and the price overrides"
+      }
+    },
+    "/admin/v1/prices/status": {
+      "get": {
+        "operationId": "getPriceDataStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceDataStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Say how old the built-in price table is, and whether to upgrade"
+      }
+    },
+    "/admin/v1/settings": {
+      "get": {
+        "operationId": "getSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Read the install's settings"
+      },
+      "patch": {
+        "operationId": "updateSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Change some settings; each change is audited"
+      }
+    },
+    "/admin/v1/upstreams": {
+      "get": {
+        "operationId": "listUpstreams",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpstreamList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List every upstream with its credentials, never their secrets"
+      },
+      "post": {
+        "operationId": "addUpstream",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddUpstreamRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upstream"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Add an upstream, copying a preset or built from the settings"
+      }
+    },
+    "/admin/v1/upstreams/{ref}": {
+      "delete": {
+        "operationId": "removeUpstream",
+        "parameters": [
+          {
+            "description": "The upstream's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upstream"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Delete an upstream, its credentials and its price overrides; refused while a virtual key that is not revoked depends on one"
+      },
+      "get": {
+        "operationId": "getUpstream",
+        "parameters": [
+          {
+            "description": "The upstream's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upstream"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Read one upstream, by name or id"
+      },
+      "patch": {
+        "operationId": "updateUpstream",
+        "parameters": [
+          {
+            "description": "The upstream's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpstreamUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upstream"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Change some of an upstream's settings"
+      }
+    },
+    "/admin/v1/upstreams/{ref}/sync": {
+      "get": {
+        "operationId": "planUpstreamSync",
+        "parameters": [
+          {
+            "description": "The upstream's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpstreamSyncPlan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Show how an upstream differs from a newer version of its preset, changing nothing"
+      },
+      "post": {
+        "operationId": "syncUpstream",
+        "parameters": [
+          {
+            "description": "The upstream's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpstreamSyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upstream"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Apply a sync plan; refused if the upstream or the preset has moved since"
+      }
+    },
+    "/admin/v1/whoami": {
+      "get": {
+        "operationId": "whoami",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Whoami"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Name the admin token this request is made with"
+      }
+    }
+  },
+  "security": [
+    {
+      "adminToken": []
+    }
+  ]
+}

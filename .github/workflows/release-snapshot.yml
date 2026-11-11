@@ -1,0 +1,190 @@
+# The release dry run (SPEC §15, release checklist step 1): a pull request
+# that touches release config runs GoReleaser in snapshot mode with the same
+# config and version as release.yml, unsigned and unpublished, and checks
+# what it builds: the image, the documented Compose and systemd setups, the
+# packages and the Homebrew formula.
+name: Release snapshot
+
+on:
+  pull_request:
+    paths:
+      - .goreleaser.yaml
+      - Dockerfile
+      - install.sh
+      - go.mod
+      - go.sum
+      - scripts/**
+      - .github/workflows/release.yml
+      - .github/workflows/release-snapshot.yml
+      - packaging/**
+      - examples/compose/**
+      - docs/operator-guide/docker.md
+      - docs/operator-guide/systemd.md
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-snapshot-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.56.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: release --snapshot --clean --skip=sign
+      - name: Five archives and the source, each with an SBOM
+        run: |
+          ls -l dist
+          test "$(grep -c '\.tar\.gz$\|\.zip$' dist/checksums.txt)" = 6
+          test "$(grep -c '\.spdx\.json$' dist/checksums.txt)" = 6
+      - name: The image runs kman as UID 65532
+        run: |
+          image=$(docker images ghcr.io/kirank55/kman --format '{{.Repository}}:{{.Tag}}' | grep -- '-amd64$' | head -n1)
+          test -n "$image"
+          test "$(docker inspect --format '{{.Config.User}}' "$image")" = 65532:65532
+          docker run --rm "$image" version
+
+      # SPEC §3's Docker steps, as docs/operator-guide/docker.md gives them,
+      # with the snapshot image standing in for the published one.
+      - name: The documented Compose steps run kman
+        run: |
+          image=$(docker images ghcr.io/kirank55/kman --format '{{.Repository}}:{{.Tag}}' | grep -- '-amd64$' | head -n1)
+          docker tag "$image" ghcr.io/kirank55/kman:latest
+          work="$RUNNER_TEMP/compose"
+          mkdir -p "$work"
+          cp examples/compose/compose.yaml "$work/"
+          sh scripts/doc-steps.sh docs/operator-guide/docker.md compose > "$RUNNER_TEMP/compose.sh"
+          cd "$work"
+          sh -eux "$RUNNER_TEMP/compose.sh"
+          for _ in $(seq 1 30); do
+            if docker compose logs kman | grep -q 'kman is running'; then break; fi
+            sleep 1
+          done
+          docker compose logs kman
+          docker compose logs kman | grep -q 'kman is running'
+          # Published on host loopback only, and reachable there.
+          test "$(docker compose port kman 8081)" = 127.0.0.1:8081
+          test "$(docker compose port kman 8080)" = 127.0.0.1:8080
+          curl -sS -o /dev/null -w 'admin: HTTP %{http_code}\n' http://127.0.0.1:8081/
+          curl -sS -o /dev/null -w 'proxy: HTTP %{http_code}\n' http://127.0.0.1:8080/
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$(docker compose ps -q kman)")" = true
+          # init printed the admin token to the terminal; the logs never hold it.
+          if docker compose logs kman | grep kma_; then
+            echo "the admin token is in docker compose logs" >&2
+            exit 1
+          fi
+          # A new container serves the same install from the volume.
+          docker compose down
+          docker compose up -d
+          for _ in $(seq 1 30); do
+            if docker compose logs kman | grep -q 'kman is running'; then break; fi
+            sleep 1
+          done
+          docker compose logs kman | grep -q 'kman is running'
+          docker compose down
+
+      - name: Two .deb and two .rpm, with no package scripts
+        run: |
+          test "$(grep -c '\.deb$' dist/checksums.txt)" = 2
+          test "$(grep -c '\.rpm$' dist/checksums.txt)" = 2
+          for deb in dist/*.deb; do
+            dpkg-deb -c "$deb"
+            if dpkg-deb --ctrl-tarfile "$deb" | tar -t | grep -Evx '\./|\./control|\./md5sums'; then
+              echo "$deb carries maintainer scripts" >&2
+              exit 1
+            fi
+          done
+
+      # The steps in docs/operator-guide/systemd.md, run as written against
+      # the .deb in a container booted with systemd. As in ci.yml's
+      # systemd-creds job: systemd-run --wait needs a system bus (dbus), and
+      # credentials reach a service only once / is a shared mount, which
+      # systemd leaves alone under a container manager.
+      - name: The documented systemd steps run kman from the .deb
+        env:
+          IMAGE: ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+        run: |
+          mkdir -p "$RUNNER_TEMP/deb"
+          cp dist/kman_*_amd64.deb "$RUNNER_TEMP/deb/kman.deb"
+          sh scripts/doc-steps.sh docs/operator-guide/systemd.md systemd > "$RUNNER_TEMP/deb/steps.sh"
+          docker run -d --name systemd --privileged --cgroupns=private \
+            -e container=docker --tmpfs /run --tmpfs /run/lock \
+            -v "$RUNNER_TEMP/deb:/deb:ro" \
+            "$IMAGE" bash -c 'apt-get update -qq &&
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends systemd dbus curl >/dev/null &&
+              mount --make-rshared / &&
+              exec /usr/lib/systemd/systemd'
+          booted=
+          for _ in $(seq 1 90); do
+            state=$(docker exec systemd systemctl is-system-running 2>/dev/null || true)
+            case "$state" in running|degraded)
+              if docker exec systemd test -S /run/dbus/system_bus_socket; then booted=1; break; fi ;;
+            esac
+            sleep 2
+          done
+          test -n "$booted"
+          docker exec systemd apt-get install -y -qq /deb/kman.deb
+          docker exec systemd systemd-analyze verify /usr/lib/systemd/system/kman.service
+          docker exec systemd sh -eux /deb/steps.sh
+          for _ in $(seq 1 30); do
+            if docker exec systemd journalctl -u kman --no-pager | grep -q 'kman is running'; then break; fi
+            sleep 1
+          done
+          docker exec systemd journalctl -u kman --no-pager
+          docker exec systemd systemctl is-active kman
+          docker exec systemd journalctl -u kman --no-pager | grep -q 'kman is running'
+          test "$(docker exec systemd systemctl show -p DynamicUser --value kman)" = yes
+          # systemd moved the data directory to the dynamic user.
+          docker exec systemd test -L /var/lib/kman
+          test "$(docker exec systemd stat -c %u /var/lib/private/kman/kman.db)" != 0
+          docker exec systemd curl -sS -o /dev/null -w 'admin: HTTP %{http_code}\n' http://127.0.0.1:8081/
+          docker exec systemd systemd-analyze security kman --no-pager | tail -n 1
+      - name: systemd container logs
+        if: failure()
+        run: |
+          docker logs systemd 2>&1 | tail -50 || true
+          docker exec systemd journalctl --no-pager -n 100 || true
+
+      - name: The .rpm installs on Fedora with no scripts
+        env:
+          IMAGE: fedora:44@sha256:15da97ed9aa94dd3d92c3925eb89520f6c80e07ea7ee24cba848d1f8b6912b3e
+        run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" "$IMAGE" sh -euxc '
+            rpm=$(ls /dist/kman-*.x86_64.rpm)
+            test -z "$(rpm -qp --scripts "$rpm")"
+            rpm -i "$rpm"
+            rpm -ql kman
+            test -f /usr/lib/systemd/system/kman.service
+            kman version'
+
+      - name: The Homebrew formula renders from the snapshot's checksums
+        run: |
+          tag="v$(jq -r .version dist/metadata.json)"
+          sh scripts/homebrew-formula.sh "$tag" dist/checksums.txt > "$RUNNER_TEMP/kman.rb"
+          cat "$RUNNER_TEMP/kman.rb"
+          ruby -c "$RUNNER_TEMP/kman.rb"

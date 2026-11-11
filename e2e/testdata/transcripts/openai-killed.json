@@ -1,0 +1,30 @@
+{
+  "note": "Written by hand, not captured from the live API (no credentials were to hand): the shape follows the types in the pinned SDKs under e2e/testdata/sdk. A chat completion stream that stops after its first chunk, as when the upstream dies; the response is cut off with no end.",
+  "profile": "openai",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": [
+            "text/event-stream"
+          ],
+          "Cache-Control": [
+            "no-cache"
+          ]
+        },
+        "chunks": [
+          "data: {\"id\":\"chatcmpl-e2e\",\"object\":\"chat.completion.chunk\",\"created\":1767225600,\"model\":\"gpt-4o-mini\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hel\"},\"finish_reason\":null}],\"usage\":null}\n\n"
+        ],
+        "abort": true
+      },
+      "usage": {
+        "Model": "gpt-4o-mini"
+      }
+    }
+  ]
+}

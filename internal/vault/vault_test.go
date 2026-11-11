@@ -1,9 +1,386 @@
 package vault_test
 
-import "testing"
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
 
-// TestPlaceholder keeps vault under the no-untested-package gate until its
-// interface tests land. Delete it when they do.
-func TestPlaceholder(t *testing.T) {
-	t.Skip("vault has no interface yet")
+	"github.com/kirank55/kman/internal/vault"
+)
+
+// fixedSource is a key source that hands out a copy of one master key and
+// remembers every buffer it handed out, so a test can check they were wiped.
+type fixedSource struct {
+	key    []byte
+	issued [][]byte
+	reads  int
+}
+
+func newFixedSource(t *testing.T) *fixedSource {
+	t.Helper()
+	return &fixedSource{key: vault.NewMasterKey()}
+}
+
+func (s *fixedSource) MasterKey() ([]byte, error) {
+	s.reads++
+	k := bytes.Clone(s.key)
+	s.issued = append(s.issued, k)
+	return k, nil
+}
+
+func (s *fixedSource) String() string { return "test source" }
+
+// create makes a vault on a fresh data key and returns it with its wrapped
+// data key.
+func create(t *testing.T, src vault.KeySource) (*vault.Vault, vault.WrappedKey) {
+	t.Helper()
+	v, wk, err := vault.Create(src, testDEKID, vault.Options{AllowDebug: true})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(v.Close)
+	return v, wk
+}
+
+func unlock(t *testing.T, src vault.KeySource, wk vault.WrappedKey) *vault.Vault {
+	t.Helper()
+	v, err := vault.Unlock(src, wk, vault.Options{AllowDebug: true})
+	if err != nil {
+		t.Fatalf("Unlock: %v", err)
+	}
+	t.Cleanup(v.Close)
+	return v
+}
+
+func TestACredentialSealedAtCreateIsReadableAfterUnlock(t *testing.T) {
+	src := newFixedSource(t)
+	v, wk := create(t, src)
+	sealed, err := v.Seal("cr_aaaaaaaaaaaa", []byte("sk-real-upstream-secret"))
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	if bytes.Contains(sealed.Ciphertext, []byte("sk-real-upstream-secret")) {
+		t.Fatal("the ciphertext holds the plaintext")
+	}
+
+	again := unlock(t, src, wk)
+	if err := again.Put("cr_aaaaaaaaaaaa", sealed); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	got, ok := again.Credential("cr_aaaaaaaaaaaa")
+	if !ok || string(got) != "sk-real-upstream-secret" {
+		t.Fatalf("Credential = %q, %v; want the sealed secret", got, ok)
+	}
+}
+
+func TestACiphertextMovedToAnotherIDFailsToDecrypt(t *testing.T) {
+	v, _ := create(t, newFixedSource(t))
+	sealed, err := v.Seal("cr_aaaaaaaaaaaa", []byte("secret-a"))
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	err = v.Put("cr_bbbbbbbbbbbb", sealed)
+	if !errors.Is(err, vault.ErrDecrypt) {
+		t.Fatalf("Put under another id = %v, want ErrDecrypt", err)
+	}
+	if _, ok := v.Credential("cr_bbbbbbbbbbbb"); ok {
+		t.Fatal("a ciphertext that failed to decrypt was cached")
+	}
+}
+
+func TestAnotherMasterKeyDoesNotUnlock(t *testing.T) {
+	_, wk := create(t, newFixedSource(t))
+	_, err := vault.Unlock(newFixedSource(t), wk, vault.Options{AllowDebug: true})
+	if !errors.Is(err, vault.ErrWrongMasterKey) {
+		t.Fatalf("Unlock with another master key = %v, want ErrWrongMasterKey", err)
+	}
+}
+
+func TestTheFingerprintNamesTheMasterKeyWithoutRevealingIt(t *testing.T) {
+	src := newFixedSource(t)
+	_, a := create(t, src)
+	_, b := create(t, src)
+	_, other := create(t, newFixedSource(t))
+	if a.Fingerprint == "" || a.Fingerprint != b.Fingerprint {
+		t.Errorf("one master key gave fingerprints %q and %q, want one non-empty value", a.Fingerprint, b.Fingerprint)
+	}
+	if a.Fingerprint == other.Fingerprint {
+		t.Errorf("two master keys share the fingerprint %q", a.Fingerprint)
+	}
+	if bytes.Equal(a.Wrapped, b.Wrapped) {
+		t.Error("two Creates wrapped the same data key")
+	}
+	if strings.Contains(a.Fingerprint, base64.StdEncoding.EncodeToString(src.key)[:8]) ||
+		strings.Contains(a.Fingerprint, hex.EncodeToString(src.key)[:8]) {
+		t.Errorf("the fingerprint %q shows the master key", a.Fingerprint)
+	}
+}
+
+func TestATamperedOrForeignCiphertextIsRefused(t *testing.T) {
+	v, _ := create(t, newFixedSource(t))
+	other, _, err := vault.Create(newFixedSource(t), "dek_another0key", vault.Options{AllowDebug: true})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(other.Close)
+	good, err := v.Seal("cr_aaaaaaaaaaaa", []byte("secret-a"))
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	flipped := good
+	flipped.Ciphertext = bytes.Clone(good.Ciphertext)
+	flipped.Ciphertext[0] ^= 1
+	foreign, err := other.Seal("cr_aaaaaaaaaaaa", []byte("secret-a"))
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	relabelled := foreign
+	relabelled.DataKeyID = v.DataKeyID()
+
+	for name, s := range map[string]vault.Sealed{
+		"a flipped bit":                 flipped,
+		"sealed under another data key": foreign,
+		"another data key, relabelled":  relabelled,
+	} {
+		if err := v.Put("cr_aaaaaaaaaaaa", s); err == nil {
+			t.Errorf("Put(%s) succeeded, want an error", name)
+		}
+	}
+	if !errors.Is(v.Put("cr_aaaaaaaaaaaa", foreign), vault.ErrUnknownDataKey) {
+		t.Error("a ciphertext naming another data key is not refused as ErrUnknownDataKey")
+	}
+}
+
+func allZero(b []byte) bool { return len(b) > 0 && bytes.Count(b, []byte{0}) == len(b) }
+
+func TestTheMasterKeyIsWipedOnceTheDataKeyIsUnwrapped(t *testing.T) {
+	src := newFixedSource(t)
+	_, wk := create(t, src)
+	unlock(t, src, wk)
+	if _, err := vault.Unlock(src, vault.WrappedKey{ID: wk.ID, Fingerprint: wk.Fingerprint}, vault.Options{AllowDebug: true}); err == nil {
+		t.Fatal("Unlock of a corrupt wrapped key succeeded")
+	}
+	if len(src.issued) != 3 {
+		t.Fatalf("the source was read %d times, want 3", len(src.issued))
+	}
+	for i, k := range src.issued {
+		if !allZero(k) {
+			t.Errorf("master key copy %d was not wiped", i)
+		}
+	}
+}
+
+func TestEachCredentialIsCachedOnce(t *testing.T) {
+	v, _ := create(t, newFixedSource(t))
+	put(t, v, "cr_aaaaaaaaaaaa", "secret-a")
+	a, _ := v.Credential("cr_aaaaaaaaaaaa")
+	b, _ := v.Credential("cr_aaaaaaaaaaaa")
+	if &a[0] != &b[0] {
+		t.Fatal("Credential returned two copies of one credential")
+	}
+}
+
+func TestRotationWipesThePreviousPlaintext(t *testing.T) {
+	v, _ := create(t, newFixedSource(t))
+	put(t, v, "cr_aaaaaaaaaaaa", "old-secret")
+	old, _ := v.Credential("cr_aaaaaaaaaaaa")
+	put(t, v, "cr_aaaaaaaaaaaa", "new-secret")
+	if !allZero(old) {
+		t.Errorf("the previous plaintext is still %q after rotation", old)
+	}
+	if got, _ := v.Credential("cr_aaaaaaaaaaaa"); string(got) != "new-secret" {
+		t.Errorf("Credential after rotation = %q, want %q", got, "new-secret")
+	}
+}
+
+func TestDeleteWipesThePlaintext(t *testing.T) {
+	v, _ := create(t, newFixedSource(t))
+	put(t, v, "cr_aaaaaaaaaaaa", "secret-a")
+	put(t, v, "cr_bbbbbbbbbbbb", "secret-b")
+	a, _ := v.Credential("cr_aaaaaaaaaaaa")
+	v.Delete("cr_aaaaaaaaaaaa")
+	if !allZero(a) {
+		t.Errorf("the deleted plaintext is still %q", a)
+	}
+	if _, ok := v.Credential("cr_aaaaaaaaaaaa"); ok {
+		t.Error("a deleted credential is still returned")
+	}
+	if got, _ := v.Credential("cr_bbbbbbbbbbbb"); string(got) != "secret-b" {
+		t.Errorf("deleting one credential changed another to %q", got)
+	}
+	v.Delete("cr_never_there")
+}
+
+func TestCloseWipesEveryPlaintextAndRefusesMore(t *testing.T) {
+	v, _ := create(t, newFixedSource(t))
+	put(t, v, "cr_aaaaaaaaaaaa", "secret-a")
+	a, _ := v.Credential("cr_aaaaaaaaaaaa")
+	v.Close()
+	if !allZero(a) {
+		t.Errorf("Close left the plaintext %q", a)
+	}
+	if _, err := v.Seal("cr_aaaaaaaaaaaa", []byte("x")); !errors.Is(err, vault.ErrClosed) {
+		t.Errorf("Seal after Close = %v, want ErrClosed", err)
+	}
+}
+
+func put(t *testing.T, v *vault.Vault, id, secret string) {
+	t.Helper()
+	s, err := v.Seal(id, []byte(secret))
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	if err := v.Put(id, s); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+}
+
+func TestACorruptNonceIsAnErrorNotAPanic(t *testing.T) {
+	v, _ := create(t, newFixedSource(t))
+	s, err := v.Seal("cr_aaaaaaaaaaaa", []byte("secret-a"))
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	s.Nonce = s.Nonce[:3]
+	if err := v.Put("cr_aaaaaaaaaaaa", s); !errors.Is(err, vault.ErrDecrypt) {
+		t.Fatalf("Put with a short nonce = %v, want ErrDecrypt", err)
+	}
+}
+
+func TestReadingACredentialAllocatesNothing(t *testing.T) {
+	v, _ := create(t, newFixedSource(t))
+	put(t, v, "cr_aaaaaaaaaaaa", "secret-a")
+	if n := testing.AllocsPerRun(100, func() { v.Credential("cr_aaaaaaaaaaaa") }); n != 0 {
+		t.Fatalf("Credential allocates %v times per call, want 0", n)
+	}
+}
+
+// TestReadsRunAlongsideWrites is for -race: the proxy reads one credential
+// while an operator rotates and deletes others.
+func TestReadsRunAlongsideWrites(t *testing.T) {
+	v, _ := create(t, newFixedSource(t))
+	put(t, v, "cr_aaaaaaaaaaaa", "secret-a")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range 200 {
+			s, err := v.Seal("cr_bbbbbbbbbbbb", fmt.Append(nil, "secret-b-", i))
+			if err == nil {
+				err = v.Put("cr_bbbbbbbbbbbb", s)
+			}
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if i%3 == 0 {
+				v.Delete("cr_bbbbbbbbbbbb")
+			}
+		}
+	}()
+	for {
+		select {
+		case <-done:
+			return
+		default:
+		}
+		if got, ok := v.Credential("cr_aaaaaaaaaaaa"); !ok || string(got) != "secret-a" {
+			t.Fatalf("Credential = %q, %v during writes to another credential", got, ok)
+		}
+	}
+}
+
+func BenchmarkCredential(b *testing.B) {
+	v, _, err := vault.Create(&fixedSource{key: vault.NewMasterKey()}, testDEKID, vault.Options{AllowDebug: true})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer v.Close()
+	s, _ := v.Seal("cr_aaaaaaaaaaaa", []byte("sk-real-upstream-secret"))
+	if err := v.Put("cr_aaaaaaaaaaaa", s); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		v.Credential("cr_aaaaaaaaaaaa")
+	}
+}
+
+// testDEKID is a data-key id in the store's form, which callers mint with
+// store.NewID.
+const testDEKID = "dek_0123456789ab"
+
+func TestCreateWrapsTheDataKeyUnderTheIDGiven(t *testing.T) {
+	src := newFixedSource(t)
+	v, wk := create(t, src)
+	if wk.ID != testDEKID || v.DataKeyID() != testDEKID {
+		t.Fatalf("Create gave ids %q and %q, want %q", wk.ID, v.DataKeyID(), testDEKID)
+	}
+	// The id is bound to the wrapping: the same wrapped key under another
+	// id does not unlock.
+	moved := wk
+	moved.ID = "dek_ba9876543210"
+	if _, err := vault.Unlock(src, moved, vault.Options{AllowDebug: true}); !errors.Is(err, vault.ErrWrongMasterKey) {
+		t.Fatalf("Unlock under another id = %v, want ErrWrongMasterKey", err)
+	}
+}
+
+func TestCreateRefusesAnEmptyID(t *testing.T) {
+	src := newFixedSource(t)
+	if _, _, err := vault.Create(src, "", vault.Options{AllowDebug: true}); err == nil {
+		t.Fatal("Create with no data-key id succeeded")
+	}
+	if src.reads != 0 {
+		t.Errorf("Create read the master key %d times before refusing, want 0", src.reads)
+	}
+}
+
+// seeded is a fixed stream of "random" bytes.
+func seeded() *bytes.Reader { return bytes.NewReader(bytes.Repeat([]byte("kman test seed.."), 1024)) }
+
+// The fixture generator needs a rerun to write the same bytes (SPEC §14).
+func TestAGivenRandomSourceMakesTheVaultDeterministic(t *testing.T) {
+	src := newFixedSource(t)
+	make1 := func() (vault.WrappedKey, vault.Sealed) {
+		v, wk, err := vault.Create(src, "dek_test", vault.Options{AllowDebug: true, Rand: seeded()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer v.Close()
+		s, err := v.Seal("cr_1", []byte("sk-sentinel"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := v.Put("cr_1", s); err != nil {
+			t.Fatal(err)
+		}
+		return wk, s
+	}
+	wk1, s1 := make1()
+	wk2, s2 := make1()
+	if !bytes.Equal(wk1.Wrapped, wk2.Wrapped) || !bytes.Equal(wk1.Nonce, wk2.Nonce) {
+		t.Error("two creates from one seed wrapped different data keys")
+	}
+	if !bytes.Equal(s1.Ciphertext, s2.Ciphertext) || !bytes.Equal(s1.Nonce, s2.Nonce) {
+		t.Error("two seals from one seed differ")
+	}
+}
+
+func TestARandomSourceThatFailsFailsTheCall(t *testing.T) {
+	src := newFixedSource(t)
+	if _, _, err := vault.Create(src, "dek_test", vault.Options{AllowDebug: true, Rand: bytes.NewReader(nil)}); err == nil {
+		t.Error("Create with an empty random source succeeded")
+	}
+	short := bytes.NewReader(make([]byte, vault.KeySize+12)) // the data key and its nonce, and no more
+	v, _, err := vault.Create(src, "dek_test", vault.Options{AllowDebug: true, Rand: short})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+	if _, err := v.Seal("cr_1", []byte("sk-sentinel")); err == nil {
+		t.Error("Seal with an empty random source succeeded")
+	}
 }

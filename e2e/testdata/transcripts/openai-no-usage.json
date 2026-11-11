@@ -1,0 +1,29 @@
+{
+  "note": "Written by hand, not captured from the live API (no credentials were to hand): the shape follows the types in the pinned SDKs under e2e/testdata/sdk. A chat completion that reports no usage, as an upstream that leaves it out would.",
+  "profile": "openai",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Request-Id": [
+            "req_e2e"
+          ]
+        },
+        "chunks": [
+          "{\"id\":\"chatcmpl-e2e\",\"object\":\"chat.completion\",\"created\":1767225600,\"model\":\"gpt-4o-mini\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Hello there\"},\"finish_reason\":\"stop\"}]}"
+        ]
+      },
+      "usage": {
+        "Model": "gpt-4o-mini"
+      }
+    }
+  ]
+}

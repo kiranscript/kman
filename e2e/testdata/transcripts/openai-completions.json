@@ -1,0 +1,32 @@
+{
+  "note": "Written by hand, not captured from the live API (no credentials were to hand): the shape follows the types in the pinned SDKs under e2e/testdata/sdk. Legacy completion.",
+  "profile": "openai",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Request-Id": [
+            "req_e2e"
+          ]
+        },
+        "chunks": [
+          "{\"id\":\"cmpl-e2e\",\"object\":\"text_completion\",\"created\":1767225600,\"model\":\"gpt-3.5-turbo-instruct\",\"choices\":[{\"text\":\"Hello there\",\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2,\"total_tokens\":5}}"
+        ]
+      },
+      "usage": {
+        "Seen": true,
+        "Model": "gpt-3.5-turbo-instruct",
+        "InputTokens": 3,
+        "OutputTokens": 2
+      }
+    }
+  ]
+}
