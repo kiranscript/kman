@@ -114,7 +114,7 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	if err := svc.Load(ctx); err != nil {
 		return err
 	}
-	proxy := gateway.New(gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log})
+	proxy := gateway.New(gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, TrustedProxies: cfg.trustedProxies()})
 	ls, err := listen(cfg, log, proxy, adminHandler(svc, log))
 	if err != nil {
 		return err

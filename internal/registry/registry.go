@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/token"
 )
 
@@ -18,6 +19,9 @@ type Upstream struct {
 	Spec
 	PriceMultiplierPPM int64
 	Generation         int64
+
+	// Rules is Paths compiled, which Apply fills in. A caller leaves it out.
+	Rules *policy.Paths
 }
 
 // Credential is one credential as the request path reads it. Its secret is
@@ -40,6 +44,11 @@ type Key struct {
 	Policy        string // the policy as JSON, in the form policy.Normalize gives
 	PolicyVersion int
 	Generation    int64
+
+	// Compiled is Policy compiled, which Apply fills in: the request path reads
+	// it and never parses the JSON. A caller leaves it out. A policy that can't be
+	// read compiles to one that allows nothing.
+	Compiled *policy.Compiled
 }
 
 // KeySecret is the hash of a secret that can authenticate a key.
@@ -156,10 +165,14 @@ func (r *Registry) Apply(c Change) {
 		return
 	}
 	next := &Snapshot{
-		generation:  c.Generation,
-		upstreams:   merged(cur.upstreams, c.Upstreams, func(u *Upstream) string { return u.ID }, c.DeletedUpstreams),
-		credentials: merged(cur.credentials, c.Credentials, func(x *Credential) string { return x.ID }, c.DeletedCredentials),
-		keys:        merged(cur.keys, c.Keys, func(k *Key) string { return k.ID }, c.DeletedKeys),
+		generation: c.Generation,
+		upstreams: merged(cur.upstreams, c.Upstreams, func(u *Upstream) string { return u.ID }, c.DeletedUpstreams, func(u *Upstream) {
+			u.Rules, _ = policy.CompilePaths(u.Paths) // an unreadable list is nil, which allows nothing
+		}),
+		credentials: merged(cur.credentials, c.Credentials, func(x *Credential) string { return x.ID }, c.DeletedCredentials, nil),
+		keys: merged(cur.keys, c.Keys, func(k *Key) string { return k.ID }, c.DeletedKeys, func(k *Key) {
+			k.Compiled, _ = policy.Compile(k.PolicyVersion, k.Policy)
+		}),
 	}
 	r.snap.Store(next)
 }
@@ -167,13 +180,18 @@ func (r *Registry) Apply(c Change) {
 // merged returns cur with rows set and deleted removed. It returns cur itself
 // when there is nothing to do, which is safe because no snapshot's maps ever
 // change once it is published.
-func merged[T any](cur map[string]*T, rows []T, id func(*T) string, deleted []string) map[string]*T {
+//
+// prepare, if not nil, finishes each new row's copy before it is shared.
+func merged[T any](cur map[string]*T, rows []T, id func(*T) string, deleted []string, prepare func(*T)) map[string]*T {
 	if len(rows) == 0 && len(deleted) == 0 {
 		return cur
 	}
 	next := maps.Clone(cur)
 	for i := range rows {
 		row := rows[i] // a copy, so the snapshot shares nothing with the caller
+		if prepare != nil {
+			prepare(&row)
+		}
 		next[id(&row)] = &row
 	}
 	for _, d := range deleted {

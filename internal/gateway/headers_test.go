@@ -116,16 +116,18 @@ func TestTheUpstreamsAuthHeaderTakesTheCredentialWhateverItsName(t *testing.T) {
 	}
 }
 
+// A path kman could read differently from the upstream, such as one with ..
+// segments, a doubled slash or an encoded slash, is refused by policy rather
+// than forwarded as sent (policy_test.go has the cases).
 func TestPathsAndQueryStringsPassThroughUnchanged(t *testing.T) {
 	for _, uri := range []string{
 		"/",
 		"/v1/things",
 		"/v1/things?a=1",
-		"/v1/a%2Fb/c?x=1&x=2&empty=&y=%20+z;odd=%zz&",
+		"/v1/a%20b/c?x=1&x=2&empty=&y=%20+z;odd=%zz&",
 		"/v1/things?",
 		"/v1/UPPER%3alower/",
-		"//double//slash",
-		"/v1/../up",
+		"/v1/things/",
 	} {
 		t.Run(uri, func(t *testing.T) {
 			up := newRecording()
@@ -249,7 +251,7 @@ func TestTheOutboundAddressComesFromTheUpstream(t *testing.T) {
 			capture := &captureTransport{}
 			s := newStack(t, func(o *gateway.Options) { o.Transport = capture })
 			k, secret := newKey(t)
-			tc.spec.Profile, tc.spec.Auth = registry.ProfileGeneric, bearer
+			tc.spec.Profile, tc.spec.Auth, tc.spec.Paths = registry.ProfileGeneric, bearer, []string{"* /**"}
 			s.publish(tc.spec, k)
 			s.send("GET", "/x", "", withBearer(secret))
 			got := capture.got

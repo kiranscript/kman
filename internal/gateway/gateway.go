@@ -4,9 +4,11 @@ import (
 	"crypto/x509"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 
+	"github.com/kirank55/kman/internal/limiter"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/vault"
@@ -27,6 +29,13 @@ type Options struct {
 	// MaxBody is the most of a request body kman holds, defaulting to
 	// DefaultMaxBody. Over it, a request is refused.
 	MaxBody int64
+	// TrustedProxies are the networks whose X-Forwarded-For is believed
+	// (kman.yaml's trusted_proxies). With none, the client address is the
+	// connection's.
+	TrustedProxies []netip.Prefix
+	// Limiter holds the RPM windows and the invalid-key counts. It defaults to one
+	// with the default bounds, on Now.
+	Limiter *limiter.Limiter
 
 	// RootCAs is who an upstream's certificate must chain to, and nil means the
 	// system's. Tests set it to trust their own upstream.
@@ -41,9 +50,10 @@ type Options struct {
 
 // Gateway is the proxy listener's http.Handler.
 type Gateway struct {
-	opts  Options
-	base  *http.Transport
-	named sync.Map // TLS server name → *http.Transport
+	opts    Options
+	limiter *limiter.Limiter
+	base    *http.Transport
+	named   sync.Map // TLS server name → *http.Transport
 }
 
 // New returns a Gateway.
@@ -54,7 +64,10 @@ func New(opts Options) *Gateway {
 	if opts.MaxBody <= 0 {
 		opts.MaxBody = DefaultMaxBody
 	}
-	return &Gateway{opts: opts, base: newTransport(opts.RootCAs, "")}
+	if opts.Limiter == nil {
+		opts.Limiter = limiter.New(limiter.Options{Now: opts.Now})
+	}
+	return &Gateway{opts: opts, limiter: opts.Limiter, base: newTransport(opts.RootCAs, "")}
 }
 
 // exchange is one request on its way through the pipeline.
@@ -63,6 +76,8 @@ type exchange struct {
 	r     *http.Request
 	route registry.Route
 	body  []byte
+	// ip is where the request came from, by the connection or a trusted proxy.
+	ip netip.Addr
 	// usage reads usage from the response as it passes. It is nil before there's a
 	// response, and for one that can't be read or isn't metered. What it holds
 	// stands after a broken response too, when abort is also set.
@@ -77,6 +92,8 @@ type exchange struct {
 type refusal struct {
 	code    code
 	message string
+	// retryAfter, when set, is how long an app should wait: the Retry-After header.
+	retryAfter time.Duration
 }
 
 // stage is a step of the pipeline. A refusal ends the request.
@@ -86,7 +103,7 @@ type stage func(*Gateway, *exchange) *refusal
 // (SPEC §2). The body is read only once a request has a good key, and before
 // policy, which reads the model from it.
 var pipeline = [...]stage{
-	(*Gateway).authenticate,
+	(*Gateway).guarded,
 	(*Gateway).buffer,
 	(*Gateway).policy,
 	(*Gateway).limit,
@@ -100,6 +117,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, run := range pipeline {
 		if ref := run(g, &x); ref != nil {
 			if !x.abort {
+				if ref.retryAfter > 0 {
+					w.Header()["Retry-After"] = retryAfter(ref.retryAfter)
+				}
 				writeError(w, ref.code, ref.message)
 			}
 			break
@@ -111,12 +131,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		panic(http.ErrAbortHandler)
 	}
 }
-
-// policy will hold a request to its key's policy (#42): allowlists and locks.
-func (g *Gateway) policy(*exchange) *refusal { return nil }
-
-// limit will hold a key to its RPM limit (#43).
-func (g *Gateway) limit(*exchange) *refusal { return nil }
 
 // reserve will take a reservation against the key's caps (#41). Pricing
 // goes by the upstream's ID, Preset and PriceMultiplierPPM, never its Name, which

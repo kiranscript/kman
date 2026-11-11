@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/kirank55/kman/internal/policy"
 )
 
 // Auth styles.
@@ -66,7 +68,6 @@ var (
 	envName   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	// headerName is an HTTP token (RFC 9110 §5.6.2).
 	headerName = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
-	method     = regexp.MustCompile(`^(\*|[A-Z]+)$`)
 )
 
 // forbiddenHeaders are the headers the proxy owns, which a credential may
@@ -169,27 +170,6 @@ func checkHost(h string) error {
 	return errors.New("use a host name or IP address, with no scheme, port or path")
 }
 
-// checkPathRule accepts "METHOD /path". A method of * is any method. In the
-// path, a segment of * is one segment, and a last segment of ** is the rest
-// of the path. The proxy's matcher (#42) reads this grammar.
-func checkPathRule(rule string) error {
-	m, path, ok := strings.Cut(rule, " ")
-	if !ok || !method.MatchString(m) || !strings.HasPrefix(path, "/") {
-		return errors.New("use the form \"METHOD /path\", with the method in capitals or *")
-	}
-	if strings.ContainsFunc(path, func(r rune) bool { return isControl(r) || r == ' ' || r == '\\' || r == '?' || r == '#' }) {
-		return errors.New("the path may not hold spaces, control characters, a backslash, a query or a fragment")
-	}
-	segments := strings.Split(path[1:], "/")
-	for i, seg := range segments {
-		switch {
-		case seg == "." || seg == "..":
-			return errors.New("the path may not hold . or .. segments")
-		case seg == "**" && i != len(segments)-1:
-			return errors.New("** must be the last segment")
-		case strings.Contains(seg, "*") && seg != "*" && seg != "**":
-			return errors.New("a wildcard must be a whole segment")
-		}
-	}
-	return nil
-}
+// checkPathRule accepts "METHOD /path", the grammar policy.CheckPathRule
+// owns and the proxy's matcher reads.
+func checkPathRule(rule string) error { return policy.CheckPathRule(rule) }

@@ -99,8 +99,8 @@ func statusOf(c admin.Code) int {
 }
 
 // clientIP is the address a request came from, "" over a Unix socket.
-// trusted_proxies (#42) is not consulted: the admin listener is meant to be
-// reached directly.
+// trusted_proxies is deliberately not consulted: it is for the proxy listener,
+// and the admin listener is meant to be reached directly.
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

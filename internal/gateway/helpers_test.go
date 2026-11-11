@@ -131,7 +131,8 @@ func newKey(t testing.TB) (registry.Key, string) {
 		t.Fatal(err)
 	}
 	k := registry.Key{ID: string(m.ID), CredentialID: credID, Status: "active",
-		Secrets: []registry.KeySecret{{Hash: m.Hash}}, ExpiresAt: t0.Add(time.Hour)}
+		Secrets: []registry.KeySecret{{Hash: m.Hash}}, ExpiresAt: t0.Add(time.Hour),
+		Policy: `{}`, PolicyVersion: 1} // what admin publishes for a key with no policy
 	return k, m.Reveal()
 }
 
