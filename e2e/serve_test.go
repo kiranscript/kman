@@ -63,9 +63,9 @@ func (h *home) appendConfig(t *testing.T, lines string) {
 
 // server is a running kman serve.
 type server struct {
-	cmd         *exec.Cmd
-	proxy       string // host:port
-	admin       string // host:port, or unix:<path>
+	cmd     *exec.Cmd
+	proxy   string // host:port
+	admin   string // host:port, or unix:<path>
 	logs    *logs
 	exited  chan struct{}
 	exitErr error
