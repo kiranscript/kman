@@ -95,8 +95,8 @@ func TestOnlyAWorkingKeyMakesAnInstallReady(t *testing.T) {
 	var disabled, revoked admin.CreatedKey
 	in.kmanJSON(t, &disabled, "key", "create", "off", "--upstream", "openai")
 	in.kmanJSON(t, &revoked, "key", "create", "gone", "--upstream", "openai")
-	in.setKeyStatus(t, disabled.Key.ID, "disabled")
-	in.setKeyStatus(t, revoked.Key.ID, "revoked")
+	in.kman(t, "key", "disable", disabled.Key.ID)
+	in.kman(t, "key", "revoke", revoked.Key.ID)
 	in.sqlExec(t, `INSERT INTO virtual_keys (key_id, credential_id, kind, status, policy_version, expires_at, created_at, generation)
 		SELECT 'expired1', id, 'standard', 'active', 1, 1, 0, 1 FROM credentials`)
 	wantNext(t, in.summaryOf(t, nil, true), "no key that works", "kman key create my-app --upstream openai")

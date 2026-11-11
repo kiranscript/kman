@@ -290,7 +290,11 @@ func TestDeleteIsRefusedWhileAKeyDependsOnTheItem(t *testing.T) {
 			in := withOpenAI(t)
 			c := in.addCredential(t, "main", "openai")
 			k := in.createKey(t, admin.CreateKeyRequest{Name: "my-app", Upstream: "openai"}).Key
-			in.setKeyStatus(t, k.ID, status)
+			if status == "disabled" {
+				if _, err := in.svc.DisableKey(as("owner"), admin.KeyRef{ID: k.ID}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			before := len(in.latest(t, 100))
 
 			_, err := in.svc.RemoveCredential(as("owner"), admin.CredentialRef{Ref: "main"})
@@ -318,7 +322,9 @@ func TestARevokedKeyDoesNotHoldADelete(t *testing.T) {
 	in := withOpenAI(t)
 	in.addCredential(t, "main", "openai")
 	k := in.createKey(t, admin.CreateKeyRequest{Name: "my-app", Upstream: "openai"}).Key
-	in.setKeyStatus(t, k.ID, "revoked")
+	if _, err := in.svc.RevokeKey(as("owner"), admin.KeyRef{ID: k.ID}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := in.svc.RemoveCredential(as("owner"), admin.CredentialRef{Ref: "main"}); err != nil {
 		t.Errorf("RemoveCredential = %v", err)
 	}

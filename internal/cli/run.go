@@ -54,7 +54,7 @@ var commands = []command{
 	{"price", "list the price table, and set, remove or import price overrides", cmdPrice},
 	{"upstream", "add, list, show, update, remove or sync upstreams", cmdUpstream},
 	{"credential", "add, update or remove credentials", cmdCredential},
-	{"key", "create, list, show or update virtual keys", cmdKey},
+	{"key", "create, list, show, update, disable, enable or revoke virtual keys", cmdKey},
 }
 
 // Commands names the online commands Run serves, for kman's usage line.

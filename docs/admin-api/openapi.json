@@ -1764,6 +1764,123 @@
         "summary": "Change a virtual key's name, note, tags, expiry or policy"
       }
     },
+    "/admin/v1/keys/{id}/disable": {
+      "post": {
+        "operationId": "disableKey",
+        "parameters": [
+          {
+            "description": "The key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Key"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Stop a virtual key from the next request until it is enabled again"
+      }
+    },
+    "/admin/v1/keys/{id}/enable": {
+      "post": {
+        "operationId": "enableKey",
+        "parameters": [
+          {
+            "description": "The key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Key"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Let a disabled virtual key work again; a revoked key cannot be enabled"
+      }
+    },
+    "/admin/v1/keys/{id}/revoke": {
+      "post": {
+        "operationId": "revokeKey",
+        "parameters": [
+          {
+            "description": "The key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Key"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "End a virtual key for good, from the next request; it cannot be undone"
+      }
+    },
     "/admin/v1/openapi.json": {
       "get": {
         "operationId": "openapi",

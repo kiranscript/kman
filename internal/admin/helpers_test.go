@@ -119,7 +119,7 @@ func unlockVault(t *testing.T, st *store.Store) *vault.Vault {
 }
 
 // sqlExec runs a statement against the install's database from outside the
-// store, to seed what no command makes yet or to damage what one made.
+// store, to damage what a command made.
 func (in *install) sqlExec(t *testing.T, query string, args ...any) {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(in.dir, store.FileName))+"?_pragma=busy_timeout(5000)")
@@ -130,12 +130,6 @@ func (in *install) sqlExec(t *testing.T, query string, args ...any) {
 	if _, err := db.Exec(query, args...); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// setKeyStatus moves a key to a status no command reaches yet (#44).
-func (in *install) setKeyStatus(t *testing.T, keyID, status string) {
-	t.Helper()
-	in.sqlExec(t, `UPDATE virtual_keys SET status = ? WHERE key_id = ?`, status, keyID)
 }
 
 // as is a context whose caller is actor.
