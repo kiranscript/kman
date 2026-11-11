@@ -48,6 +48,13 @@ archives:
           owner: root
           group: root
           mtime: "{{ .CommitDate }}"
+      # The licences of the datasets the embedded price table is generated from.
+      - src: internal/pricing/NOTICE
+        dst: NOTICE-price-data
+        info:
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
       - src: README*
         info:
           owner: root
