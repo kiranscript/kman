@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kirank55/kman/internal/limiter"
+	"github.com/kirank55/kman/internal/meter"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/vault"
@@ -42,9 +43,11 @@ type Options struct {
 	RootCAs *x509.CertPool
 	// Transport replaces the real one. It is for tests.
 	Transport http.RoundTripper
+	// Meter keeps every key's spend. Without one nothing is metered, and a key that
+	// must be (one with a spend cap or a model allowlist) is refused rather than let through.
+	Meter *meter.Meter
 	// OnUsage is told what each response it could read reported, once it has ended.
-	// It is how tests see the usage until metering settles it (#41), which reads
-	// the same exchange field.
+	// It is a seam for tests that look at what was read, apart from what it cost.
 	OnUsage func(registry.Route, profiles.Usage)
 }
 
@@ -85,6 +88,10 @@ type exchange struct {
 	// abort means the response can't be finished properly: the connection is cut,
 	// so the app can't take what it got for the whole of it.
 	abort bool
+	// res is the reservation taken against the key's spend, nil when none was.
+	// status is the upstream's, or zero while it hasn't answered.
+	res    *meter.Reservation
+	status int
 }
 
 // refusal is why a stage stopped a request, before anything of a response was
@@ -111,9 +118,11 @@ var pipeline = [...]stage{
 	(*Gateway).forward,
 }
 
-// ServeHTTP runs one request through the pipeline.
+// ServeHTTP runs one request through the pipeline. However it ends, even in a
+// panic, its reservation is settled and its event emitted.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	x := exchange{w: w, r: r}
+	defer g.finish(&x)
 	for _, run := range pipeline {
 		if ref := run(g, &x); ref != nil {
 			if !x.abort {
@@ -125,24 +134,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	g.settle(&x)
-	g.emit(&x)
-	if x.abort {
-		panic(http.ErrAbortHandler)
-	}
 }
 
-// reserve will take a reservation against the key's caps (#41). Pricing
-// goes by the upstream's ID, Preset and PriceMultiplierPPM, never its Name, which
-// the operator chooses.
-func (g *Gateway) reserve(*exchange) *refusal { return nil }
-
-// settle will charge what the upstream reported, or release the reservation
-// (#41). It runs for every request, refused or not. For now it only hands on the
-// usage read from the response, which is priced by nothing yet.
-func (g *Gateway) settle(x *exchange) {
-	if x.usage != nil && g.opts.OnUsage != nil {
-		g.opts.OnUsage(x.route, x.usage.Usage())
+// finish settles the request's spend and emits its event, then cuts the
+// connection of a response that broke.
+func (g *Gateway) finish(x *exchange) {
+	g.settle(x)
+	g.emit(x)
+	if x.abort {
+		panic(http.ErrAbortHandler)
 	}
 }
 

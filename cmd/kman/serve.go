@@ -17,6 +17,7 @@ import (
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
 	"github.com/kirank55/kman/internal/gateway"
+	"github.com/kirank55/kman/internal/meter"
 	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/pricing"
 	"github.com/kirank55/kman/internal/profiles"
@@ -106,15 +107,24 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	}
 	defer v.Close()
 
-	// The meter (#41) will read prices on the request path.
 	reg := registry.New()
 	prices := pricing.NewPrices(pricing.Builtin())
+	var spend *meter.Meter // made once the settings are read, which the service reads
 	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices,
-		ApplyPrices: publishOverrides(prices), NormalizePolicy: policy.Normalize})
+		ApplyPrices: publishOverrides(prices), NormalizePolicy: policy.Normalize,
+		Spend: func(keyID, policyJSON string) admin.KeySpend { return keySpend(spend, s.now(), keyID, policyJSON) }})
 	if err := svc.Load(ctx); err != nil {
 		return err
 	}
-	proxy := gateway.New(gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, TrustedProxies: cfg.trustedProxies()})
+	spend, err = startMeter(ctx, s, log, svc, st, prices)
+	if err != nil {
+		return err
+	}
+	meterCtx, stopMeter := context.WithCancel(ctx)
+	defer stopMeter()
+	meterDone := make(chan struct{})
+	go func() { spend.Run(meterCtx); close(meterDone) }()
+	proxy := gateway.New(gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, Meter: spend, TrustedProxies: cfg.trustedProxies()})
 	ls, err := listen(cfg, log, proxy, adminHandler(svc, log))
 	if err != nil {
 		return err
@@ -140,6 +150,12 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 		if serr := l.srv.Shutdown(shutdownCtx); serr != nil {
 			log.Error("shutdown", "listener", l.name, "err", serr)
 		}
+	}
+	// What the requests that just ended spent reaches the store before it closes.
+	stopMeter()
+	<-meterDone
+	if ferr := spend.Flush(shutdownCtx, s.now()); ferr != nil {
+		log.Error("the last spend could not be saved", "err", ferr)
 	}
 	return err
 }

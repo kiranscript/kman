@@ -244,3 +244,35 @@ func TestLookupStillAllocatesNothingWithCompiledPolicies(t *testing.T) {
 		t.Errorf("Lookup allocated %v times", allocs)
 	}
 }
+
+// The request path reads a key's caps from the compiled policy, not from JSON:
+// Apply reads it once, so that a request parses nothing.
+func TestAPublishedKeyCarriesItsCapsInItsCompiledPolicy(t *testing.T) {
+	r := registry.New()
+	r.Apply(registry.Change{Generation: 1, Keys: []registry.Key{
+		{ID: "capped000", Policy: `{"daily_cap_micro":5000000,"monthly_cap_micro":9000000}`, PolicyVersion: 1},
+		{ID: "plain0000", Policy: `{}`, PolicyVersion: 1},
+		{ID: "models000", Policy: `{"allowed_models":["gpt-4o"]}`, PolicyVersion: 1},
+	}})
+	for id, want := range map[string]struct {
+		daily, monthly int64
+		strict         bool
+	}{"capped000": {5_000_000, 9_000_000, true}, "plain0000": {0, 0, false}, "models000": {0, 0, true}} {
+		route, _ := r.Lookup(id)
+		daily, monthly := route.Key.Compiled.Caps()
+		if err := route.Key.Compiled.Err(); err != nil || daily != want.daily || monthly != want.monthly || route.Key.Compiled.RequiresMetering() != want.strict {
+			t.Errorf("%s: caps %d/%d, strict %v, err %v; want %+v", id, daily, monthly, route.Key.Compiled.RequiresMetering(), err, want)
+		}
+	}
+}
+
+// A policy kman cannot read is no policy at all, which would let a key go free:
+// it requires metering and allows nothing.
+func TestAPolicyKmanCannotReadRequiresMeteringSoItCanNeverGoFree(t *testing.T) {
+	r := registry.New()
+	r.Apply(registry.Change{Generation: 1, Keys: []registry.Key{{ID: "future000", Policy: `{"cap_from_the_future":1}`, PolicyVersion: 1}}})
+	route, _ := r.Lookup("future000")
+	if route.Key.Compiled.Err() == nil || !route.Key.Compiled.RequiresMetering() {
+		t.Error("an unreadable policy must say why and require metering")
+	}
+}

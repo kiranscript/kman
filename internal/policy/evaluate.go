@@ -15,6 +15,9 @@ type Compiled struct {
 	prefixes []string
 	models   bool // an allowlist is set, which may be empty only by being absent
 	rpm      int
+	daily    int64
+	monthly  int64
+	strict   bool  // the key may send only requests kman can meter
 	broken   error // why the policy can't be read, if it can't
 }
 
@@ -35,7 +38,7 @@ func Compile(version int, stored string) (*Compiled, error) {
 	if err := json.Unmarshal(normalized, &p); err != nil {
 		return fail(err)
 	}
-	c := &Compiled{rpm: p.RPMLimit}
+	c := &Compiled{rpm: p.RPMLimit, daily: p.DailyCapMicro, monthly: p.MonthlyCapMicro, strict: p.RequiresMetering()}
 	if len(p.AllowedPaths) > 0 {
 		if c.paths, err = CompilePaths(p.AllowedPaths); err != nil {
 			return fail(err)
@@ -71,6 +74,18 @@ func (c *Compiled) RPM() int {
 	}
 	return c.rpm
 }
+
+// Caps are the key's daily and monthly spend caps in microdollars, 0 for none.
+func (c *Compiled) Caps() (daily, monthly int64) {
+	if c == nil {
+		return 0, 0
+	}
+	return c.daily, c.monthly
+}
+
+// RequiresMetering reports whether the key may send only requests kman can meter
+// (Policy.RequiresMetering). A policy that can't be read requires it.
+func (c *Compiled) RequiresMetering() bool { return c == nil || c.broken != nil || c.strict }
 
 // NeedsModel reports whether Evaluate reads Facts.Model, so a caller that has to
 // read it out of a body may skip that when it doesn't.
@@ -117,8 +132,8 @@ func (d Decision) String() string {
 // facts and the policy, never reading the clock or anything else.
 //
 // The path is held to the upstream's allowlist, or to the key's own when it has
-// one; a key with a model allowlist and its own list must satisfy both, so that
-// a model allowlist can't be sidestepped by a route kman reads no model from. A
+// one; a key with a model allowlist or a spend cap and its own list must satisfy
+// both, so that neither can be sidestepped by a route kman reads no model from. A
 // request with no model a key's allowlist can be checked against is an unmetered
 // request, since it could name any model upstream.
 func Evaluate(f Facts, c *Compiled) Decision {
@@ -130,7 +145,7 @@ func Evaluate(f Facts, c *Compiled) Decision {
 		if !f.Upstream.Match(f.Method, f.Path) {
 			return PathNotAllowed
 		}
-	case !c.paths.Match(f.Method, f.Path), c.models && !f.Upstream.Match(f.Method, f.Path):
+	case !c.paths.Match(f.Method, f.Path), (c.models || c.daily > 0 || c.monthly > 0) && !f.Upstream.Match(f.Method, f.Path):
 		return PathNotAllowed
 	}
 	if c.models {

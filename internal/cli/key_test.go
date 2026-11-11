@@ -196,6 +196,45 @@ func TestTheSecretAppearsOnlyInKeyCreate(t *testing.T) {
 	}
 }
 
+// How an operator watches a key's spend in v0.1.0, with events and metrics deferred.
+func TestKeyShowPrintsTheSpendTodayAndThisMonthBesideTheCaps(t *testing.T) {
+	in := withOpenAI(t)
+	in.withSpend(t, func(keyID, policy string) admin.KeySpend {
+		return admin.KeySpend{
+			Today: admin.SpendPeriod{Period: "2026-11-04", CostMicro: 1_500_000, EstimatedMicro: 2_500, ReservedMicro: 40_000, Requests: 3, UnmeteredRequests: 2, CapMicro: 5_000_000},
+			Month: admin.SpendPeriod{Period: "2026-11", CostMicro: 9_250_000, Requests: 30},
+		}
+	})
+	in.kman(t, "key", "create", "my-app", "--upstream", "openai", "--policy", `{"daily_cap_micro":5000000}`)
+	out := in.kman(t, "key", "show", "my-app")
+	for _, want := range []string{
+		`spend today:\s+\$1\.50 of \$5 cap \+ 2 unmetered requests \(2026-11-04: 3 requests, \$0\.0025 estimated, \$0\.04 in flight\)`,
+		`spend month:\s+\$9\.25, no cap \(2026-11: 30 requests\)`,
+	} {
+		if !regexp.MustCompile(want).MatchString(out) {
+			t.Errorf("key show lacks %q:\n%s", want, out)
+		}
+	}
+	var k admin.Key
+	in.kmanJSON(t, &k, "key", "show", "my-app")
+	if k.Spend == nil || k.Spend.Today.CostMicro != 1_500_000 || k.Spend.Today.CapMicro != 5_000_000 || k.Spend.Month.Period != "2026-11" {
+		t.Errorf("key show --json spend = %+v", k.Spend)
+	}
+	var list admin.KeyList
+	in.kmanJSON(t, &list, "key", "list")
+	if len(list.Keys) != 1 || list.Keys[0].Spend == nil || list.Keys[0].Spend.Month.Requests != 30 {
+		t.Errorf("key list --json = %+v", list)
+	}
+}
+
+func TestKeyShowSaysNothingOfSpendWhenThereIsNoMeter(t *testing.T) {
+	in := withOpenAI(t)
+	in.kman(t, "key", "create", "my-app", "--upstream", "openai")
+	if out := in.kman(t, "key", "show", "my-app"); strings.Contains(out, "spend") {
+		t.Errorf("key show:\n%s", out)
+	}
+}
+
 func TestKeyDisableEnableAndRevokeTakeANameOrAKeyId(t *testing.T) {
 	in := withOpenAI(t)
 	var k admin.CreatedKey

@@ -33,6 +33,9 @@ type exchange struct {
 		Status  int                 `json:"status"`
 		Headers map[string][]string `json:"headers"`
 		Chunks  []string            `json:"chunks"` // each is written and flushed
+		// Abort cuts the connection after the last chunk, as an upstream that dies
+		// mid-response would, instead of ending the response.
+		Abort bool `json:"abort"`
 	} `json:"response"`
 	Usage json.RawMessage `json:"usage"` // for internal/profiles: not used here
 }
@@ -114,6 +117,9 @@ func (m *mockUpstream) serve(t *testing.T, w http.ResponseWriter, r *http.Reques
 	for _, chunk := range ex.Response.Chunks {
 		io.WriteString(w, chunk)
 		w.(http.Flusher).Flush()
+	}
+	if ex.Response.Abort {
+		panic(http.ErrAbortHandler)
 	}
 }
 

@@ -91,6 +91,10 @@ type Options struct {
 	// composition root adapts it, since admin may not import pricing. Nil
 	// does nothing, for what runs no request path.
 	ApplyPrices func([]PriceOverride) error
+	// Spend reports what a key has spent today and this month, beside its caps,
+	// from its policy as stored. The composition root adapts the meter, which
+	// admin may not import. Nil shows no spend, for what runs no request path.
+	Spend func(keyID, policy string) KeySpend
 }
 
 // Service runs the admin commands.
@@ -104,6 +108,7 @@ type Service struct {
 	prices  func() PriceTable
 	policy  func(raw []byte) (int, []byte, error)
 	publish func([]PriceOverride) error
+	spend   func(keyID, policy string) KeySpend
 
 	// publishing holds a command from its transaction to its publish, so
 	// memory sees commands in the order they committed. The request path
@@ -113,7 +118,7 @@ type Service struct {
 
 // New returns the admin service over opts.Store.
 func New(opts Options) *Service {
-	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices}
+	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices, spend: opts.Spend}
 	if s.rand == nil {
 		s.rand = rand.Reader
 	}

@@ -61,6 +61,7 @@ func (g *Gateway) forward(x *exchange) *refusal {
 		g.opts.Log.Warn("blocked a redirect off the upstream", "key", x.route.Key.ID, "upstream", up.Name, "status", resp.StatusCode)
 		return &refusal{code: codeUpstreamUnavailable, message: "The upstream answered with a redirect to somewhere else, which kman does not follow."}
 	}
+	x.status = resp.StatusCode
 	x.usage = profile.UsageReader(resp.Header)
 	g.respond(x, resp)
 	return nil

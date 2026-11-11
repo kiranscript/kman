@@ -12,6 +12,7 @@ import (
 
 	"github.com/kirank55/kman/internal/gateway"
 	"github.com/kirank55/kman/internal/limiter"
+	"github.com/kirank55/kman/internal/meter"
 	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/token"
@@ -92,16 +93,24 @@ func TestAKeyWithNoModelAllowlistMayBeGivenARouteTheUpstreamLeavesOut(t *testing
 
 func chat(model string) string { return `{"model":"` + model + `","messages":[]}` }
 
+// A key with a model allowlist may send only requests kman can meter (SPEC §8),
+// so what it is allowed goes to a priced model on a metered upstream.
 func TestAModelAllowlistRefusesAnyOtherModel(t *testing.T) {
-	s, up, secret := guarded(t, `{"allowed_models":["gpt-4o","claude-*"]}`, []string{"* /**"})
-	for _, m := range []string{"gpt-4o", "claude-sonnet-4"} {
-		if resp, body := s.send("POST", "/v1/chat/completions", chat(m), withBearer(secret)); resp.StatusCode != 200 {
-			t.Errorf("model %s = %d %s", m, resp.StatusCode, body)
+	up := newRecording()
+	m := meter.New(meter.Options{Prices: priceTable(t), Counters: meter.NewMemory(), Now: func() time.Time { return t0 }})
+	s, _ := behind(t, up, func(g *gateway.Options) { g.Meter = m })
+	k, secret := withPolicy(t, `{"allowed_models":["m","m-*"]}`)
+	spec := specOfRoute(t, s)
+	spec.Profile, spec.Paths = registry.ProfileOpenAI, []string{"* /**"}
+	s.publish(spec, k)
+	for _, model := range []string{"m", "m-2"} {
+		if resp, body := s.send("POST", "/v1/chat/completions", chat(model), withBearer(secret)); resp.StatusCode != 200 {
+			t.Errorf("model %s = %d %s", model, resp.StatusCode, body)
 		}
 		up.next(t)
 	}
-	for _, m := range []string{"gpt-4o-mini", "o1", "GPT-4O", ""} {
-		resp, body := s.send("POST", "/v1/chat/completions", chat(m), withBearer(secret))
+	for _, model := range []string{"o1", "M", "n", ""} {
+		resp, body := s.send("POST", "/v1/chat/completions", chat(model), withBearer(secret))
 		wantRefusal(t, resp, body, http.StatusForbidden, "model_not_allowed")
 		up.none(t)
 	}

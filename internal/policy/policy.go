@@ -13,8 +13,9 @@ import (
 // keeps it beside each key's policy, so a later format can read an earlier one.
 const Version = 1
 
-// Policy is a key's policy. Later tickets add fields, and a key's stored policy
-// keeps working as they do.
+// Policy is a key's policy: what it is held to. A zero field holds the key to
+// nothing, and later tickets add fields, so a stored policy keeps working as
+// they do.
 type Policy struct {
 	// AllowedPaths are path rules (CheckPathRule). When set they are the key's
 	// allowlist in place of its upstream's, so a key can be held to less than its
@@ -25,6 +26,18 @@ type Policy struct {
 	AllowedModels []string `json:"allowed_models,omitempty"`
 	// RPMLimit is the most requests a key may make in a minute; 0 is no limit.
 	RPMLimit int `json:"rpm_limit,omitempty"`
+	// DailyCapMicro and MonthlyCapMicro are the key's spend caps in
+	// microdollars, counted in the period of the spend_timezone setting. Zero is
+	// no cap.
+	DailyCapMicro   int64 `json:"daily_cap_micro,omitzero"`
+	MonthlyCapMicro int64 `json:"monthly_cap_micro,omitzero"`
+}
+
+// RequiresMetering reports whether a key under this policy may send only
+// requests kman can meter (SPEC §8, invariant 4). A cap needs the cost of every
+// request it holds the key to, and a model allowlist needs the model of each.
+func (p Policy) RequiresMetering() bool {
+	return p.DailyCapMicro > 0 || p.MonthlyCapMicro > 0 || len(p.AllowedModels) > 0
 }
 
 // Limits of what a policy may hold.
@@ -85,22 +98,75 @@ func checkModelRule(m string) error {
 	return nil
 }
 
-// Normalize checks a policy as JSON and returns its version and the form to
-// store. Only a JSON object is a policy, and a field kman does not know is
-// refused rather than kept, since a mistyped limit that silently limits nothing
-// is worse than an error.
-func Normalize(raw []byte) (version int, normalized []byte, err error) {
+// wire is a policy as written: a cap is a pointer, so that a cap of zero can be
+// told from none and refused.
+type wire struct {
+	AllowedPaths    []string `json:"allowed_paths"`
+	AllowedModels   []string `json:"allowed_models"`
+	RPMLimit        int      `json:"rpm_limit"`
+	DailyCapMicro   *int64   `json:"daily_cap_micro"`
+	MonthlyCapMicro *int64   `json:"monthly_cap_micro"`
+}
+
+// decode reads a policy, refusing a field kman does not know, since a mistyped
+// limit that silently limits nothing is worse than an error.
+func decode(raw []byte) (Policy, error) {
 	if first := bytes.TrimSpace(raw); len(first) == 0 || first[0] != '{' {
-		return 0, nil, errors.New("a policy is a JSON object")
+		return Policy{}, errors.New("a policy is a JSON object")
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
-	var p Policy
-	if err := dec.Decode(&p); err != nil {
-		return 0, nil, fmt.Errorf("the policy: %w", err)
+	var w wire
+	if err := dec.Decode(&w); err != nil {
+		return Policy{}, fmt.Errorf("the policy: %w", err)
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return 0, nil, errors.New("the policy holds more than one JSON value")
+		return Policy{}, errors.New("the policy holds more than one JSON value")
+	}
+	p := Policy{AllowedPaths: w.AllowedPaths, AllowedModels: w.AllowedModels, RPMLimit: w.RPMLimit}
+	for _, c := range []struct {
+		name string
+		in   *int64
+		out  *int64
+	}{
+		{"daily_cap_micro", w.DailyCapMicro, &p.DailyCapMicro},
+		{"monthly_cap_micro", w.MonthlyCapMicro, &p.MonthlyCapMicro},
+	} {
+		if c.in == nil {
+			continue
+		}
+		if *c.in <= 0 {
+			return Policy{}, fmt.Errorf("the policy: %s must be above 0 microdollars; leave it out for no cap", c.name)
+		}
+		*c.out = *c.in
+	}
+	if p.DailyCapMicro > 0 && p.MonthlyCapMicro > 0 && p.MonthlyCapMicro < p.DailyCapMicro {
+		return Policy{}, errors.New("the policy: monthly_cap_micro is below daily_cap_micro, and a month holds a day")
+	}
+	return p, nil
+}
+
+// Parse reads a stored policy and checks it. An empty one is the empty policy.
+func Parse(raw string) (Policy, error) {
+	if raw == "" {
+		return Policy{}, nil
+	}
+	p, err := decode([]byte(raw))
+	if err != nil {
+		return Policy{}, err
+	}
+	if err := p.check(); err != nil {
+		return Policy{}, fmt.Errorf("the policy: %w", err)
+	}
+	return p, nil
+}
+
+// Normalize checks a policy as JSON and returns its version and the form to
+// store. Only a JSON object is a policy.
+func Normalize(raw []byte) (version int, normalized []byte, err error) {
+	p, err := decode(raw)
+	if err != nil {
+		return 0, nil, err
 	}
 	if err := p.check(); err != nil {
 		return 0, nil, fmt.Errorf("the policy: %w", err)

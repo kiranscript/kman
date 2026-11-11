@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
@@ -149,4 +150,35 @@ func equalJSON(t *testing.T, a, b []byte) bool {
 		return string(a) == string(b)
 	}
 	return reflect.DeepEqual(x, y)
+}
+
+// FuzzAsk holds the request reader to the parsers upstream: whatever a body
+// is, it doesn't panic and reads no negative limit, and on a body encoding/json
+// accepts it agrees about the model.
+func FuzzAsk(f *testing.F) {
+	for _, seed := range []string{
+		`{"model":"m"}`, `{"model":"a","model":"b"}`, `{"model":"m","max_tokens":5}`, `{"x":{"model":"n"},"model":"m"}`,
+		`{"model":"m","max_tokens":1e3}`, `[]`, `{`, `{"model":`, `{"model":"m",}`,
+	} {
+		f.Add([]byte(seed))
+	}
+	p := profiles.For(registry.ProfileOpenAI)
+	f.Fuzz(func(t *testing.T, body []byte) {
+		got := p.Ask(body)
+		if got.MaxTokens < 0 || (got.Metered && got.Model == "") {
+			t.Fatalf("Ask(%q) = %+v", body, got)
+		}
+		var fields map[string]json.RawMessage
+		if !utf8.Valid(body) || json.Unmarshal(body, &fields) != nil { // it reads bad UTF-8 as it is, encoding/json as U+FFFD
+			return
+		}
+		var want string
+		var ok bool
+		if raw, found := fields["model"]; found { // encoding/json keeps the last of a repeated key
+			ok = json.Unmarshal(raw, &want) == nil && want != ""
+		}
+		if got.Metered != ok || (ok && got.Model != want) {
+			t.Fatalf("Ask(%q) = %+v; encoding/json reads %q, %v", body, got, want, ok)
+		}
+	})
 }

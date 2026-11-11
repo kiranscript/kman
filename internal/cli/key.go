@@ -253,7 +253,43 @@ func printKey(c *call, k admin.Key) {
 	line("note", k.Note)
 	line("tags", strings.Join(k.Tags, ", "))
 	line("policy", fmt.Sprintf("%s (version %d)", k.Policy, k.PolicyVersion))
+	if k.Spend != nil {
+		line("spend today", spendLine(k.Spend.Today))
+		line("spend month", spendLine(k.Spend.Month))
+	}
 	w.Flush()
+}
+
+// spendLine is a key's spend in a period beside its cap: what an operator watches
+// until events and metrics arrive. Requests whose cost is unknown are said so,
+// and never counted as $0.
+func spendLine(p admin.SpendPeriod) string {
+	var b strings.Builder
+	b.WriteString(dollars(p.CostMicro))
+	if p.CapMicro > 0 {
+		fmt.Fprintf(&b, " of %s cap", dollars(p.CapMicro))
+	} else {
+		b.WriteString(", no cap")
+	}
+	if p.UnmeteredRequests > 0 {
+		fmt.Fprintf(&b, " + %d unmetered %s", p.UnmeteredRequests, plural(p.UnmeteredRequests, "request", "requests"))
+	}
+	details := []string{fmt.Sprintf("%d %s", p.Requests, plural(p.Requests, "request", "requests"))}
+	if p.EstimatedMicro > 0 {
+		details = append(details, dollars(p.EstimatedMicro)+" estimated")
+	}
+	if p.ReservedMicro > 0 {
+		details = append(details, dollars(p.ReservedMicro)+" in flight")
+	}
+	fmt.Fprintf(&b, " (%s: %s)", p.Period, strings.Join(details, ", "))
+	return b.String()
+}
+
+func plural(n int64, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 func keyUpdate(ctx context.Context, c *call) error {

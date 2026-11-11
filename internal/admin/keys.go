@@ -34,6 +34,25 @@ type Key struct {
 	PolicyVersion int             `json:"policy_version" doc:"The version of the policy format the policy is in."`
 	ExpiresAt     time.Time       `json:"expires_at" doc:"When the key stops working. Every key has one: there is no never."`
 	CreatedAt     time.Time       `json:"created_at"`
+	Spend         *KeySpend       `json:"spend,omitempty" doc:"What the key has spent today and this month, beside its caps. Shown when the key is read, and not in the audit log."`
+}
+
+// KeySpend is what a key has spent today and this month. A request counts when it has been charged, whether or
+// not the spend has reached the store yet.
+type KeySpend struct {
+	Today SpendPeriod `json:"today"`
+	Month SpendPeriod `json:"month"`
+}
+
+// SpendPeriod is a key's spend in one day or month of the spend_timezone, with its cap.
+type SpendPeriod struct {
+	Period            string `json:"period" doc:"The day, such as 2026-11-11, or the month, such as 2026-11."`
+	CostMicro         int64  `json:"cost_micro" doc:"What has been charged, in microdollars, estimated_micro included."`
+	EstimatedMicro    int64  `json:"estimated_micro" doc:"The part of cost_micro charged as an estimate: the whole reservation, for a response that was cut off or reported no usage."`
+	ReservedMicro     int64  `json:"reserved_micro" doc:"Held for requests in flight. A cap counts it as it counts cost_micro."`
+	Requests          int64  `json:"requests" doc:"Requests charged."`
+	UnmeteredRequests int64  `json:"unmetered_requests" doc:"Requests forwarded that could not be metered, whose cost is unknown and so is not in cost_micro."`
+	CapMicro          int64  `json:"cap_micro,omitempty" doc:"The key's cap for the period, in microdollars. Absent for none."`
 }
 
 // CreatedKey is a new key and its secret, which is shown only this once.
@@ -297,7 +316,7 @@ func (s *Service) ListKeys(ctx context.Context, req KeyQuery) (KeyList, error) {
 			if err != nil {
 				return err
 			}
-			out.Keys = append(out.Keys, dto)
+			out.Keys = append(out.Keys, s.withSpend(dto))
 		}
 		return nil
 	})
@@ -318,9 +337,20 @@ func (s *Service) GetKey(ctx context.Context, req KeyRef) (Key, error) {
 			return err
 		}
 		out, err = keyDTO(k, now, names)
+		out = s.withSpend(out)
 		return err
 	})
 	return out, err
+}
+
+// withSpend adds what the key has spent, when there is a meter to ask. It is for what
+// the API shows and not for what it records.
+func (s *Service) withSpend(k Key) Key {
+	if s.spend != nil {
+		spend := s.spend(k.ID, string(k.Policy))
+		k.Spend = &spend
+	}
+	return k
 }
 
 // UpdateKey changes what req gives. An update that changes nothing records
