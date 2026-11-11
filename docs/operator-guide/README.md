@@ -7,6 +7,7 @@ For the person who runs kman. New here? Start with the [quickstart](../quickstar
 - [systemd](systemd.md): the `.deb` and `.rpm` packages and the service.
 - [Docker and Compose](docker.md): the image and the Compose example.
 - [TLS and reverse proxies](tls.md): getting an app on another machine to kman safely.
+- [Address locks and GeoIP](geoip.md): lock a key to networks or countries, and `kman geoip update`.
 - [Upgrade, rekey and old copies](upgrade.md): upgrades, the `kman.db.pre-<NNNN>` copies, backing up, replacing the master key.
 
 And elsewhere:

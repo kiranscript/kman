@@ -55,7 +55,7 @@ Fifteen modules, one Go package each under `internal/`, plus the `token` leaf pa
 |---|---|---|
 | `gateway` | `http.Handler` for the proxy listener | The pipeline: authenticate → policy → limit → reserve → forward → settle → emit. Header stripping, redirect blocking, a bounded body buffer. |
 | `profiles` | `Profile`, `RealtimeAdapter` | OpenAI, Anthropic, and generic profiles; realtime adapters; presets as data. |
-| `policy` | `Evaluate(facts, policy) Decision`, pure | Allowlists, locks, model rules, the unmetered rule. |
+| `policy` | `Evaluate(facts, policy) Decision`, pure | Allowlists, locks (`allowed_cidrs`, `allowed_countries`; each lock that is set must hold), model rules, the unmetered rule, and the GeoIP reader (`policy/geoip`, files only, no network). |
 | `limiter` | `Allow(key)`, `AllowInvalid(ip)` | RPM limits and invalid-key throttling, in bounded LRU memory. |
 | `meter` | `Reserve`, `Settle`, `Spend` | All spend: counters, periods, increment flushes, fail-closed, soft-budget crossings. |
 | `pricing` | `Estimate`, `Cost` | The **price table** and **price overrides**. |
@@ -104,7 +104,7 @@ export OPENAI_BASE_URL=http://127.0.0.1:8080/v1 OPENAI_API_KEY=kmn_…
 then optionally `kman dashboard` and `kman canary create`. Plain `kman` prints a status summary and names the next command at every stage.
 
 **Configuration** splits in two:
-- `kman.yaml`, read at startup only: listeners, `data_dir`, `key_source`, `trusted_proxies`, GeoIP database path, `retention`, `update_check`, `dashboard.url`, `allow_key_in_data_dir`, TLS for listeners.
+- `kman.yaml`, read at startup only: listeners, `data_dir`, `key_source`, `trusted_proxies`, GeoIP database paths (`geoip.country_db`, `geoip.asn_db`), `retention`, `update_check`, `dashboard.url`, `allow_key_in_data_dir`, TLS for listeners.
 - The `settings` table, changed while running through the admin API and audited: maximum key lifetime, default key TTL (90 days), `spend_timezone` (UTC), install-wide detection thresholds, soft-budget defaults.
 
 **`kman demo`** runs a throwaway install in a temp directory with an in-process mock upstream, seeds a week of compressed traffic that sets off the incidents kman exists for, and opens the dashboard. It shows a "DEMO" banner everywhere, picks free ports, sends nothing off the machine, deletes itself on exit, and refuses to run against a real config.
