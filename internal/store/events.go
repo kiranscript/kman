@@ -195,6 +195,20 @@ func (tx *Tx) UsageSince(since time.Time) ([]UsageRow, error) {
 	return out, nil
 }
 
+// FirstUsageHour is the start of the earliest hour usage_hourly holds a row for,
+// of any key, and the zero time when it holds none. It is how far back kman has
+// been counting.
+func (tx *Tx) FirstUsageHour() (time.Time, error) {
+	var hour sql.NullInt64
+	if err := tx.tx.QueryRowContext(tx.ctx, `SELECT MIN(hour) FROM usage_hourly`).Scan(&hour); err != nil {
+		return time.Time{}, typed(err, "read usage")
+	}
+	if !hour.Valid {
+		return time.Time{}, nil
+	}
+	return fromMilli(hour.Int64), nil
+}
+
 // LastUsed is, for each key that has forwarded a request, the start of the
 // latest hour in which it did. A key that was only refused is a key that was
 // not used, so it is absent, as is a key with no events. It reads usage_hourly,

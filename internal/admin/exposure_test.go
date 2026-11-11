@@ -161,6 +161,27 @@ func TestAKeyUnusedForThirtyDaysIsFoundAndAKeyUsedSinceIsNot(t *testing.T) {
 	}
 }
 
+// Traffic from before events shipped left no usage_hourly rows, so a key with no
+// record is only unused if usage has been recorded for the whole 30 days.
+func TestAKeyWithNoUsageRecordIsNotCalledUnusedUntilUsageHasBeenRecordedForTheWholeWindow(t *testing.T) {
+	in, _ := withCredential(t)
+	old := in.createKey(t, admin.CreateKeyRequest{Name: "old", Upstream: "openai", Policy: locked("203.0.113.0/24"), TTLSeconds: seconds(300 * days)}).Key
+	busy := in.createKey(t, admin.CreateKeyRequest{Name: "busy", Upstream: "openai", Policy: locked("203.0.113.0/24"), TTLSeconds: seconds(300 * days)}).Key
+
+	in.now = t0.Add(60 * days) // the key is 60 days old, and nothing has been recorded
+	if r := rulesOf(in.exposure(t), old.ID); len(r) != 0 {
+		t.Errorf("with no usage recorded at all, findings = %v, want none: kman cannot tell", r)
+	}
+	in.used(t, busy.ID, t0.Add(50*days)) // events started 10 days ago
+	if r := rulesOf(in.exposure(t), old.ID); len(r) != 0 {
+		t.Errorf("with usage recorded for 10 days, findings = %v, want none", r)
+	}
+	in.used(t, busy.ID, t0.Add(25*days)) // events started 35 days ago
+	if r := rulesOf(in.exposure(t), old.ID); len(r) != 1 || r[0] != admin.ExposureUnused {
+		t.Errorf("with usage recorded for 35 days, findings = %v, want unused", r)
+	}
+}
+
 func TestExposureLooksOnlyAtKeysThatWorkNow(t *testing.T) {
 	in, _ := withCredential(t)
 	disabled := in.createKey(t, admin.CreateKeyRequest{Name: "disabled", Upstream: "openai"}).Key
@@ -188,6 +209,8 @@ func TestExposureLooksOnlyAtKeysThatWorkNow(t *testing.T) {
 func TestEveryRuleThatAKeyBreaksIsAFindingOfItsOwn(t *testing.T) {
 	in, _ := withCredential(t)
 	k := in.createKey(t, admin.CreateKeyRequest{Name: "bad", Upstream: "openai", TTLSeconds: seconds(300 * days)}).Key
+	other := in.createKey(t, admin.CreateKeyRequest{Name: "other", Upstream: "openai", Policy: locked("203.0.113.0/24"), TTLSeconds: seconds(300 * days)}).Key
+	in.used(t, other.ID, t0.Add(days)) // usage has been recorded for longer than the window
 	in.sqlExec(t, `UPDATE virtual_keys SET expires_at = NULL WHERE key_id = ?`, k.ID)
 	in.now = t0.Add(60 * days)
 	r := rulesOf(in.exposure(t), k.ID)

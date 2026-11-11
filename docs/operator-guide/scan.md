@@ -54,9 +54,11 @@ It looks at the keys that work now (not disabled, revoked or expired), and lists
 |---|---|---|
 | **open to every address** | The policy has no `allowed_cidrs` and no `allowed_countries`, so a stolen key works from anywhere ([Address locks and GeoIP](geoip.md)). | `kman key update <key> --policy '…'`: the key's own policy with `allowed_cidrs` added. Replace the `<network/bits>` placeholder with where the key is used from; the command is refused until you do. |
 | **never expires** | The key has no expiry. kman refuses to make one (`never` is not a TTL), so a key like this did not come from kman's own commands. | `kman key update <key> --ttl <duration>`: the default key TTL, or what is left of the maximum key lifetime. If none is left, `kman key revoke <key>`: create a replacement with `kman key create`. |
-| **unused for 30 days** | The key forwarded no request for 30 days, or it has never been used and is older than 30 days. A request kman refused is not a use. | `kman key disable <key>`, which you can undo with `kman key enable`. |
+| **unused for 30 days** | The key forwarded no request for 30 days, or it has never been used and is older than 30 days (once kman has been recording usage for 30 days; see below). A request kman refused is not a use. | `kman key disable <key>`, which you can undo with `kman key enable`. |
 
-A key that breaks more than one rule is listed once per rule. The last use comes from kman's hourly usage, so it is as precise as an hour. It needs a running kman and an admin login, like every command except `scan`, and it changes nothing.
+A key that breaks more than one rule is listed once per rule. The last use comes from kman's hourly usage, so it is as precise as an hour.
+
+**Right after an upgrade, a key that was never recorded is not called unused.** Traffic from before kman recorded hourly usage left nothing to find, so a key with no usage record at all is reported as unused only when the key is older than 30 days *and* hourly usage reaches back at least 30 days (some key has a usage row that old). Until then it is left out rather than guessed about, and the finding appears by itself once kman has been recording for 30 days. A key that has a usage record is judged by its last use, as above. If you lower [retention](backup.md#retention) for hourly usage under 30 days, a key with no record is never reported. It needs a running kman and an admin login, like every command except `scan`, and it changes nothing.
 
 `--json` prints the admin API's response: `{"findings": [...], "keys_checked": N}`, each finding with `key_id`, `name`, `rule` (`open_to_every_address`, `never_expires` or `unused`), `message`, `fix` and, for `unused`, `last_used_at`.
 

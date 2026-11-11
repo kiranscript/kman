@@ -45,7 +45,9 @@ type ExposureFinding struct {
 // leaked: open to every address (no allowed_cidrs and no allowed_countries,
 // SPEC §6), never expiring, or not used for 30 days. It reads and changes
 // nothing, and works from usage_hourly, so "used" is as fine as an hour. A
-// request kman refused is not a use.
+// request kman refused is not a use. A key with no usage record is called unused
+// only once usage_hourly reaches back 30 days or more, since traffic from before
+// usage was recorded left no record to find.
 func (s *Service) Exposure(ctx context.Context) (Exposure, error) {
 	out := Exposure{Findings: []ExposureFinding{}}
 	now := s.now()
@@ -58,6 +60,13 @@ func (s *Service) Exposure(ctx context.Context) (Exposure, error) {
 		if err != nil {
 			return err
 		}
+		recordedSince, err := tx.FirstUsageHour()
+		if err != nil {
+			return err
+		}
+		// Traffic from before usage was recorded left no row, so a key with none
+		// is idle only if usage has been recorded for the whole window.
+		recordedWindow := !recordedSince.IsZero() && now.Sub(recordedSince) >= unusedAfter
 		settings, err := loadSettings(tx)
 		if err != nil {
 			return err
@@ -91,7 +100,7 @@ func (s *Service) Exposure(ctx context.Context) (Exposure, error) {
 			if !last.IsZero() {
 				idleSince = last
 			}
-			if idle := now.Sub(idleSince); idle >= unusedAfter {
+			if idle := now.Sub(idleSince); idle >= unusedAfter && (!last.IsZero() || recordedWindow) {
 				f := found(ExposureUnused, "", "kman key disable "+ref)
 				days := int(idle / (24 * time.Hour))
 				if last.IsZero() {
