@@ -9,6 +9,8 @@ All notable changes to kman are recorded here. The format follows
 
 ### Added
 
+- `kman scan <path>...` finds kman keys in files and standard input, offline. It matches the published pattern, confirms each match by its checksum, reports a child key at `low` severity as "child key (short-lived)", never prints a secret, names the key id to revoke, and exits 3 when it finds one. `--json` is the report.
+- `kman exposure [--strict]` lists the keys that work now and are open to every address, never expire, or have forwarded nothing for 30 days, each with the command that fixes it. `--strict` exits 3 on findings. `GET /admin/v1/exposure` is its admin API route.
 - Address locks. A key's policy takes `allowed_cidrs` (networks, or bare addresses) and `allowed_countries` (ISO 3166-1 codes); a request from anywhere else is refused with 403 `address_not_allowed` before its body is read. With both, the address must satisfy both. The client address is the connection's, or `X-Forwarded-For` only through `trusted_proxies`.
 - `geoip` in `kman.yaml`: `country_db` and `asn_db`, paths to `.mmdb` files, read at startup. `kman geoip update` downloads DB-IP Lite (CC BY 4.0) there, and is the only place kman contacts DB-IP; `--source` takes a mirror. A database you supply works as well.
 - A country lock with no country database is refused when the policy is set, with a message saying what to do; kman refuses to start with country-locked keys and no database, or with a named database that cannot be opened. An address no database knows fails a country lock.

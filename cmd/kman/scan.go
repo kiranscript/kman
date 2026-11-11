@@ -17,7 +17,10 @@ import (
 const scanUsage = "usage: kman scan [--json] <path>...\n" +
 	"\n" +
 	"Looks for kman keys in files, and in a directory's files and subdirectories. A path of - reads standard input,\n" +
-	"so `git log -p | kman scan -` searches history. It works offline, with no server and no login."
+	"so `git log -p | kman scan -` searches history. It works offline, with no server and no login.\n" +
+	"\n" +
+	"A match is confirmed by its checksum, and a secret is never printed: a finding is the file, the line and the key id.\n" +
+	"Exit codes: 0 nothing found, 3 a key was found, 1 an error or a file it could not read."
 
 // scanReport is what kman scan --json prints.
 type scanReport struct {
