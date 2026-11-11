@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/gateway"
 	"github.com/kirank55/kman/internal/policy/geoip"
 )
@@ -153,5 +154,43 @@ func TestEveryRequestIsPlacedWhenADatabaseIsGiven(t *testing.T) {
 	want := seen{netip.MustParseAddr("203.0.113.7"), geoip.Info{Country: "US", ASN: 64500}}
 	if len(got) != 1 || got[0] != want {
 		t.Errorf("emitted %+v, want [%+v]", got, want)
+	}
+}
+
+// The events carry where a request came from, when a GeoIP database is given:
+// the country and ASN the lock was checked against, for a request that was
+// forwarded and for one that was refused (SPEC §9).
+func TestEventsCarryTheCountryAndASNWhenADatabaseIsGiven(t *testing.T) {
+	geo := &places{known: map[string]geoip.Info{
+		"203.0.113.7":  {Country: "US", ASN: 64500},
+		"198.51.100.7": {Country: "FR", ASN: 64501},
+	}}
+	w := watch(t, events.Options{})
+	s, up, secret := guarded(t, `{"allowed_countries":["US"]}`, []string{"* /**"}, withGeo(geo), trustLoopback, func(o *gateway.Options) { o.Events = w.bus })
+
+	if resp, body := s.send("GET", "/v1/x", "", forwardedFor(secret, "203.0.113.7")); resp.StatusCode != 200 {
+		t.Fatalf("from the allowed country = %d %s", resp.StatusCode, body)
+	}
+	up.next(t)
+	if e := w.next(t); e.Kind != events.KindRequest || e.Country != "US" || e.ASN != 64500 || e.ClientIP != netip.MustParseAddr("203.0.113.7") {
+		t.Errorf("forwarded request's event = %+v, want a request from US, AS64500, 203.0.113.7", e)
+	}
+
+	resp, body := s.send("GET", "/v1/x", "", forwardedFor(secret, "198.51.100.7"))
+	wantRefusal(t, resp, body, http.StatusForbidden, "address_not_allowed")
+	if e := w.next(t); e.Kind != events.KindBlocked || e.BlockedCode != "address_not_allowed" || e.Country != "FR" || e.ASN != 64501 {
+		t.Errorf("refused request's event = %+v, want a blocked event from FR, AS64501", e)
+	}
+}
+
+func TestEventsCarryNoCountryOrASNWithNoDatabase(t *testing.T) {
+	w := watch(t, events.Options{})
+	s, up, secret := guarded(t, `{}`, []string{"* /**"}, func(o *gateway.Options) { o.Events = w.bus })
+	if resp, body := s.send("GET", "/v1/x", "", withBearer(secret)); resp.StatusCode != 200 {
+		t.Fatalf("= %d %s", resp.StatusCode, body)
+	}
+	up.next(t)
+	if e := w.next(t); e.Country != "" || e.ASN != 0 {
+		t.Errorf("event = %+v, want no country or ASN", e)
 	}
 }
