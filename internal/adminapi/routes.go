@@ -81,6 +81,11 @@ var routes = []route{
 	op("DELETE", "/credentials/{ref}", "removeCredential", "Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it", http.StatusOK, Service.RemoveCredential),
 	op("POST", "/credentials/{ref}/compromise", "compromiseCredential", "Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once", http.StatusOK, Service.CompromiseCredential),
 
+	op0("GET", "/channels", "listChannels", "List the alert channels, with what each one's outbox holds, never their addresses", Service.ListChannels),
+	op("POST", "/channels", "addChannel", "Add a Slack or signed-webhook alert channel; a webhook's signing secret is returned only this once", http.StatusCreated, Service.AddChannel),
+	op("POST", "/channels/{ref}/test", "testChannel", "Send a test alert to a channel now and say whether it arrived", http.StatusOK, Service.TestChannel),
+	op("DELETE", "/channels/{ref}", "removeChannel", "Remove an alert channel and give up the alerts still waiting for it", http.StatusOK, Service.RemoveChannel),
+
 	op("GET", "/keys", "listKeys", "List every virtual key, or the one with a name, never their secrets", http.StatusOK, Service.ListKeys),
 	op("POST", "/keys", "createKey", "Create a virtual key on an upstream; its secret is returned only this once", http.StatusCreated, Service.CreateKey),
 	op("GET", "/keys/{id}", "getKey", "Read one virtual key, by key id", http.StatusOK, Service.GetKey),

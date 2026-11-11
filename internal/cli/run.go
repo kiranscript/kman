@@ -59,6 +59,7 @@ var commands = []command{
 	{"upstream", "add, list, show, update, remove or sync upstreams", cmdUpstream},
 	{"credential", "add, update or remove credentials", cmdCredential},
 	{"key", "create, list, show, update, disable, enable or revoke virtual keys", cmdKey},
+	{"channel", "add, list, test or remove alert channels", cmdChannel},
 }
 
 // Commands names the online commands Run serves, for kman's usage line.

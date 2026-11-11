@@ -1,6 +1,37 @@
 {
   "components": {
     "schemas": {
+      "AddChannelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "slack or webhook.",
+            "type": "string"
+          },
+          "lifecycle_alerts": {
+            "description": "Whether the channel also takes spend and lifecycle warnings. Default true.",
+            "type": "boolean"
+          },
+          "min_severity": {
+            "description": "The lowest severity the channel takes: low, medium, high or critical. Default medium.",
+            "type": "string"
+          },
+          "name": {
+            "description": "1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit, unique among channels not removed.",
+            "type": "string"
+          },
+          "url": {
+            "description": "Where alerts go: a Slack incoming-webhook address, or the webhook's. It is https, or http to this machine. kman seals it and never shows it again.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "url"
+        ],
+        "type": "object"
+      },
       "AddCredentialRequest": {
         "additionalProperties": false,
         "properties": {
@@ -231,6 +262,99 @@
         ],
         "type": "object"
       },
+      "Channel": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "delivered": {
+            "description": "How many alerts it has been sent, until they are pruned.",
+            "type": "integer"
+          },
+          "failed": {
+            "description": "How many alerts were given up on.",
+            "type": "integer"
+          },
+          "host": {
+            "description": "The host of its address, which is all of the address that is shown.",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "slack or webhook.",
+            "type": "string"
+          },
+          "last_error": {
+            "description": "Why the latest failed attempt failed. Never the address.",
+            "type": "string"
+          },
+          "lifecycle_alerts": {
+            "description": "Whether it also takes spend and lifecycle warnings.",
+            "type": "boolean"
+          },
+          "min_severity": {
+            "description": "The lowest severity it takes: low, medium, high or critical.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pending": {
+            "description": "How many alerts wait in the outbox for it.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "host",
+          "min_severity",
+          "lifecycle_alerts",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ChannelList": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/Channel"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "channels"
+        ],
+        "type": "object"
+      },
+      "ChannelTestResult": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "description": "The channel's name.",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why the test alert did not arrive. Never the address.",
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "channel",
+          "ok"
+        ],
+        "type": "object"
+      },
       "CompromiseCredentialRequest": {
         "additionalProperties": false,
         "properties": {
@@ -331,6 +455,22 @@
         "required": [
           "token",
           "secret"
+        ],
+        "type": "object"
+      },
+      "CreatedChannel": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "signing_secret": {
+            "description": "For a webhook, the secret that signs each request (kmwhsec_...), shown only this once. A receiver recomputes the signature with it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
         ],
         "type": "object"
       },
@@ -1625,6 +1765,148 @@
           }
         },
         "summary": "Read a page of the audit log, oldest entry first"
+      }
+    },
+    "/admin/v1/channels": {
+      "get": {
+        "operationId": "listChannels",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List the alert channels, with what each one's outbox holds, never their addresses"
+      },
+      "post": {
+        "operationId": "addChannel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddChannelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedChannel"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Add a Slack or signed-webhook alert channel; a webhook's signing secret is returned only this once"
+      }
+    },
+    "/admin/v1/channels/{ref}": {
+      "delete": {
+        "operationId": "removeChannel",
+        "parameters": [
+          {
+            "description": "The channel's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Remove an alert channel and give up the alerts still waiting for it"
+      }
+    },
+    "/admin/v1/channels/{ref}/test": {
+      "post": {
+        "operationId": "testChannel",
+        "parameters": [
+          {
+            "description": "The channel's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelTestResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Send a test alert to a channel now and say whether it arrived"
       }
     },
     "/admin/v1/credentials": {

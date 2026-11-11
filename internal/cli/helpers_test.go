@@ -38,6 +38,8 @@ type install struct {
 	// spend is what the meter says a key has spent, for a service made after it is set. Nil
 	// is no meter.
 	spend func(keyID, policy string) admin.KeySpend
+	// alerts stands for the alert service, for a service made after it is set.
+	alerts admin.Alerter
 }
 
 // withSpend restarts the API over a meter that says what spend gives.
@@ -127,6 +129,7 @@ func newInstallWith(t *testing.T, presets []registry.Preset, opts ...func(*admin
 			Prices: func() admin.PriceTable { return prices }}
 		if in != nil {
 			o.Spend = in.spend
+			o.Alerts = in.alerts
 		}
 		return admin.New(o)
 	}

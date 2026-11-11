@@ -21,6 +21,10 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `POST /admin/v1/admin-tokens/{name}/revoke` | Revoke an admin token; the install's last live token cannot be revoked |
 | `POST /admin/v1/admin-tokens/{name}/rotate` | Give an admin token a new secret; the old one stops working at once |
 | `GET /admin/v1/audit` | Read a page of the audit log, oldest entry first |
+| `GET /admin/v1/channels` | List the alert channels, with what each one's outbox holds, never their addresses |
+| `POST /admin/v1/channels` | Add a Slack or signed-webhook alert channel; a webhook's signing secret is returned only this once |
+| `DELETE /admin/v1/channels/{ref}` | Remove an alert channel and give up the alerts still waiting for it |
+| `POST /admin/v1/channels/{ref}/test` | Send a test alert to a channel now and say whether it arrived |
 | `POST /admin/v1/credentials` | Seal a secret as a credential on an upstream; it is never shown again |
 | `DELETE /admin/v1/credentials/{ref}` | Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it |
 | `PATCH /admin/v1/credentials/{ref}` | Rename a credential or replace its secret |
@@ -95,6 +99,40 @@ Read a page of the audit log, oldest entry first. Operation id `listAudit`.
 | `latest` | query | boolean | no | Return the newest entries instead. after must then be 0. |
 
 Response 200: [AuditPage](#auditpage).
+
+### `GET /admin/v1/channels`
+
+List the alert channels, with what each one's outbox holds, never their addresses. Operation id `listChannels`.
+
+Response 200: [ChannelList](#channellist).
+
+### `POST /admin/v1/channels`
+
+Add a Slack or signed-webhook alert channel; a webhook's signing secret is returned only this once. Operation id `addChannel`.
+
+Request body: [AddChannelRequest](#addchannelrequest).
+
+Response 201: [CreatedChannel](#createdchannel).
+
+### `DELETE /admin/v1/channels/{ref}`
+
+Remove an alert channel and give up the alerts still waiting for it. Operation id `removeChannel`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `ref` | path | string | yes | The channel's name or id. |
+
+Response 200: [Channel](#channel).
+
+### `POST /admin/v1/channels/{ref}/test`
+
+Send a test alert to a channel now and say whether it arrived. Operation id `testChannel`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `ref` | path | string | yes | The channel's name or id. |
+
+Response 200: [ChannelTestResult](#channeltestresult).
 
 ### `POST /admin/v1/credentials`
 
@@ -362,6 +400,16 @@ Response 200: [Whoami](#whoami).
 
 ## Schemas
 
+### `AddChannelRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `kind` | string | yes | slack or webhook. |
+| `lifecycle_alerts` | boolean | no | Whether the channel also takes spend and lifecycle warnings. Default true. |
+| `min_severity` | string | no | The lowest severity the channel takes: low, medium, high or critical. Default medium. |
+| `name` | string | yes | 1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit, unique among channels not removed. |
+| `url` | string | yes | Where alerts go: a Slack incoming-webhook address, or the webhook's. It is https, or http to this machine. kman seals it and never shows it again. |
+
 ### `AddCredentialRequest`
 
 | Field | Type | Required | Description |
@@ -434,6 +482,36 @@ Response 200: [Whoami](#whoami).
 | `header` | string | no | For the header style, the template: Name: value {key}. |
 | `style` | string | yes | header or basic. |
 
+### `Channel`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `created_at` | string | yes |  |
+| `delivered` | integer | no | How many alerts it has been sent, until they are pruned. |
+| `failed` | integer | no | How many alerts were given up on. |
+| `host` | string | yes | The host of its address, which is all of the address that is shown. |
+| `id` | string | yes |  |
+| `kind` | string | yes | slack or webhook. |
+| `last_error` | string | no | Why the latest failed attempt failed. Never the address. |
+| `lifecycle_alerts` | boolean | yes | Whether it also takes spend and lifecycle warnings. |
+| `min_severity` | string | yes | The lowest severity it takes: low, medium, high or critical. |
+| `name` | string | yes |  |
+| `pending` | integer | no | How many alerts wait in the outbox for it. |
+
+### `ChannelList`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `channels` | list of [Channel](#channel) | yes |  |
+
+### `ChannelTestResult`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `channel` | string | yes | The channel's name. |
+| `error` | string | no | Why the test alert did not arrive. Never the address. |
+| `ok` | boolean | yes |  |
+
 ### `CompromiseCredentialRequest`
 
 | Field | Type | Required | Description |
@@ -471,6 +549,13 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `secret` | string | yes | The token itself (kma_...). kman keeps only its hash, so it is shown only this once. |
 | `token` | [AdminToken](#admintoken) | yes |  |
+
+### `CreatedChannel`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `channel` | [Channel](#channel) | yes |  |
+| `signing_secret` | string | no | For a webhook, the secret that signs each request (kmwhsec_...), shown only this once. A receiver recomputes the signature with it. |
 
 ### `CreatedKey`
 

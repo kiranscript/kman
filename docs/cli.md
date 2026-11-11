@@ -21,6 +21,7 @@ Every command that talks to a running kman takes `--config-dir`, the directory h
 | [`kman upstream`](#kman-upstream) | add, list, show, update, remove or sync upstreams |
 | [`kman credential`](#kman-credential) | add, update or remove credentials |
 | [`kman key`](#kman-key) | create, list, show, update, disable, enable or revoke virtual keys |
+| [`kman channel`](#kman-channel) | add, list, test or remove alert channels |
 
 ## `kman init`
 
@@ -611,6 +612,64 @@ Replaces the key's secret and keeps the key: its id, spend, policy and history s
     	the config directory holding the credentials file (default "$HOME/.config/kman")
   -grace string
     	how long the old secret keeps working, such as 24h; 0 ends it at once (default "0")
+  -json
+    	print the admin API's JSON response
+```
+
+## `kman channel`
+
+Add, list, test or remove alert channels.
+
+### `kman channel add`
+
+```
+usage: kman channel add <name> --kind slack|webhook [--url-env VAR] [--min-severity medium] [--lifecycle-alerts=false] [--json]
+
+The address is asked for without echo, or read as one line of stdin when piped, or from the variable --url-env names. It is never an argument, which would end up in shell history and process lists, and a Slack address is itself a secret. kman seals it and never shows it again. A webhook also gets a signing secret, printed once.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+  -kind string
+    	slack, or webhook for a signed webhook
+  -lifecycle-alerts
+    	also take spend and lifecycle warnings (default true)
+  -min-severity string
+    	the lowest severity the channel takes: low, medium (the default), high or critical
+  -url-env string
+    	read the address from this environment variable
+```
+
+### `kman channel list`
+
+```
+usage: kman channel list [--json]
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+### `kman channel test`
+
+```
+usage: kman channel test <name> [--json]
+
+Sends one test alert to the channel now, whatever its minimum severity.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+### `kman channel rm`
+
+```
+usage: kman channel rm <name> [--json]
+
+Removes the channel, wipes its address, and gives up the alerts still waiting for it.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
   -json
     	print the admin API's JSON response
 ```

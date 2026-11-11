@@ -42,6 +42,8 @@ type install struct {
 	// clock, when set, is the clock instead of now: for tests in a synctest
 	// bubble, where time moves by itself.
 	clock func() time.Time
+	// alerts stands for the alert service, when a test shows channels.
+	alerts admin.Alerter
 }
 
 func newInstall(t *testing.T) *install {
@@ -83,6 +85,7 @@ func (in *install) service(presets []registry.Preset) *admin.Service {
 		Presets:         presets,
 		NormalizePolicy: func(raw []byte) (int, []byte, error) { return in.normalize(raw) },
 		Spend:           in.spend,
+		Alerts:          in.alerts,
 		Apply: func(c registry.Change) {
 			in.applied = append(in.applied, c)
 			in.reg.Apply(c)
