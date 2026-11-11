@@ -59,6 +59,8 @@ type API interface {
 	RemovePriceOverride(ctx context.Context, req PriceOverrideRef) (PriceOverride, error)
 	ImportPriceOverrides(ctx context.Context, req PriceOverrideImport) (PriceOverrideImportResult, error)
 
+	Exposure(ctx context.Context) (Exposure, error)
+
 	Backup(ctx context.Context) (Download, error)
 	Prune(ctx context.Context, req PruneRequest) (PruneResult, error)
 

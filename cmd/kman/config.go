@@ -82,6 +82,8 @@ type Config struct {
 	// whether a newer release exists. It is off by default and is the only way kman
 	// reaches the network by itself (ADR 0008).
 	UpdateCheck bool `yaml:"update_check,omitempty"`
+	// GeoIP names the GeoIP databases kman reads, if any (see GeoIPConfig).
+	GeoIP GeoIPConfig `yaml:"geoip,omitempty"`
 }
 
 // Retention settings.
@@ -188,6 +190,9 @@ func (c Config) check() error {
 	case "", retentionDefault, retentionKeepEverything:
 	default:
 		return fmt.Errorf("retention %q is not %s or %s: kman prunes to its defaults, or never", c.Retention, retentionDefault, retentionKeepEverything)
+	}
+	if err := c.GeoIP.check(); err != nil {
+		return err
 	}
 	for _, l := range []struct {
 		name string

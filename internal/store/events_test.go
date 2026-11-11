@@ -125,3 +125,28 @@ func TestABatchIsOneTransaction(t *testing.T) {
 		t.Fatalf("a failed batch left %d events and %d usage rows", len(ev), len(use))
 	}
 }
+
+func TestLastUsedIsTheLatestHourWithAForwardedRequest(t *testing.T) {
+	s := open(t)
+	d := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	do(t, s, func(tx *store.Tx) error {
+		return tx.AddEvents([]store.EventRow{
+			{Time: d.Add(3*time.Hour + 20*time.Minute), Kind: "request", KeyID: "aaaaaaaa", Status: 200},
+			{Time: d.Add(5*time.Hour + 5*time.Minute), Kind: "session", KeyID: "aaaaaaaa", Status: 200},
+			{Time: d.Add(9 * time.Hour), Kind: "blocked", KeyID: "aaaaaaaa", Status: 403, BlockedCode: "address_not_allowed"}, // an attempt, not a use
+			{Time: d.Add(48 * time.Hour), Kind: "request", KeyID: "bbbbbbbb", Status: 502},
+			{Time: d.Add(72 * time.Hour), Kind: "blocked", KeyID: "cccccccc", Status: 403, BlockedCode: "invalid_key"},
+			{Time: d.Add(80 * time.Hour), Kind: "request", Status: 200}, // no key
+		})
+	})
+	var got map[string]time.Time
+	do(t, s, func(tx *store.Tx) error {
+		var err error
+		got, err = tx.LastUsed()
+		return err
+	})
+	want := map[string]time.Time{"aaaaaaaa": d.Add(5 * time.Hour), "bbbbbbbb": d.Add(48 * time.Hour)}
+	if len(got) != len(want) || !got["aaaaaaaa"].Equal(want["aaaaaaaa"]) || !got["bbbbbbbb"].Equal(want["bbbbbbbb"]) {
+		t.Errorf("LastUsed = %v, want %v (the start of the latest hour with a forwarded request; blocked attempts do not count)", got, want)
+	}
+}

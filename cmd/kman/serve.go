@@ -19,7 +19,6 @@ import (
 	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/gateway"
 	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/pricing"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
@@ -90,6 +89,12 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 		return err
 	}
 
+	geo, err := openGeoIP(cfg)
+	if err != nil {
+		return err
+	}
+	defer geo.Close()
+
 	st, err := store.Open(ctx, store.Options{Dir: cfg.DataDir, Now: s.now(), Logger: log})
 	if err != nil {
 		return err
@@ -115,7 +120,7 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	// when the operator turned it on (ADR 0008).
 	var updates *updateChecker
 	adminOpts := admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices,
-		ApplyPrices: publishOverrides(prices), NormalizePolicy: policy.Normalize,
+		ApplyPrices: publishOverrides(prices), NormalizePolicy: normalizePolicy(geo),
 		Spend: func(keyID, policyJSON string) admin.KeySpend { return keySpend(spend, s.now(), keyID, policyJSON) }}
 	if cfg.UpdateCheck {
 		current, _, _, _ := stamp()
@@ -125,6 +130,9 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	}
 	svc := admin.New(adminOpts)
 	if err := svc.Load(ctx); err != nil {
+		return err
+	}
+	if err := checkCountryLocks(reg.Snapshot(), geo); err != nil {
 		return err
 	}
 	settleCtx, stopSettling := context.WithCancel(ctx)
@@ -163,7 +171,11 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 		more = append(more, updateMetric(updates))
 	}
 	metrics := pipe.handler(s.now, priceDataGenerated(), more...)
-	proxy := gateway.New(gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, Meter: spend, Events: pipe.bus, TrustedProxies: cfg.trustedProxies()})
+	gwOpts := gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, Meter: spend, Events: pipe.bus, TrustedProxies: cfg.trustedProxies()}
+	if geo != nil { // a nil *geoip.DB in the interface would be a database that knows nothing
+		gwOpts.Geo = geo
+	}
+	proxy := gateway.New(gwOpts)
 	ls, err := listen(cfg, log, proxy, adminHandler(svc, log, metrics))
 	if err != nil {
 		return err

@@ -26,6 +26,7 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `DELETE /admin/v1/credentials/{ref}` | Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it |
 | `PATCH /admin/v1/credentials/{ref}` | Rename a credential or replace its secret |
 | `POST /admin/v1/credentials/{ref}/compromise` | Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once |
+| `GET /admin/v1/exposure` | List the keys that work now and would be easy to abuse: open to every address, never expiring, or unused for 30 days, each with the command that fixes it |
 | `GET /admin/v1/keys` | List every virtual key, or the one with a name, never their secrets |
 | `POST /admin/v1/keys` | Create a virtual key on an upstream; its secret is returned only this once |
 | `GET /admin/v1/keys/{id}` | Read one virtual key, by key id |
@@ -146,6 +147,12 @@ Replace a leaked credential's secret and rotate every virtual key on it, with no
 Request body: [CompromiseCredentialRequest](#compromisecredentialrequest).
 
 Response 200: [CompromisedCredential](#compromisedcredential).
+
+### `GET /admin/v1/exposure`
+
+List the keys that work now and would be easy to abuse: open to every address, never expiring, or unused for 30 days, each with the command that fixes it. Operation id `getExposure`.
+
+Response 200: [Exposure](#exposure).
 
 ### `GET /admin/v1/keys`
 
@@ -535,6 +542,24 @@ Response 200: [Whoami](#whoami).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `error` | [Error](#error) | yes |  |
+
+### `Exposure`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `findings` | list of [ExposureFinding](#exposurefinding) | yes |  |
+| `keys_checked` | integer | yes | How many keys were looked at: the keys that work now. A disabled, revoked or expired key cannot be abused, and a canary is meant to be left alone. |
+
+### `ExposureFinding`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `fix` | string | yes | The kman command that fixes it, ready to run. An open key's has a placeholder to replace with the network the key is used from. |
+| `key_id` | string | yes |  |
+| `last_used_at` | string | no | For unused: the start of the last hour in which the key forwarded a request. Absent if it never has. |
+| `message` | string | yes |  |
+| `name` | string | no |  |
+| `rule` | string | yes | open_to_every_address, never_expires or unused. |
 
 ### `Key`
 

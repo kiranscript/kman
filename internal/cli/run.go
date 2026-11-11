@@ -61,6 +61,7 @@ var commands = []command{
 	{"key", "create, list, show, update, disable, enable or revoke virtual keys", cmdKey},
 	{"backup", "write a consistent copy of the database, while kman runs", backupFile},
 	{"prune", "delete events, hourly usage and delivered alerts older than a date, and the audit log's entries too if asked", pruneData},
+	{"exposure", "list the keys that would be easy to abuse if they leaked, each with the command that fixes it", cmdExposure},
 }
 
 // Commands names the online commands Run serves, for kman's usage line.

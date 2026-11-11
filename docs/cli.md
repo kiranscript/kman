@@ -3,7 +3,7 @@
 Generated from the help each command prints; do not edit by hand. Regenerate it with
 `go test ./cmd/kman -run CLIReferenceIsCurrent -update`. CI fails when it is stale.
 
-Every command that talks to a running kman takes `--config-dir`, the directory holding the credentials file `kman init` wrote, and every read command takes `--json`, which prints the admin API's response. `KMAN_ADMIN_URL` and `KMAN_ADMIN_TOKEN` override the credentials file. Exit codes: 0 success, 1 an error (usage errors included), 3 findings (not used by any v0.1.0 command).
+Every command that talks to a running kman takes `--config-dir`, the directory holding the credentials file `kman init` wrote, and every read command takes `--json`, which prints the admin API's response. `KMAN_ADMIN_URL` and `KMAN_ADMIN_TOKEN` override the credentials file. Exit codes: 0 success, 1 an error (usage errors included), 3 findings: `kman scan` found a key, or `kman exposure --strict` found a key to fix.
 
 | Command | What it does |
 |---|---|
@@ -13,6 +13,8 @@ Every command that talks to a running kman takes `--config-dir`, the directory h
 | [`kman rekey`](#kman-rekey) | replace the master key and the data key, with the server stopped |
 | [`kman restore`](#kman-restore) | replace the database with a backup, with the server stopped |
 | [`kman version`](#kman-version) | print the version, the commit and the build date; --check asks GitHub for a newer release |
+| [`kman geoip`](#kman-geoip) | download the DB-IP Lite GeoIP databases that country locks and events read (the one command that reaches DB-IP) |
+| [`kman scan`](#kman-scan) | find kman keys in files, offline, and say which key each is |
 | [`kman login`](#kman-login) | save an admin URL and token for the commands on this machine |
 | [`kman logout`](#kman-logout) | remove the saved admin URL and token |
 | [`kman admin-token`](#kman-admin-token) | create, list, rotate or revoke admin tokens |
@@ -24,6 +26,7 @@ Every command that talks to a running kman takes `--config-dir`, the directory h
 | [`kman key`](#kman-key) | create, list, show, update, disable, enable or revoke virtual keys |
 | [`kman backup`](#kman-backup) | write a consistent copy of the database, while kman runs |
 | [`kman prune`](#kman-prune) | delete events, hourly usage and delivered alerts older than a date, and the audit log's entries too if asked |
+| [`kman exposure`](#kman-exposure) | list the keys that would be easy to abuse if they leaked, each with the command that fixes it |
 
 ## `kman init`
 
@@ -113,6 +116,36 @@ Prints the version, the commit and the build date. With --check it also asks the
     	ask GitHub whether a newer release exists
   -json
     	print JSON
+```
+
+## `kman geoip`
+
+Download the DB-IP Lite GeoIP databases that country locks and events read (the one command that reaches DB-IP).
+
+### `kman geoip update`
+
+```
+usage: kman geoip update [--config-dir dir] [--source url]
+  -config-dir string
+    	the config directory holding kman.yaml (default ~/.config/kman, or %APPDATA%\kman on Windows)
+  -source string
+    	the address to download DB-IP Lite from, which serves dbip-country-lite-YYYY-MM.mmdb.gz and dbip-asn-lite-YYYY-MM.mmdb.gz: a mirror, for a network that cannot reach DB-IP (default "https://download.db-ip.com/free")
+```
+
+## `kman scan`
+
+Find kman keys in files, offline, and say which key each is.
+
+```
+usage: kman scan [--json] <path>...
+
+Looks for kman keys in files, and in a directory's files and subdirectories. A path of - reads standard input,
+so `git log -p | kman scan -` searches history. It works offline, with no server and no login.
+
+A match is confirmed by its checksum, and a secret is never printed: a finding is the file, the line and the key id.
+Exit codes: 0 nothing found, 3 a key was found, 1 an error or a file it could not read.
+  -json
+    	print the findings as JSON
 ```
 
 ## `kman login`
@@ -670,4 +703,18 @@ Deletes the events, the hourly usage and the alerts delivered before the date. D
     	the config directory holding the credentials file (default "$HOME/.config/kman")
   -json
     	print the admin API's JSON response
+```
+
+## `kman exposure`
+
+List the keys that would be easy to abuse if they leaked, each with the command that fixes it.
+
+```
+usage: kman exposure [--strict] [--json]
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+  -strict
+    	exit 3 when there are findings
 ```
