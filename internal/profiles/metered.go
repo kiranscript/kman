@@ -20,6 +20,14 @@ func (openAI) Prepare(h http.Header, path string, body []byte, injectUsage bool)
 
 func (openAI) UsageReader(h http.Header) *UsageReader { return newUsageReader(h, (*reported).openAI) }
 
+func (openAI) Meters() bool { return true }
+
+func (openAI) Ask(body []byte) Asked { return ask(body) }
+
+// Free is OpenAI's token counting and moderation: they report no usage, and
+// bill nothing.
+func (openAI) Free(path string) bool { return endsIn(path, "/input_tokens", "/moderations") }
+
 // anthropic is the Anthropic profile. Its streams report usage unasked.
 type anthropic struct{ generic }
 
@@ -30,6 +38,23 @@ func (anthropic) Prepare(h http.Header, _ string, body []byte, _ bool) []byte {
 
 func (anthropic) UsageReader(h http.Header) *UsageReader {
 	return newUsageReader(h, (*reported).anthropic)
+}
+
+func (anthropic) Meters() bool { return true }
+
+func (anthropic) Ask(body []byte) Asked { return ask(body) }
+
+// Free is Anthropic's token counting, which reports no usage and is free.
+func (anthropic) Free(path string) bool { return endsIn(path, "/count_tokens") }
+
+func endsIn(path string, suffixes ...string) bool {
+	path = strings.TrimSuffix(path, "/")
+	for _, s := range suffixes {
+		if strings.HasSuffix(path, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // askForIdentity asks for an uncompressed response, because the reader can't see

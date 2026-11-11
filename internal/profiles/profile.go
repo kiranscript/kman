@@ -22,6 +22,15 @@ type Profile interface {
 	// UsageReader returns what reads usage out of a response with these headers
 	// as it passes through, or nil when kman can't read it or doesn't meter it.
 	UsageReader(h http.Header) *UsageReader
+	// Meters reports whether this profile's upstreams are metered: every request
+	// has spend, capped or not. Generic is not.
+	Meters() bool
+	// Ask reads what a request body says about what it will cost. It has no
+	// Metered request for a profile that doesn't meter.
+	Ask(body []byte) Asked
+	// Free reports whether a route costs nothing and reports no usage, so a
+	// response with none isn't charged as a request that ran.
+	Free(path string) bool
 }
 
 // For returns the profile with this name, which is an upstream's Profile and not
@@ -43,6 +52,12 @@ type generic struct{}
 func (generic) Prepare(_ http.Header, _ string, body []byte, _ bool) []byte { return body }
 
 func (generic) UsageReader(http.Header) *UsageReader { return nil }
+
+func (generic) Meters() bool { return false }
+
+func (generic) Ask([]byte) Asked { return Asked{} }
+
+func (generic) Free(string) bool { return false }
 
 func (generic) Authorize(h http.Header, a registry.Auth, secret []byte) {
 	if a.Style == registry.AuthBasic {
