@@ -80,20 +80,24 @@ func (g *Gateway) respond(x *exchange, resp *http.Response) {
 		h["Content-Type"] = nil // net/http would otherwise guess one
 	}
 	flusher := http.NewResponseController(x.w)
+	// The app has the whole response once its last byte is out, or its head when no
+	// body follows, and may send its next request that instant. A request's
+	// reservation, its usage report and its hold on the body budget end before
+	// that, or the app could be refused for a cap or a budget it has not reached.
+	// So a response with no body is settled before its head goes out, and one with
+	// a length holds back its last byte until the settle. (Without a length, the
+	// end is written after the handler returns, which is after the settle.)
+	left := resp.ContentLength
+	switch {
+	case x.r.Method == http.MethodHead || resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified || left == 0:
+		g.release(x)
+		left = -1
+	}
 	x.w.WriteHeader(resp.StatusCode)
 	flusher.Flush() // errors here show up at the next write
 
 	buf := copyBuffers.Get().(*[32 << 10]byte)
 	defer copyBuffers.Put(buf)
-	// A response with a length is over for the app at its last byte, when the
-	// handler hasn't returned yet: an app that then sends its next request at once
-	// would meet this one's reservation, and could be refused for a cap it hasn't
-	// reached. So the last byte waits for the settle. (Without a length, the end is
-	// written after the handler returns, which is after the settle.)
-	left := resp.ContentLength
-	if x.r.Method == http.MethodHead || x.res == nil {
-		left = -1
-	}
 	for {
 		n, err := resp.Body.Read(buf[:])
 		if n > 0 {
@@ -109,7 +113,7 @@ func (g *Gateway) respond(x *exchange, resp *http.Response) {
 						return
 					}
 					flusher.Flush()
-					g.settle(x)
+					g.release(x)
 					chunk = chunk[n-1:]
 				}
 			}

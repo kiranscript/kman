@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strconv"
 	"strings"
@@ -258,5 +259,28 @@ func TestABodyThatIsNotJSONIsForwardedAsItCame(t *testing.T) {
 	s.send("POST", "/v1/chat/completions", `"stream":true`, withBearer(secret))
 	if got := rec.next(t); got.body != `"stream":true` {
 		t.Errorf("the upstream got %q", got.body)
+	}
+}
+
+// The report of what a response used arrives before the app has the whole of it, as
+// the settle does, so an app that reads the response and then looks sees it.
+func TestUsageIsReportedBeforeTheResponseIsComplete(t *testing.T) {
+	r := &reports{}
+	up := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(500)
+		io.WriteString(w, `{"error":{},"usage":{"input_tokens":3}}`)
+	})
+	s, secret, _ := meteredBehind(t, up, registry.ProfileAnthropic, false, r)
+	w := &endWatcher{header: http.Header{}, reserved: func() int64 {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return int64(len(r.got))
+	}}
+	req := httptest.NewRequestWithContext(t.Context(), "POST", "/v1/messages", strings.NewReader(`{}`))
+	req.Header = withBearer(secret)
+	s.gw.ServeHTTP(w, req)
+	if !w.wrote || w.atLast != 1 {
+		t.Errorf("%d usage reports had arrived when the response's last byte went out, want 1", w.atLast)
 	}
 }
