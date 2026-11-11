@@ -149,7 +149,7 @@ func TestKeyListShowsEveryKeyAndItsState(t *testing.T) {
 	var a, b admin.CreatedKey
 	in.kmanJSON(t, &a, "key", "create", "app-a", "--upstream", "openai", "--tag", "prod")
 	in.kmanJSON(t, &b, "key", "create", "--upstream", "openai", "--ttl", "1h")
-	in.setKeyStatus(t, a.Key.ID, "disabled")
+	in.kman(t, "key", "disable", a.Key.ID)
 	out := in.kman(t, "key", "list")
 	if !regexp.MustCompile(`ID\s+NAME\s+UPSTREAM\s+STATUS\s+EXPIRES\s+TAGS`).MatchString(out) ||
 		!regexp.MustCompile(a.Key.ID+`\s+app-a\s+openai\s+disabled\s+2027-02-02T12:00Z\s+prod`).MatchString(out) ||
@@ -232,5 +232,62 @@ func TestKeyShowSaysNothingOfSpendWhenThereIsNoMeter(t *testing.T) {
 	in.kman(t, "key", "create", "my-app", "--upstream", "openai")
 	if out := in.kman(t, "key", "show", "my-app"); strings.Contains(out, "spend") {
 		t.Errorf("key show:\n%s", out)
+	}
+}
+
+func TestKeyDisableEnableAndRevokeTakeANameOrAKeyId(t *testing.T) {
+	in := withOpenAI(t)
+	var k admin.CreatedKey
+	in.kmanJSON(t, &k, "key", "create", "my-app", "--upstream", "openai")
+	status := func() string {
+		t.Helper()
+		var got admin.Key
+		in.kmanJSON(t, &got, "key", "show", k.Key.ID)
+		return got.Status
+	}
+
+	out := in.kman(t, "key", "disable", "my-app")
+	if !strings.Contains(out, "Disabled key my-app ("+k.Key.ID+")") || status() != "disabled" {
+		t.Errorf("disable printed %q, status %s", out, status())
+	}
+	out = in.kman(t, "key", "enable", k.Key.ID)
+	if !strings.Contains(out, "Enabled key my-app") || status() != "active" {
+		t.Errorf("enable printed %q, status %s", out, status())
+	}
+	in.kman(t, "key", "disable", "my-app")
+	out = in.kman(t, "key", "revoke", "my-app")
+	if !strings.Contains(out, "Revoked key my-app") || status() != "revoked" {
+		t.Errorf("revoke printed %q, status %s", out, status())
+	}
+	var shown admin.Key
+	in.kmanJSON(t, &shown, "key", "revoke", k.Key.ID)
+	if shown.Status != "revoked" || shown.ID != k.Key.ID {
+		t.Errorf("revoke --json = %+v", shown)
+	}
+	if r := in.run(t, nil, "", "key", "list"); !regexp.MustCompile(k.Key.ID + `\s+my-app\s+openai\s+revoked`).MatchString(r.stdout) {
+		t.Errorf("key list:\n%s", r.stdout)
+	}
+}
+
+func TestARevokedKeyCannotBeEnabledFromTheCLI(t *testing.T) {
+	in := withOpenAI(t)
+	var k admin.CreatedKey
+	in.kmanJSON(t, &k, "key", "create", "my-app", "--upstream", "openai")
+	in.kman(t, "key", "revoke", k.Key.ID)
+	r := in.run(t, nil, "", "key", "enable", k.Key.ID)
+	if r.code != 1 || !strings.Contains(r.stderr, "revoked") {
+		t.Errorf("enable of a revoked key: exit %d, %s%s", r.code, r.stdout, r.stderr)
+	}
+}
+
+func TestKeyLifecycleCommandsNeedOneKeyAndKnowIt(t *testing.T) {
+	in := withOpenAI(t)
+	for _, action := range []string{"disable", "enable", "revoke"} {
+		if r := in.run(t, nil, "", "key", action); r.code != 1 {
+			t.Errorf("key %s with no key: exit %d, %s%s", action, r.code, r.stdout, r.stderr)
+		}
+		if r := in.run(t, nil, "", "key", action, "nobody"); r.code != 1 || !strings.Contains(r.stderr, "nobody") {
+			t.Errorf("key %s nobody: exit %d, %s", action, r.code, r.stderr)
+		}
 	}
 }

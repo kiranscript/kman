@@ -13,7 +13,7 @@ import (
 )
 
 func cmdKey(ctx context.Context, c *call) error {
-	sub, err := c.sub("<create|list|show|update> ...", "create", "list", "show", "update")
+	sub, err := c.sub("<create|list|show|update|disable|enable|revoke> ...", "create", "list", "show", "update", "disable", "enable", "revoke")
 	if err != nil {
 		return err
 	}
@@ -24,8 +24,44 @@ func cmdKey(ctx context.Context, c *call) error {
 		return keyList(ctx, c)
 	case "show":
 		return keyShow(ctx, c)
+	case "disable", "enable", "revoke":
+		return keyLifecycle(ctx, c, sub)
 	}
 	return keyUpdate(ctx, c)
+}
+
+// keyLifecycle is key disable, enable or revoke: one key, by name or key id,
+// stopped or restored from the next request.
+func keyLifecycle(ctx context.Context, c *call, action string) error {
+	fs := c.flags("key "+action+" <name or key id> [--json]", true)
+	pos, err := c.parse(fs, 1, 1)
+	if err != nil {
+		return err
+	}
+	cl, l, err := c.connect()
+	if err != nil {
+		return err
+	}
+	k, err := resolveKey(ctx, cl, pos[0])
+	if err != nil {
+		return c.explain(err, l)
+	}
+	run, done := cl.DisableKey, "Disabled"
+	switch action {
+	case "enable":
+		run, done = cl.EnableKey, "Enabled"
+	case "revoke":
+		run, done = cl.RevokeKey, "Revoked"
+	}
+	got, err := run(ctx, admin.KeyRef{ID: k.ID})
+	if err != nil {
+		return c.explain(err, l)
+	}
+	if c.json {
+		return c.printJSON(got)
+	}
+	fmt.Fprintf(c.env.Stdout, "%s key %s.\n", done, keyLabel(got))
+	return nil
 }
 
 // ttlFlag parses --ttl into seconds, and policyValue checks --policy is JSON

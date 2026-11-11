@@ -68,12 +68,6 @@ func (in *install) sqlExec(t *testing.T, query string, args ...any) {
 	}
 }
 
-// setKeyStatus moves a key to a status no command reaches yet (#44).
-func (in *install) setKeyStatus(t *testing.T, keyID, status string) {
-	t.Helper()
-	in.sqlExec(t, `UPDATE virtual_keys SET status = ? WHERE key_id = ?`, status, keyID)
-}
-
 // priceTableAt is when the test price table was generated: 3 days before t0.
 var priceTableAt = t0.AddDate(0, 0, -3)
 
