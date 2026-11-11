@@ -174,7 +174,7 @@ func TestRmRefusesWhileAKeyDependsAndWorksOtherwise(t *testing.T) {
 			t.Errorf("kman %v: exit %d, %s", args, r.code, r.stderr)
 		}
 	}
-	in.setKeyStatus(t, created.Key.ID, "revoked")
+	in.kman(t, "key", "revoke", created.Key.ID)
 	out := in.kman(t, "upstream", "rm", "openai")
 	if !strings.Contains(out, "openai") {
 		t.Errorf("output: %s", out)
