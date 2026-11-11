@@ -1,5 +1,7 @@
 package store
 
+import "time"
+
 // SpendRow is one key's spend for one day, from the spend_daily table. Day is
 // the date in the spend timezone, such as 2026-11-11. When rows are added, the
 // amounts are increments. Money is microdollars.
@@ -32,6 +34,15 @@ func (tx *Tx) AddSpend(rows []SpendRow) error {
 		}
 	}
 	return nil
+}
+
+// SpendLabels are the labels spend_daily and budget_alerts keep a moment under,
+// in the spend timezone loc: its day ("2026-11-04") and its month ("2026-11").
+// The meter that writes spend and the alerts that read it both take their
+// labels from here, so they never disagree about where a day ends.
+func SpendLabels(t time.Time, loc *time.Location) (day, month string) {
+	day = t.In(loc).Format(time.DateOnly)
+	return day, day[:len("2006-01")]
 }
 
 // SpendSince returns every row whose day is not before day, by key and day.

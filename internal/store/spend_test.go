@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/kirank55/kman/internal/store"
 )
@@ -68,4 +69,15 @@ func TestSpendForAKeyTheStoreDoesNotHoldIsDroppedAndTheRestIsKept(t *testing.T) 
 func TestAddingNoSpendStillTouchesTheStore(t *testing.T) {
 	s := open(t)
 	do(t, s, func(tx *store.Tx) error { return tx.AddSpend(nil) })
+}
+
+func TestSpendLabelsFollowTheSpendTimezone(t *testing.T) {
+	tokyo := time.FixedZone("JST", 9*3600)
+	at := time.Date(2026, 11, 30, 20, 0, 0, 0, time.UTC) // 05:00 on 1 December in Tokyo
+	if day, month := store.SpendLabels(at, time.UTC); day != "2026-11-30" || month != "2026-11" {
+		t.Errorf("UTC labels = %s, %s", day, month)
+	}
+	if day, month := store.SpendLabels(at, tokyo); day != "2026-12-01" || month != "2026-12" {
+		t.Errorf("Tokyo labels = %s, %s, want the next day and month", day, month)
+	}
 }

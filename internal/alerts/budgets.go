@@ -143,12 +143,12 @@ type window struct {
 }
 
 func newWindow(now time.Time, loc *time.Location) window {
-	local := now.In(loc)
-	y, m, d := local.Date()
-	day := time.Date(y, m, d, 0, 0, 0, 0, loc).Format(time.DateOnly)
-	w := window{day: day, month: day[:len("2006-01")], from: day[:len("2006-01")] + "-01"}
+	y, m, d := now.In(loc).Date()
+	day, month := store.SpendLabels(now, loc) // the labels the meter wrote spend under
+	w := window{day: day, month: month, from: month + "-01"}
 	for i := 7; i >= 1; i-- {
-		w.last7 = append(w.last7, time.Date(y, m, d-i, 0, 0, 0, 0, loc).Format(time.DateOnly))
+		earlier, _ := store.SpendLabels(time.Date(y, m, d-i, 12, 0, 0, 0, loc), loc)
+		w.last7 = append(w.last7, earlier)
 	}
 	w.from = min(w.from, w.last7[0])
 	w.daysLeft = time.Date(y, m+1, 0, 0, 0, 0, 0, loc).Day() - d
