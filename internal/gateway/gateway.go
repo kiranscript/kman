@@ -160,6 +160,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				if ref.retryAfter > 0 {
 					w.Header()["Retry-After"] = retryAfter(ref.retryAfter)
 				}
+				g.release(&x) // the refusal may follow a reservation (the upstream was down)
 				writeError(w, ref.code, ref.message)
 			}
 			break
@@ -167,11 +168,19 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// finish settles the request's spend and emits its event, then cuts the
-// connection of a response that broke.
-func (g *Gateway) finish(x *exchange) {
+// release gives back what the request holds: its share of the body budget, and
+// its reservation, which it settles. It runs once, before the app has the whole
+// response where that can be told (respond, a refusal), and else in finish.
+func (g *Gateway) release(x *exchange) {
 	g.buffered.Add(-x.held)
+	x.held = 0
 	g.settle(x)
+}
+
+// finish releases whatever the request still holds and emits its event, then cuts
+// the connection of a response that broke.
+func (g *Gateway) finish(x *exchange) {
+	g.release(x)
 	g.emit(x)
 	if x.abort {
 		panic(http.ErrAbortHandler)
