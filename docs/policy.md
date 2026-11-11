@@ -39,8 +39,8 @@ kman key update my-app --policy '{"allowed_models":["gpt-4o-mini","gpt-4.1*"],"r
 kman key update my-app --policy '{"allowed_paths":["POST /v1/chat/completions","POST /v1/embeddings"]}'
 kman key update my-app --policy '{"monthly_cap_micro":50000000}'
 kman key update my-app --policy '{}'
-kman key update my-app --policy '{"daily_cap_micro":5000000,"monthly_cap_micro":50000000,"rpm_limit":120}'
 kman key update my-app --policy '{"monthly_cap_micro":50000000,"monthly_budget_micro":40000000,"soft_budget_percents":[50,90,100]}'
+kman key update my-app --policy '{"daily_cap_micro":5000000,"monthly_cap_micro":50000000,"rpm_limit":120}'
 ```
 
 <!-- policy:end -->
