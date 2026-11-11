@@ -39,7 +39,7 @@ kman is a self-hosted proxy that holds real upstream API keys and hands apps vir
 These hold in every milestone. Each has a test.
 
 1. **The master key never lives in the data directory.** kman refuses to start otherwise ([ADR 0003](docs/adr/0003-master-key-outside-the-data-dir.md)).
-2. **Every change to a running kman goes through the admin API's service layer**, is one store transaction, and is audited with its **actor**. Nothing is dashboard-only. Child keys are the one exception ([ADR 0004](docs/adr/0004-one-mutation-path-nothing-dashboard-only.md)).
+2. **Every change to a running kman goes through the admin API's service layer**, is one store transaction, and is audited with its **actor**. Nothing is dashboard-only. Child keys are the one exception, and `SettleSecrets` housekeeping is the one pass that changes the store with no audit entry; the offline `restore` and `rekey` audit but cannot alert ([ADR 0004](docs/adr/0004-one-mutation-path-nothing-dashboard-only.md)).
 3. **A credential is never shown to an app, an operator, a log, an event, an alert, or a metric** after it is entered. Virtual-key secrets and admin tokens are shown once, at creation.
 4. **Capped or allowlisted keys never forward an unmetered request.**
 5. **The request path takes no locks** and reads an immutable snapshot ([ADR 0006](docs/adr/0006-module-map.md)).
@@ -64,7 +64,7 @@ Fifteen modules, one Go package each under `internal/`, plus the `token` leaf pa
 | `store` | `Do(ctx, func(Tx) error)`, typed repos | SQLite, migrations, typed errors (`ErrConflict`, `ErrNotFound`). |
 | `events` | `Emit`, `Subscribe` | A bounded queue with a priority lane, and fan-out. |
 | `detect` | `Observe(event) []Decision` | Baselines, rules, incidents. Returns decisions, mutates nothing. |
-| `alerts` | `Notify(alert)` | The persisted outbox, retries, the channel adapters, and the M1 warning producers: soft-budget crossings and projections (from the spend the meter flushed), expiry, and refused credentials. |
+| `alerts` | `AlertAudit(tx, entry)`, `Wake`, `Run`, `RunWatch`, `Check` | The persisted outbox, retries, the channel adapters, and the M1 warning producers: soft-budget crossings and projections (from the spend the meter flushed), expiry, and refused credentials. |
 | `sessions` | `Open`, `CloseKey(keyID)`, child-key mint | Live realtime sessions and in-memory child keys. |
 | `admin` | one command per operation | Store transaction → registry update → audit entry. |
 | `adminapi`, `dashboard`, `cli` | transports over `admin` | Typed DTOs and OpenAPI, templ pages, the one typed client. |
@@ -228,7 +228,7 @@ The default LLM allowlists exclude batch, files, fine-tune, and multipart audio 
   - Channels: Slack and signed webhook in M1; Discord and ntfy in M2. A webhook can bridge to anything else.
   - Each channel has `min_severity` (default medium) and a toggle for spend and lifecycle warnings (default on).
   - Contents: key name and id, severity, rules, evidence, the incident id, and copy-paste CLI commands. Never a secret or request content. No action links; a deep link to the incident page only if `dashboard.url` is set.
-- M1 producers: the audit log, soft budgets, and credential and expiry warnings.
+- M1 producers: the audit log, soft budgets, and credential and expiry warnings. The code goes beyond that list with the **priority lane's** alerts: the use of a disabled key (high) and of a canary key (critical). They name the key and where the request came from, and never the request's path or anything else it said.
 - Prometheus metrics are served on the admin listener at `/metrics`, behind the admin token. An opt-in `metrics_listen` serves them without auth for scrapers.
 
 ## 10. Detection and incidents
@@ -315,6 +315,7 @@ The full table-by-table schema is in [the schema ticket](https://github.com/kira
 - Spend is `spend_daily`, written only as increments. `usage_hourly` is incremented with each event batch. The audit log is append-only, enforced by a trigger.
 - **Never persisted:** reservations, limiter windows, child keys, live sessions, login links, plaintext secrets. **Rebuilt at startup:** the registry snapshot, detection's rolling windows (from the last 24 h of events), and month-to-date spend.
 - **Retention defaults:** events 30 days, hourly usage 400 days, daily spend, incidents, and the audit log forever, the alert outbox 30 days after delivery. `retention: keep_everything` disables pruning. `kman prune --before <date>` is always available and audited, including a guarded prune of the audit log.
+- **Known gap:** the `budget_alerts` table (the periods a budget warning has already been sent for) has no retention and grows by a few rows per key per period.
 - **Fixtures:** each release tag commits `internal/store/fixtures/<tag>.db` from a deterministic generator. A migration test upgrades every past fixture.
 
 ## 15. Release and supply chain

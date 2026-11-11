@@ -282,6 +282,28 @@ func TestEveryAuditEntryIsHandedToTheAlertsInItsTransactionAndWakesThemOnCommit(
 	}
 }
 
+// SPEC §9: the audit log is an alert producer, and retention's prune is in it.
+func TestARetentionPassThatDeletedSomethingIsHandedToTheAlertsLikeAnyAuditEntry(t *testing.T) {
+	in, f := withAlerts(t)
+	in.seedHistory(t, 100)
+	if _, err := in.svc.Retain(context.Background(), admin.DefaultRetention); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.audited) != 1 || f.audited[0].Action != "data.prune" || f.audited[0].Actor != "system:retention" || f.audited[0].ID == 0 || !f.inTx[0] {
+		t.Fatalf("alerts were handed %+v (in the transaction: %v), want the system's prune", f.audited, f.inTx)
+	}
+	if f.wakes != 1 {
+		t.Errorf("alerts were woken %d times, want once", f.wakes)
+	}
+	// A pass that deletes nothing says nothing.
+	if _, err := in.svc.Retain(context.Background(), admin.DefaultRetention); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.audited) != 1 || f.wakes != 1 {
+		t.Errorf("an empty pass reached the alerts: %d entries, %d wakes", len(f.audited), f.wakes)
+	}
+}
+
 func TestACommandWhoseAlertCannotBeQueuedChangesNothing(t *testing.T) {
 	in, f := withAlerts(t)
 	f.fail = errors.New("the outbox is locked")

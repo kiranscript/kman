@@ -13,4 +13,7 @@ keman's beta also had a TUI, the default command, which ran the server inside th
 
 - The dashboard's session cookie is never accepted on `/admin/v1/*`, so the CSRF surface stays confined to `/ui/`.
 - The OpenAPI document is generated from the Go request and response types, so it can't drift from the code.
+- The audit log is an alert producer (SPEC §9): every entry a command appends is handed to the alerts in the same transaction, so an alert is never lost with a change that committed. Retention's prune (`system:retention`) goes the same way when it deletes something.
+- Two things write the audit log without an alert, because the server is stopped when they run: `kman restore` (`data.restore`) and `kman rekey` (`data_key.rekey`) append their entry directly, so it shows in `kman audit` but nothing is queued or delivered. They are offline operations by design, run by someone at the machine.
+- `SettleSecrets` is the one housekeeping pass that changes the store with no audit entry and no alert. It only moves what time has already decided (a rotated key's previous secret whose grace has ended, and a retired secret kept 30 days); the rotation that started the grace was audited and alerted when it happened.
 - Child keys are the one exception to the mutation path. They are ephemeral: minted on the proxy listener, held only in memory, and recorded through the realtime session's close event rather than the audit log. Everything durable goes through the admin API.

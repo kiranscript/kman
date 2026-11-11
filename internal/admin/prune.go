@@ -118,14 +118,23 @@ func (s *Service) Retain(ctx context.Context, r Retention) (PruneResult, error) 
 		if err != nil {
 			return err
 		}
-		_, err = tx.AppendAudit(store.AuditEntry{TS: now, Actor: "system:retention", Action: "data.prune",
-			TargetKind: "store", TargetID: "install", AfterJSON: after})
-		return err
+		entry := store.AuditEntry{TS: now, Actor: "system:retention", Action: "data.prune",
+			TargetKind: "store", TargetID: "install", AfterJSON: after}
+		if entry.ID, err = tx.AppendAudit(entry); err != nil {
+			return err
+		}
+		if s.alerts != nil { // the audit log is an alert producer (SPEC §9), housekeeping included
+			return s.alerts.AlertAudit(tx, entry)
+		}
+		return nil
 	})
 	if err != nil {
 		return PruneResult{}, err
 	}
 	if out.Events+out.HourlyUsage+out.DeliveredAlerts > 0 {
+		if s.alerts != nil {
+			s.alerts.Wake()
+		}
 		s.reclaim(ctx)
 	}
 	return out, nil
