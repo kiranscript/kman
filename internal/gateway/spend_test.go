@@ -361,7 +361,7 @@ func TestAKeyWhosePolicyCannotBeReadIsRefused(t *testing.T) {
 // With no meter at all, a key that needs one is refused, not let through.
 func TestAKeyWithACapIsRefusedWhenThereIsNoMeter(t *testing.T) {
 	up := newRecording()
-	s, secret := behind(t, up)
+	s, _ := behind(t, up)
 	spec := specOfRoute(t, s)
 	spec.Profile = registry.ProfileOpenAI
 	k, secret := newKey(t)
