@@ -21,8 +21,8 @@ type stage struct {
 }
 
 // Status prints the status summary (plain kman): where the install stands, the
-// next command, and how old the price table is, the running server's or else
-// this binary's. It reports a stage rather than judges it, so it exits 0.
+// next command, how old this binary is, and how old the price table is, the
+// running server's or else this binary's (SPEC §12). It reports a stage rather than judges it, so it exits 0.
 func Status(ctx context.Context, env Env) int {
 	c := &call{env: env, name: "status", configDir: env.ConfigDir}
 	ctx, cancel := context.WithTimeout(ctx, statusTimeout)
@@ -33,6 +33,7 @@ func Status(ctx context.Context, env Env) int {
 	for _, n := range st.notes {
 		fmt.Fprintln(env.Stdout, n)
 	}
+	printBinaryAge(c)
 	var prices admin.PriceDataStatus
 	var err error = errNoServer
 	if cl != nil {
@@ -46,6 +47,22 @@ func Status(ctx context.Context, env Env) int {
 	}
 	printPriceData(c, prices)
 	return ExitOK
+}
+
+// printBinaryAge says when this binary was built. A binary with no stamped date
+// says so, rather than saying nothing.
+func printBinaryAge(c *call) {
+	if c.env.BinaryAge != nil {
+		if built, days, ok := c.env.BinaryAge(); ok {
+			unit := "days"
+			if days == 1 {
+				unit = "day"
+			}
+			fmt.Fprintf(c.env.Stdout, "This kman binary was built %s, %d %s old.\n", built.UTC().Format(time.DateOnly), days, unit)
+			return
+		}
+	}
+	fmt.Fprintln(c.env.Stdout, "This kman binary carries no build date, so its age is unknown.")
 }
 
 var errNoServer = errors.New("no server")

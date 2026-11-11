@@ -8,6 +8,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/kirank55/kman/internal/admin"
 )
@@ -33,6 +34,9 @@ type Env struct {
 	// LocalPriceData is how old this binary's own price table is, for when
 	// the server can't be asked.
 	LocalPriceData func() admin.PriceDataStatus
+	// BinaryAge is when this binary was built, and how many whole days ago, for
+	// the status summary. Not ok means it carries no build date.
+	BinaryAge func() (built time.Time, ageDays int, ok bool)
 	// Initialised reports whether kman init has set up this machine, for the
 	// status summary. Nil means it has not.
 	Initialised func() bool
