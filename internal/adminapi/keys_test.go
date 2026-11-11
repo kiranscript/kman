@@ -120,3 +120,34 @@ func TestTheSecretAppearsOnlyInTheCreateResponseOfTheAPI(t *testing.T) {
 		t.Errorf("the logs hold the secret: %s", logs)
 	}
 }
+
+func TestTheAPIDisablesEnablesAndRevokesAKeyByItsId(t *testing.T) {
+	s := newServer(t)
+	withUpstreamAndCredential(t, s)
+	id := createKey(t, s, `{"name":"my-app","upstream":"openai"}`).Key.ID
+	post := func(action string) (int, admin.Key) {
+		t.Helper()
+		r := s.do(t, s.owner, "POST", "/admin/v1/keys/"+id+"/"+action, "")
+		var k admin.Key
+		if r.status == http.StatusOK {
+			if err := json.Unmarshal(r.body, &k); err != nil {
+				t.Fatalf("%s: %s: %v", action, r.body, err)
+			}
+		}
+		return r.status, k
+	}
+	for _, step := range []struct{ action, status string }{{"disable", "disabled"}, {"enable", "active"}, {"disable", "disabled"}, {"revoke", "revoked"}} {
+		if code, k := post(step.action); code != http.StatusOK || k.Status != step.status || k.ID != id {
+			t.Errorf("%s = %d %+v, want status %s", step.action, code, k, step.status)
+		}
+	}
+	if code, _ := post("enable"); code != http.StatusConflict {
+		t.Errorf("enabling a revoked key = %d, want 409", code)
+	}
+	if r := s.do(t, s.owner, "POST", "/admin/v1/keys/my-app/revoke", ""); r.status != http.StatusNotFound {
+		t.Errorf("revoking by name = %d %s, want 404", r.status, r.body)
+	}
+	if r := s.do(t, "", "POST", "/admin/v1/keys/"+id+"/revoke", ""); r.status != http.StatusUnauthorized {
+		t.Errorf("revoking with no token = %d, want 401", r.status)
+	}
+}

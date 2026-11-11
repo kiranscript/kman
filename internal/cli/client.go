@@ -271,6 +271,23 @@ func (c *client) GetKey(ctx context.Context, req admin.KeyRef) (admin.Key, error
 	return out, c.do(ctx, "GET", "/keys/"+url.PathEscape(req.ID), nil, nil, &out)
 }
 
+func (c *client) DisableKey(ctx context.Context, req admin.KeyRef) (admin.Key, error) {
+	return c.keyAction(ctx, req, "disable")
+}
+
+func (c *client) EnableKey(ctx context.Context, req admin.KeyRef) (admin.Key, error) {
+	return c.keyAction(ctx, req, "enable")
+}
+
+func (c *client) RevokeKey(ctx context.Context, req admin.KeyRef) (admin.Key, error) {
+	return c.keyAction(ctx, req, "revoke")
+}
+
+func (c *client) keyAction(ctx context.Context, req admin.KeyRef, action string) (admin.Key, error) {
+	var out admin.Key
+	return out, c.do(ctx, "POST", "/keys/"+url.PathEscape(req.ID)+"/"+action, nil, nil, &out)
+}
+
 func (c *client) UpdateKey(ctx context.Context, req admin.KeyUpdate) (admin.Key, error) {
 	var out admin.Key
 	return out, c.do(ctx, "PATCH", "/keys/"+url.PathEscape(req.ID), nil, req, &out)
