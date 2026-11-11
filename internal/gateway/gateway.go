@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kirank55/kman/internal/limiter"
@@ -30,6 +31,14 @@ type Options struct {
 	// MaxBody is the most of a request body kman holds, defaulting to
 	// DefaultMaxBody. Over it, a request is refused.
 	MaxBody int64
+	// BodyStall is how long a request body may go without a byte arriving, and
+	// BodyTimeout how long it may take whole, whatever its pace. Either ends the
+	// connection. They default to DefaultBodyStall and DefaultBodyTimeout.
+	BodyStall, BodyTimeout time.Duration
+	// MaxBuffered is the most request-body bytes kman holds in memory at once,
+	// across every request. Past it a request is refused with a 429 rather than
+	// buffered. It defaults to DefaultMaxBuffered.
+	MaxBuffered int64
 	// TrustedProxies are the networks whose X-Forwarded-For is believed
 	// (kman.yaml's trusted_proxies). With none, the client address is the
 	// connection's.
@@ -57,6 +66,8 @@ type Gateway struct {
 	limiter *limiter.Limiter
 	base    *http.Transport
 	named   sync.Map // TLS server name → *http.Transport
+	// buffered is the bytes of request bodies held now, by requests in flight.
+	buffered atomic.Int64
 }
 
 // New returns a Gateway.
@@ -66,6 +77,15 @@ func New(opts Options) *Gateway {
 	}
 	if opts.MaxBody <= 0 {
 		opts.MaxBody = DefaultMaxBody
+	}
+	if opts.BodyStall <= 0 {
+		opts.BodyStall = DefaultBodyStall
+	}
+	if opts.BodyTimeout <= 0 {
+		opts.BodyTimeout = DefaultBodyTimeout
+	}
+	if opts.MaxBuffered <= 0 {
+		opts.MaxBuffered = DefaultMaxBuffered
 	}
 	if opts.Limiter == nil {
 		opts.Limiter = limiter.New(limiter.Options{Now: opts.Now})
@@ -92,6 +112,9 @@ type exchange struct {
 	// status is the upstream's, or zero while it hasn't answered.
 	res    *meter.Reservation
 	status int
+	// held is how many bytes of its body the request has counted against the
+	// gateway's MaxBuffered, until it ends.
+	held int64
 }
 
 // refusal is why a stage stopped a request, before anything of a response was
@@ -126,6 +149,12 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, run := range pipeline {
 		if ref := run(g, &x); ref != nil {
 			if !x.abort {
+				if x.body == nil && r.Body != nil && r.Body != http.NoBody {
+					// What is left of the body is unread. net/http would read it, with no
+					// limit on the wait, before it let the refusal out: a client with no key
+					// could hold the connection by promising a body. Close instead.
+					w.Header().Set("Connection", "close")
+				}
 				if ref.retryAfter > 0 {
 					w.Header()["Retry-After"] = retryAfter(ref.retryAfter)
 				}
@@ -139,6 +168,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // finish settles the request's spend and emits its event, then cuts the
 // connection of a response that broke.
 func (g *Gateway) finish(x *exchange) {
+	g.buffered.Add(-x.held)
 	g.settle(x)
 	g.emit(x)
 	if x.abort {

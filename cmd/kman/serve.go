@@ -232,7 +232,11 @@ func newListener(name, addr string, t ListenerTLS, h http.Handler, log *slog.Log
 		Handler:           h,
 		TLSConfig:         tc,
 		ReadHeaderTimeout: 10 * time.Second,
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+		// A kept-alive connection that sends nothing is closed, and a head is held to
+		// 64 KiB (net/http's default is 1 MiB). Neither is near what an SDK sends.
+		IdleTimeout:    2 * time.Minute,
+		MaxHeaderBytes: 64 << 10,
+		ErrorLog:       slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
 	return &listener{name: name, l: l, srv: srv, tls: tc != nil}, nil
 }

@@ -446,7 +446,7 @@ func (r *rekeyRun) report(secrets int) {
 	if old.MasterKeyFile != "" && old.MasterKeyFile != p.keyFile {
 		fmt.Fprintf(w, "\n%s still holds the old master key, which opens nothing in this database any more. Delete it, unless the copies below need it.\n", old.MasterKeyFile)
 	}
-	fmt.Fprintln(w, "\nAnything copied before now still opens with the old master key, and only with it: every kman backup file you made, and:")
+	fmt.Fprintln(w, "\nAnything copied before now still opens with the old master key, and only with it: every copy of the database you made yourself, and:")
 	copies, _ := filepath.Glob(filepath.Join(old.DataDir, store.FileName+".pre-*"))
 	for _, c := range copies {
 		fmt.Fprintln(w, "  "+c)
