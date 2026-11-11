@@ -66,6 +66,17 @@ func Commands() []string {
 	return out
 }
 
+// Summary is the one-line description of the online command name, or "" for a
+// name that is not one. The generated CLI reference uses it.
+func Summary(name string) string {
+	for _, c := range commands {
+		if c.name == name {
+			return c.summary
+		}
+	}
+	return ""
+}
+
 // Run runs the online command args[0] and returns its exit code.
 func Run(ctx context.Context, args []string, env Env) int {
 	if len(args) == 0 {

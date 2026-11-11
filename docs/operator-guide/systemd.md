@@ -38,11 +38,24 @@ systemctl enable --now kman
 
 <!-- systemd:end -->
 
-`kman init` runs as a transient service here, because that is how it gets the decrypted key. It prints the `owner` admin token once; pass it to the CLI as `KMAN_ADMIN_TOKEN`. When the service first starts, systemd moves `/var/lib/kman` to `/var/lib/private/kman`, links it back, and hands it to the dynamic user.
+`kman init` runs as a transient service here, because that is how it gets the decrypted key. It prints the `owner` admin token once, to your terminal; `--no-save-token` stops it saving the token anywhere, since root's home is not where the service lives. When the service first starts, systemd moves `/var/lib/kman` to `/var/lib/private/kman`, links it back, and hands it to the dynamic user.
 
 **Back up the master key.** `systemd-creds` binds `master.key.cred` to this machine (its TPM, or `/var/lib/systemd/credential.secret`), so the file is no backup. To keep a copy you can restore elsewhere, save the key as you make it, somewhere apart from the data directory: `kman keygen | tee /path/to/offline/master.key | systemd-creds encrypt …`.
 
 Check the service with `systemctl status kman` and `journalctl -u kman`.
+
+## Run kman commands against the service
+
+The CLI finds the admin API by its URL and token, not by the service's config directory:
+
+```sh
+export KMAN_ADMIN_URL=http://127.0.0.1:8081
+export KMAN_ADMIN_TOKEN=kma_…          # the token init printed
+kman upstream add openai --preset openai
+kman key create my-app --upstream openai
+```
+
+**Plain `kman` with no arguments can mislead you here.** Its status summary looks for an install in your own config directory (`~/.config/kman`), and this install's config is in `/etc/kman`. With neither a token nor a URL in the environment it says `kman is not initialised: there is no install in ~/.config/kman` and suggests `kman init`, which is not what you want: that would make a second, separate install. With `KMAN_ADMIN_URL` and `KMAN_ADMIN_TOKEN` set, as above, it asks the running service and answers correctly.
 
 ## Replace the master key
 
@@ -58,7 +71,7 @@ systemd-creds encrypt --name=master.key /root/master.key.next /etc/kman/master.k
 systemctl start kman
 ```
 
-Then back up `/root/master.key.next` apart from the data directory and remove it from there. Backups made before the rekey open only with the old key, so keep that key for as long as you keep them, and if it leaked, destroy them both.
+Then back up `/root/master.key.next` apart from the data directory and remove it from there. Copies of the data directory made before the rekey open only with the old key, so keep that key for as long as you keep them, and if it leaked, destroy them both and replace the real credentials at their providers: see [Upgrade, rekey and old copies](upgrade.md#replace-the-master-key).
 
 ## Change the settings
 
@@ -74,6 +87,6 @@ and point `kman.yaml` at them under `/run/credentials/kman.service/`.
 
 ## Upgrade and remove
 
-Install the new package and run `systemctl restart kman`. kman copies the database to `kman.db.pre-<version>` before it migrates.
+Install the new package and run `systemctl restart kman`. When the new version has to migrate the database, kman first copies it to `kman.db.pre-<NNNN>` in the data directory (`NNNN` is the schema version it migrates to, and the last two copies are kept): see [Upgrade](upgrade.md#what-a-new-version-does-at-startup). To **back up**, run `systemctl stop kman`, copy `/var/lib/private/kman` (reached as `/var/lib/kman`), and keep the master key somewhere else.
 
 Removing the package leaves `/etc/kman` and `/var/lib/private/kman` alone. Delete them yourself if you mean to.
