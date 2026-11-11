@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/registry"
 )
 
@@ -206,4 +207,40 @@ func seeded() *registry.Registry {
 		Keys:        []registry.Key{{ID: "abcd1234", CredentialID: "cr_1", Generation: 1}},
 	})
 	return r
+}
+
+func TestApplyCompilesAKeysPolicyAndAnUpstreamsPathsOnceForTheRequestPath(t *testing.T) {
+	r := registry.New()
+	up := upstream("up_1", 1)
+	up.Paths = []string{"POST /v1/chat/completions"}
+	r.Apply(registry.Change{
+		Generation:  1,
+		Upstreams:   []registry.Upstream{up},
+		Credentials: []registry.Credential{{ID: "cr_1", UpstreamID: "up_1", Generation: 1}},
+		Keys: []registry.Key{
+			{ID: "good0001", CredentialID: "cr_1", Policy: `{"allowed_models":["gpt-4o"],"rpm_limit":7}`, PolicyVersion: 1, Generation: 1},
+			{ID: "bad00001", CredentialID: "cr_1", Policy: `{"nope":1}`, PolicyVersion: 1, Generation: 1},
+		},
+	})
+	good, _ := r.Lookup("good0001")
+	facts := policy.Facts{Method: "POST", Path: "/v1/chat/completions", Model: "gpt-4o", HasModel: true, Upstream: good.Upstream.Rules}
+	if got := policy.Evaluate(facts, good.Key.Compiled); got != policy.Allow {
+		t.Errorf("Evaluate = %v, want allow", got)
+	}
+	if good.Key.Compiled.RPM() != 7 {
+		t.Errorf("RPM = %d", good.Key.Compiled.RPM())
+	}
+	bad, _ := r.Lookup("bad00001")
+	facts.Upstream = bad.Upstream.Rules
+	if got := policy.Evaluate(facts, bad.Key.Compiled); got == policy.Allow || bad.Key.Compiled.Err() == nil {
+		t.Errorf("a policy that can't be read must allow nothing and say why: %v, %v", got, bad.Key.Compiled.Err())
+	}
+}
+
+func TestLookupStillAllocatesNothingWithCompiledPolicies(t *testing.T) {
+	r := registry.New()
+	r.Apply(registry.Change{Generation: 1, Keys: []registry.Key{{ID: "abcd1234", Policy: `{}`, PolicyVersion: 1, Generation: 1}}})
+	if allocs := testing.AllocsPerRun(100, func() { r.Lookup("abcd1234") }); allocs != 0 {
+		t.Errorf("Lookup allocated %v times", allocs)
+	}
 }

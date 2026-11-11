@@ -35,7 +35,7 @@ const (
 )
 
 func TestEvaluatePathAllowlists(t *testing.T) {
-	upstream := rules(t, "POST /v1/chat/completions", "GET /v1/models", "GET /v1/models/*", "* /v1/files/**")
+	upstream := rules(t, "POST /v1/chat/completions", "GET /v1/models", "GET /v1/models/*", "* /v1/files/**", "GET /", "GET /v1/ping/")
 	for _, tc := range []struct {
 		name   string
 		policy string
@@ -50,6 +50,9 @@ func TestEvaluatePathAllowlists(t *testing.T) {
 		{"a longer path is not the rule's path", `{}`, "POST", "/v1/chat/completions/extra", pathNot},
 		{"a shorter path is not the rule's path", `{}`, "POST", "/v1/chat", pathNot},
 		{"a trailing slash is another path", `{}`, "POST", "/v1/chat/completions/", pathNot},
+		{"the root", `{}`, "GET", "/", policy.Allow},
+		{"a rule with a trailing slash", `{}`, "GET", "/v1/ping/", policy.Allow},
+		{"and not without", `{}`, "GET", "/v1/ping", pathNot},
 		{"* is one segment", `{}`, "GET", "/v1/models/gpt-4o", policy.Allow},
 		{"* is not two segments", `{}`, "GET", "/v1/models/a/b", pathNot},
 		{"* is a segment, not none", `{}`, "GET", "/v1/models/", policy.Allow},

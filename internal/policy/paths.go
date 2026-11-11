@@ -54,7 +54,7 @@ func parseRule(rule string) (pathRule, error) {
 	parts := strings.Split(path[1:], "/")
 	for i, seg := range parts {
 		switch {
-		case seg == "":
+		case seg == "" && i != len(parts)-1:
 			return pathRule{}, errors.New("the path may not hold an empty segment")
 		case seg == "." || seg == "..":
 			return pathRule{}, errors.New("the path may not hold . or .. segments")

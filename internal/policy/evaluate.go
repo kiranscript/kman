@@ -15,7 +15,7 @@ type Compiled struct {
 	prefixes []string
 	models   bool // an allowlist is set, which may be empty only by being absent
 	rpm      int
-	broken   bool
+	broken   error // why the policy can't be read, if it can't
 }
 
 // Compile builds the compiled form of a stored policy: the JSON and the version
@@ -23,22 +23,22 @@ type Compiled struct {
 // kman, still returns a usable value, which allows no request: failing open would
 // drop a key's limits. The error says why, for a log.
 func Compile(version int, stored string) (*Compiled, error) {
-	broken := &Compiled{broken: true}
+	fail := func(err error) (*Compiled, error) { return &Compiled{broken: err}, err }
 	if version != Version {
-		return broken, fmt.Errorf("policy version %d: this kman reads version %d", version, Version)
+		return fail(fmt.Errorf("policy version %d: this kman reads version %d", version, Version))
 	}
 	_, normalized, err := Normalize([]byte(stored))
 	if err != nil {
-		return broken, err
+		return fail(err)
 	}
 	var p Policy
 	if err := json.Unmarshal(normalized, &p); err != nil {
-		return broken, err
+		return fail(err)
 	}
 	c := &Compiled{rpm: p.RPMLimit}
 	if len(p.AllowedPaths) > 0 {
 		if c.paths, err = CompilePaths(p.AllowedPaths); err != nil {
-			return broken, err
+			return fail(err)
 		}
 	}
 	if len(p.AllowedModels) > 0 {
@@ -53,6 +53,15 @@ func Compile(version int, stored string) (*Compiled, error) {
 		}
 	}
 	return c, nil
+}
+
+// Err says why a policy can't be read, and is nil for one that can. Such a
+// policy allows no request, so a caller that refuses one may name the reason.
+func (c *Compiled) Err() error {
+	if c == nil {
+		return nil
+	}
+	return c.broken
 }
 
 // RPM is the key's requests-per-minute limit, 0 for none.
@@ -113,7 +122,7 @@ func (d Decision) String() string {
 // request with no model a key's allowlist can be checked against is an unmetered
 // request, since it could name any model upstream.
 func Evaluate(f Facts, c *Compiled) Decision {
-	if c == nil || c.broken {
+	if c == nil || c.broken != nil {
 		return PathNotAllowed
 	}
 	switch {
