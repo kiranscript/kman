@@ -118,3 +118,23 @@ func TestPricingCannotReachTheNetwork(t *testing.T) {
 	}
 	assertViolations(t, gates.CheckOffline("internal/pricing", deps), nil)
 }
+
+func TestOfflineGateGivesTheReasonItWasAskedFor(t *testing.T) {
+	assertViolations(t, gates.CheckOfflineBecause("internal/policy/geoip", []string{"encoding/json", "net/http"}, "why"), []string{
+		"internal/policy/geoip: depends on net/http; why",
+	})
+}
+
+// TestGeoIPCannotReachTheNetwork is ADR 0008 at its root: the code that reads
+// GeoIP databases links nothing that could download one. kman geoip update, in
+// cmd/kman, is the one place that does.
+func TestGeoIPCannotReachTheNetwork(t *testing.T) {
+	deps, err := gates.Deps("..", "./internal/policy/geoip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(deps, "net/netip") {
+		t.Fatalf("the dependency list looks wrong: %q", deps)
+	}
+	assertViolations(t, gates.CheckOfflineBecause("internal/policy/geoip", deps, "GeoIP databases are downloaded only by kman geoip update (ADR 0008)"), nil)
+}

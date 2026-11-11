@@ -26,13 +26,19 @@ func Deps(dir, pattern string) ([]string, error) {
 	return strings.Fields(string(out)), nil
 }
 
-// CheckOffline reports each dependency of a package that could reach the
-// network.
+// CheckOffline reports each dependency of the pricing package that could reach
+// the network.
 func CheckOffline(pkg string, deps []string) []Violation {
+	return CheckOfflineBecause(pkg, deps, "price data is never fetched at runtime (ADR 0007)")
+}
+
+// CheckOfflineBecause reports each dependency of a package that could reach the
+// network, and gives why it may not.
+func CheckOfflineBecause(pkg string, deps []string, why string) []Violation {
 	var vs []Violation
 	for _, d := range deps {
 		if slices.Contains(networked, d) {
-			vs = append(vs, Violation{pkg, "depends on " + d + "; price data is never fetched at runtime (ADR 0007)"})
+			vs = append(vs, Violation{pkg, "depends on " + d + "; " + why})
 		}
 	}
 	return vs

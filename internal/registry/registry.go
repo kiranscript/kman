@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"iter"
 	"maps"
 	"sync"
 	"sync/atomic"
@@ -111,6 +112,18 @@ func (s *Snapshot) Upstream(id string) (*Upstream, bool) {
 func (s *Snapshot) Credential(id string) (*Credential, bool) {
 	c, ok := s.credentials[id]
 	return c, ok
+}
+
+// Keys returns every key in the snapshot, in no order. The keys are the
+// snapshot's own and must not be changed.
+func (s *Snapshot) Keys() iter.Seq[*Key] {
+	return func(yield func(*Key) bool) {
+		for _, k := range s.keys {
+			if !yield(k) {
+				return
+			}
+		}
+	}
 }
 
 // Lookup returns the route of the key with this key id. It takes no locks and

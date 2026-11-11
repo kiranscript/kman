@@ -27,6 +27,7 @@ var offlineSummaries = map[string]string{
 	"keygen":  "print a new master key and store nothing",
 	"rekey":   "replace the master key and the data key, with the server stopped",
 	"version": "print the version, the commit and the build date",
+	"geoip":   "download the DB-IP Lite GeoIP databases that country locks and events read (the one command that reaches DB-IP)",
 }
 
 // staticUsage is the usage of the commands that take no flags.

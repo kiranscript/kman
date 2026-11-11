@@ -18,7 +18,6 @@ import (
 	"github.com/kirank55/kman/internal/adminapi"
 	"github.com/kirank55/kman/internal/gateway"
 	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/pricing"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
@@ -89,6 +88,12 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 		return err
 	}
 
+	geo, err := openGeoIP(cfg)
+	if err != nil {
+		return err
+	}
+	defer geo.Close()
+
 	st, err := store.Open(ctx, store.Options{Dir: cfg.DataDir, Now: s.now(), Logger: log})
 	if err != nil {
 		return err
@@ -111,9 +116,12 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	prices := pricing.NewPrices(pricing.Builtin())
 	var spend *meter.Meter // made once the settings are read, which the service reads
 	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices,
-		ApplyPrices: publishOverrides(prices), NormalizePolicy: policy.Normalize,
+		ApplyPrices: publishOverrides(prices), NormalizePolicy: normalizePolicy(geo),
 		Spend: func(keyID, policyJSON string) admin.KeySpend { return keySpend(spend, s.now(), keyID, policyJSON) }})
 	if err := svc.Load(ctx); err != nil {
+		return err
+	}
+	if err := checkCountryLocks(reg.Snapshot(), geo); err != nil {
 		return err
 	}
 	spend, err = startMeter(ctx, s, log, svc, st, prices)
@@ -124,7 +132,11 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	defer stopMeter()
 	meterDone := make(chan struct{})
 	go func() { spend.Run(meterCtx); close(meterDone) }()
-	proxy := gateway.New(gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, Meter: spend, TrustedProxies: cfg.trustedProxies()})
+	gwOpts := gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, Meter: spend, TrustedProxies: cfg.trustedProxies()}
+	if geo != nil { // a nil *geoip.DB in the interface would be a database that knows nothing
+		gwOpts.Geo = geo
+	}
+	proxy := gateway.New(gwOpts)
 	ls, err := listen(cfg, log, proxy, adminHandler(svc, log))
 	if err != nil {
 		return err
