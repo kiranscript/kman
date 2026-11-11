@@ -91,7 +91,7 @@ The review checked each of SPEC §1's eight invariants against the code and by r
 
 ### The admin API
 
-**What kman does.** Bearer tokens only (`Authorization: Bearer kma_…`, never a cookie); the token is looked up by its hash on every request, so a revoked token is refused at once; `Cache-Control: no-store`; bodies are capped at 1 MiB and unknown fields are refused; no CORS, and every route needs a non-simple header, so a web page cannot call it blind. The listener is `127.0.0.1`, or a `0600` Unix socket; plain HTTP off loopback is refused unless TLS or `allow_plain_http` says otherwise. Every change is audited with the token's name.
+**What kman does.** Bearer tokens only (`Authorization: Bearer kma_…`, never a cookie); the token is looked up by its hash on every request, so a revoked token is refused at once; `Cache-Control: no-store`; bodies are capped at 1 MiB and unknown fields are refused; no CORS, and every route needs a non-simple header, so a web page cannot call it blind. The listener is `127.0.0.1`, or a `0600` Unix socket; plain HTTP off loopback is refused unless TLS or `allow_plain_http` says otherwise. Every change is audited with the token's name. `/metrics` on the admin listener needs an admin token too; the opt-in `metrics_listen` serves it with no authentication, so keep it on loopback or a private network.
 
 **What is left.** The owner admin token is kept in `credentials.json` (`0600`) by design, so anyone who can read that file as you is the owner. `kman login` warns on plain HTTP to a remote host and proceeds (L-7). Keep the admin listener off the network ([TLS and reverse proxies](docs/operator-guide/tls.md)).
 
@@ -119,7 +119,7 @@ kman is only as safe as these hold:
 
 ## What v0.1.0 does not do
 
-Detection, alerts, key rotation, address locks, soft budgets, events and metrics, the dashboard, leak scanning, backup and restore commands, and realtime: [the list, and what to do meanwhile](docs/v0.1.0-scope.md). The review did not cover Windows or macOS behaviour, whether the systemd and Docker guides run end to end (no CI job runs `rekey` in them), or what a live provider really sends: the test transcripts are written from the SDKs' types, not captured.
+Detection, alerts, key rotation, address locks, soft budgets, the dashboard, leak scanning, backup and restore commands, and realtime: [the list, and what to do meanwhile](docs/v0.1.0-scope.md). The review did not cover Windows or macOS behaviour, whether the systemd and Docker guides run end to end (no CI job runs `rekey` in them), or what a live provider really sends: the test transcripts are written from the SDKs' types, not captured.
 
 ## How this was checked, and what to rerun
 

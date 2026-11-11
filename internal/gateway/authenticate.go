@@ -25,16 +25,19 @@ func (g *Gateway) authenticate(x *exchange) *refusal {
 	if !secretWorks(route.Key.Secrets, tok.Hash, now) {
 		return &refusal{code: codeInvalidKey}
 	}
+	x.keyID = route.Key.ID // the secret is right, so the key is the one to name
 	switch {
 	case route.Key.Status == registry.KeyRevoked:
 		return &refusal{code: codeKeyRevoked}
 	case route.Key.Status == registry.KeyDisabled:
+		x.priority = true
 		return &refusal{code: codeKeyDisabled}
 	case route.Key.Status != registry.KeyActive:
 		return &refusal{code: codeInvalidKey} // fail closed on a status this kman doesn't know
 	case !route.Key.ExpiresAt.IsZero() && !now.Before(route.Key.ExpiresAt):
 		return &refusal{code: codeKeyExpired}
 	case route.Credential == nil || route.Upstream == nil:
+		x.priority = true                     // a canary, which nothing else tells apart from a bad key
 		return &refusal{code: codeInvalidKey} // a canary forwards nothing, and looks like any other bad key
 	}
 	x.route = route
