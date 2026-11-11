@@ -194,3 +194,28 @@ func (tx *Tx) UsageSince(since time.Time) ([]UsageRow, error) {
 	}
 	return out, nil
 }
+
+// LastUsed is, for each key that has forwarded a request, the start of the
+// latest hour in which it did. A key that was only refused is a key that was
+// not used, so it is absent, as is a key with no events. It reads usage_hourly,
+// so it is as fine as an hour.
+func (tx *Tx) LastUsed() (map[string]time.Time, error) {
+	rows, err := tx.tx.QueryContext(tx.ctx, `SELECT key_id, MAX(hour) FROM usage_hourly WHERE requests > 0 GROUP BY key_id`)
+	if err != nil {
+		return nil, typed(err, "read usage")
+	}
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var id string
+		var hour int64
+		if err := rows.Scan(&id, &hour); err != nil {
+			return nil, typed(err, "read usage")
+		}
+		out[id] = fromMilli(hour)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, typed(err, "read usage")
+	}
+	return out, nil
+}
