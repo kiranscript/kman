@@ -141,6 +141,8 @@ type exchange struct {
 	keyID string
 	// priority sends the event down the priority lane: a disabled key or a canary.
 	priority bool
+	// canary is set for the use of a canary key, and only for that.
+	canary bool
 	// refused is the code the app was refused with, when it was.
 	refused   code
 	model     string // the model asked for, as the meter read it
@@ -238,7 +240,7 @@ func (g *Gateway) emit(x *exchange) {
 		Latency: g.opts.Now().Sub(x.start), ReqBytes: int64(len(x.body)), RespBytes: x.respBytes,
 		TokensIn: x.reported.InputTokens, TokensOut: x.reported.OutputTokens, TokensCached: x.reported.CachedTokens,
 		TokensCacheWrite: x.reported.CacheWriteTokens, TokensAudioIn: x.reported.AudioInputTokens, TokensAudioOut: x.reported.AudioOutputTokens,
-		Priority: x.priority,
+		Priority: x.priority, Canary: x.canary,
 	}
 	if len(e.Path) > maxOperationPath {
 		e.Path = e.Path[:maxOperationPath]

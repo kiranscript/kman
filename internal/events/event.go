@@ -57,6 +57,10 @@ type Event struct {
 	// Priority sends the event down the priority lane: it is for a disabled or
 	// canary key, whose use is alerted on without waiting behind ordinary events.
 	Priority bool
+	// Canary marks the refusal of a canary key's use. It is set only for a key
+	// that has no credential on purpose: a canary answers invalid_key, like any
+	// bad key, so the code alone does not tell it apart.
+	Canary bool
 }
 
 // Operation is the request's method and path, such as "POST /v1/messages".

@@ -14,7 +14,6 @@ import (
 // them on the event.
 const (
 	codeKeyDisabled = "key_disabled"
-	codeInvalidKey  = "invalid_key" // how a canary answers: it looks like any bad key
 )
 
 // RunPriority turns the events of the priority lane into alerts, until the
@@ -27,11 +26,13 @@ const (
 func (s *Service) RunPriority(sub *events.Subscription) {
 	held := map[string]*throttled{}
 	for e := range sub.C {
-		if e.KeyID == "" || (e.BlockedCode != codeKeyDisabled && e.BlockedCode != codeInvalidKey) {
+		// A canary answers invalid_key like any bad key, so the gateway marks the
+		// event; the code alone never makes one.
+		if e.KeyID == "" || !(e.Canary || e.BlockedCode == codeKeyDisabled) {
 			continue
 		}
 		now := s.o.Now()
-		canary := e.BlockedCode == codeInvalidKey
+		canary := e.Canary
 		id := e.BlockedCode + "/" + e.KeyID
 		t := held[id]
 		if t != nil && now.Sub(t.at) < s.o.ThrottleWindow {
@@ -75,8 +76,8 @@ type throttled struct {
 }
 
 // usedKeyAlert is the alert for the use of a disabled key or a canary. It holds
-// where the request came from and the operation it asked for, never anything
-// the request said.
+// where the request came from and its method, never anything the request said:
+// the path is the caller's to write, so it stays out of what goes to a channel.
 func usedKeyAlert(e events.Event, canary bool, held int) Alert {
 	a := Alert{Kind: "disabled_key", Severity: High, Priority: true, Title: "A disabled key was used", KeyID: e.KeyID, Time: e.Time}
 	if canary {
@@ -85,8 +86,8 @@ func usedKeyAlert(e events.Event, canary bool, held int) Alert {
 	if e.ClientIP.IsValid() {
 		a.Evidence = append(a.Evidence, Fact{"From", e.ClientIP.String()})
 	}
-	if op := e.Operation(); op != "" {
-		a.Evidence = append(a.Evidence, Fact{"Operation", op})
+	if e.Method != "" {
+		a.Evidence = append(a.Evidence, Fact{"Method", e.Method})
 	}
 	if held > 0 {
 		a.Evidence = append(a.Evidence, Fact{"Held back", strconv.Itoa(held) + " more uses since the last alert"})

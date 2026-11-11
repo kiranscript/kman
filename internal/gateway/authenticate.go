@@ -36,9 +36,11 @@ func (g *Gateway) authenticate(x *exchange) *refusal {
 		return &refusal{code: codeInvalidKey} // fail closed on a status this kman doesn't know
 	case !route.Key.ExpiresAt.IsZero() && !now.Before(route.Key.ExpiresAt):
 		return &refusal{code: codeKeyExpired}
-	case route.Credential == nil || route.Upstream == nil:
-		x.priority = true                     // a canary, which nothing else tells apart from a bad key
+	case route.Key.CredentialID == "":
+		x.priority, x.canary = true, true     // a canary: a key with no credential on purpose
 		return &refusal{code: codeInvalidKey} // a canary forwards nothing, and looks like any other bad key
+	case route.Credential == nil || route.Upstream == nil:
+		return &refusal{code: codeInvalidKey} // its credential or upstream is gone: nothing to forward to, but no canary
 	}
 	x.route = route
 	return nil

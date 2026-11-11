@@ -45,7 +45,7 @@ func TestTheUseOfADisabledKeyAlertsThroughThePriorityLane(t *testing.T) {
 		if len(got) != 1 {
 			t.Fatalf("%d alerts, want 1", len(got))
 		}
-		for _, want := range []string{"HIGH", "ci-bot", "abcd1234", "203.0.113.7", "POST /v1/chat/completions", "disabled", "kman key show abcd1234"} {
+		for _, want := range []string{"HIGH", "ci-bot", "abcd1234", "203.0.113.7", "POST", "disabled", "kman key show abcd1234"} {
 			if !strings.Contains(got[0].Body, want) {
 				t.Errorf("the alert lacks %q:\n%s", want, got[0].Body)
 			}
@@ -62,6 +62,7 @@ func TestACanaryKeysUseIsCritical(t *testing.T) {
 		defer stop()
 		e := disabledUse("cafe0001", "198.51.100.4")
 		e.BlockedCode = "invalid_key" // how the gateway answers a canary
+		e.Canary = true
 		bus.Emit(e)
 		synctest.Wait()
 		got := in.net.received("hooks.test")
@@ -116,6 +117,59 @@ func TestRepeatedUseOfADisabledKeyIsThrottledAndCountedInTheNextAlert(t *testing
 		synctest.Wait()
 		if n := len(in.net.received("hooks.test")); n != 3 {
 			t.Errorf("%d alerts after another key's use, want 3", n)
+		}
+	})
+}
+
+// SPEC §9: an alert never carries request content, and the path is the caller's.
+func TestAPriorityAlertNeverCarriesTheRequestPath(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		in := newInstall(t)
+		in.channel("ch_1", "slack", "hooks.test", "low", true, "")
+		in.withKey("abcd1234", "ci-bot")
+		in.withKey("cafe0001", "decoy")
+		bus, stop := in.priorityLane()
+		defer stop()
+		hostile := "/v1/<b>x</b>/sk-ant-api03-FAKESECRET/*bold*"
+		e := disabledUse("abcd1234", "203.0.113.7")
+		e.Path = hostile
+		bus.Emit(e)
+		c := disabledUse("cafe0001", "203.0.113.8")
+		c.Path, c.BlockedCode, c.Canary = hostile, "invalid_key", true
+		bus.Emit(c)
+		synctest.Wait()
+		got := in.net.received("hooks.test")
+		if len(got) != 2 {
+			t.Fatalf("%d alerts, want 2", len(got))
+		}
+		for _, a := range got {
+			for _, bad := range []string{"FAKESECRET", "<b>", "*bold*", "/v1/", "chat/completions"} {
+				if strings.Contains(a.Body, bad) {
+					t.Errorf("the alert carries the caller's path (%q):\n%s", bad, a.Body)
+				}
+			}
+			if !strings.Contains(a.Body, "POST") {
+				t.Errorf("the alert lacks the method:\n%s", a.Body)
+			}
+		}
+	})
+}
+
+// Only a real canary is critical: a key refused as invalid_key for another
+// reason (an unknown status, a deleted credential) is not a canary.
+func TestAnInvalidKeyRefusalThatIsNotACanaryDoesNotAlert(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		in := newInstall(t)
+		in.channel("ch_1", "slack", "hooks.test", "low", true, "")
+		in.withKey("abcd1234", "ci-bot")
+		bus, stop := in.priorityLane()
+		defer stop()
+		e := disabledUse("abcd1234", "203.0.113.7")
+		e.BlockedCode = "invalid_key"
+		bus.Emit(e)
+		synctest.Wait()
+		if got := in.net.received("hooks.test"); len(got) != 0 {
+			t.Errorf("got %+v, want nothing", got)
 		}
 	})
 }

@@ -205,8 +205,25 @@ func TestACanaryEventNamesTheKeyAndTakesThePriorityLane(t *testing.T) {
 		t.Fatalf("status %d, a canary answers like any bad key", resp.StatusCode)
 	}
 	e := w.next(t)
-	if e.KeyID != canary.ID || !e.Priority || e.Kind != events.KindBlocked {
-		t.Errorf("event %+v, want a priority event naming the canary", e)
+	if e.KeyID != canary.ID || !e.Priority || !e.Canary || e.Kind != events.KindBlocked {
+		t.Errorf("event %+v, want a priority canary event naming the canary", e)
+	}
+}
+
+// A key whose credential is gone is refused like a canary, but it is not one.
+func TestAKeyWhoseCredentialWasDeletedIsNotACanaryEvent(t *testing.T) {
+	w := watch(t, events.Options{})
+	s := newStack(t, func(g *gateway.Options) { g.Events = w.bus })
+	k, secret := newKey(t)
+	k.CredentialID = "cred_gone" // set, but no such credential is published
+	s.publish(specOf(t, "http://127.0.0.1:1"), k)
+	resp, _ := s.send("GET", "/v1/models", "", withBearer(secret))
+	if resp.StatusCode != 401 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	e := w.next(t)
+	if e.KeyID != k.ID || e.Priority || e.Canary || e.BlockedCode != "invalid_key" {
+		t.Errorf("event %+v, want a plain invalid_key event, not a canary", e)
 	}
 }
 
