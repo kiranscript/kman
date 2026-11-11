@@ -219,7 +219,11 @@ jobs:
     # key with systemd-creds and runs itself as a transient service with
     # LoadCredentialEncrypted= (internal/vault/systemd_linux_test.go).
     # systemd-run --wait --pipe talks to systemd over the system D-Bus, not
-    # its private socket, so the container needs a bus daemon too.
+    # its private socket, so the container needs a bus daemon too. Under a
+    # container manager systemd leaves / with Docker's private propagation,
+    # and the credential mount it makes for a service in a helper namespace
+    # never reaches the service, so the container makes / shared first, as
+    # systemd itself does on a host.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -246,6 +250,7 @@ jobs:
             -v "$RUNNER_TEMP/kman-systemd:/kman:ro" \
             "$IMAGE" bash -c 'apt-get update -qq &&
               DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends systemd dbus >/dev/null &&
+              mount --make-rshared / &&
               exec /usr/lib/systemd/systemd'
           for _ in $(seq 1 90); do
             state=$(docker exec systemd systemctl is-system-running 2>/dev/null || true)

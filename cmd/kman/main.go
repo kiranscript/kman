@@ -89,6 +89,7 @@ func cliEnv(s *sys) cli.Env {
 	return cli.Env{Stdout: s.stdout, Stderr: s.stderr, Stdin: s.stdin, Getenv: s.getenv,
 		ConfigDir: configDir, ReadSecret: s.readSecret,
 		LocalPriceData: func() admin.PriceDataStatus { return builtinPrices().Status(s.now()) },
+		BinaryAge:      func() (time.Time, int, bool) { return binaryAge(s.now()) },
 		Initialised: func() bool {
 			_, err := os.Stat(filepath.Join(configDir, configFile))
 			return configDir != "" && err == nil
@@ -127,8 +128,10 @@ func cmdKeygen(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func printVersion(w io.Writer) {
-	v, c, d, modified := version, commit, date, false
+// stamp is what a build says of itself: the release build's -X values, else the
+// VCS stamp the Go toolchain embeds.
+func stamp() (v, c, d string, modified bool) {
+	v, c, d = version, commit, date
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		if v == "" {
 			v = bi.Main.Version
@@ -148,6 +151,24 @@ func printVersion(w io.Writer) {
 			}
 		}
 	}
+	return v, c, d, modified
+}
+
+// binaryAge is when this binary was built, which is its commit's date, and how
+// many whole days before now that is. It is not ok for a build that carries no
+// date, such as one from go install of a module path, or one with a date that
+// is not RFC 3339.
+func binaryAge(now time.Time) (built time.Time, ageDays int, ok bool) {
+	_, _, d, _ := stamp()
+	built, err := time.Parse(time.RFC3339, d)
+	if err != nil {
+		return time.Time{}, 0, false
+	}
+	return built, max(0, int(now.Sub(built).Hours()/24)), true
+}
+
+func printVersion(w io.Writer) {
+	v, c, d, modified := stamp()
 	if c == "" {
 		c = "unknown"
 	} else if modified && commit == "" {

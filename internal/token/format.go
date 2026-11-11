@@ -19,6 +19,14 @@ const (
 	crcLen    = 6  // a CRC32 in base62
 )
 
+// IsKeyShaped reports whether s starts as a virtual key or a child key does,
+// before any checksum or length is looked at: the gateway's way of finding a
+// key among an app's headers, and of keeping it from the upstream. Parse is what
+// decides whether it is one.
+func IsKeyShaped(s string) bool {
+	return strings.HasPrefix(s, virtualPrefix) || strings.HasPrefix(s, childPrefix)
+}
+
 // Hash is the SHA-256 of a token's secret: all of a secret kman stores.
 // Compare hashes with Equal, not ==, so the comparison takes constant time.
 type Hash [sha256.Size]byte

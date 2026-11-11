@@ -17,6 +17,14 @@ import (
 	"github.com/kirank55/kman/internal/token"
 )
 
+// The statuses a Key can have, for the transports, which may not import the
+// store that owns them.
+const (
+	KeyActive   = store.KeyActive
+	KeyDisabled = store.KeyDisabled
+	KeyRevoked  = store.KeyRevoked
+)
+
 // Key is a virtual key as the admin API shows it. It never holds the secret,
 // which is shown once, in CreatedKey.
 type Key struct {

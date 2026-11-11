@@ -121,7 +121,10 @@ jobs:
           done
 
       # The steps in docs/operator-guide/systemd.md, run as written against
-      # the .deb in a container booted with systemd.
+      # the .deb in a container booted with systemd. As in ci.yml's
+      # systemd-creds job: systemd-run --wait needs a system bus (dbus), and
+      # credentials reach a service only once / is a shared mount, which
+      # systemd leaves alone under a container manager.
       - name: The documented systemd steps run kman from the .deb
         env:
           IMAGE: ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
@@ -133,12 +136,15 @@ jobs:
             -e container=docker --tmpfs /run --tmpfs /run/lock \
             -v "$RUNNER_TEMP/deb:/deb:ro" \
             "$IMAGE" bash -c 'apt-get update -qq &&
-              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends systemd curl >/dev/null &&
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends systemd dbus curl >/dev/null &&
+              mount --make-rshared / &&
               exec /usr/lib/systemd/systemd'
           booted=
           for _ in $(seq 1 90); do
             state=$(docker exec systemd systemctl is-system-running 2>/dev/null || true)
-            case "$state" in running|degraded) booted=1; break ;; esac
+            case "$state" in running|degraded)
+              if docker exec systemd test -S /run/dbus/system_bus_socket; then booted=1; break; fi ;;
+            esac
             sleep 2
           done
           test -n "$booted"

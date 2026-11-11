@@ -85,13 +85,35 @@ func (g *Gateway) respond(x *exchange, resp *http.Response) {
 
 	buf := copyBuffers.Get().(*[32 << 10]byte)
 	defer copyBuffers.Put(buf)
+	// A response with a length is over for the app at its last byte, when the
+	// handler hasn't returned yet: an app that then sends its next request at once
+	// would meet this one's reservation, and could be refused for a cap it hasn't
+	// reached. So the last byte waits for the settle. (Without a length, the end is
+	// written after the handler returns, which is after the settle.)
+	left := resp.ContentLength
+	if x.r.Method == http.MethodHead || x.res == nil {
+		left = -1
+	}
 	for {
 		n, err := resp.Body.Read(buf[:])
 		if n > 0 {
 			if x.usage != nil {
 				x.usage.Feed(buf[:n])
 			}
-			if _, werr := x.w.Write(buf[:n]); werr != nil {
+			chunk := buf[:n]
+			if left >= 0 {
+				left -= int64(n)
+				if left == 0 {
+					if _, werr := x.w.Write(chunk[:n-1]); werr != nil {
+						x.abort = true
+						return
+					}
+					flusher.Flush()
+					g.settle(x)
+					chunk = chunk[n-1:]
+				}
+			}
+			if _, werr := x.w.Write(chunk); werr != nil {
 				x.abort = true
 				return
 			}

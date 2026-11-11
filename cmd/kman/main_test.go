@@ -75,6 +75,32 @@ func TestPlainKmanShowsThisBinarysPriceDataAndTheCommands(t *testing.T) {
 	}
 }
 
+// The date a release build stamps is the commit's, and plain kman counts its age
+// from it (SPEC §12).
+func TestPlainKmanShowsHowOldThisBinaryIs(t *testing.T) {
+	old := date
+	t.Cleanup(func() { date = old })
+	date = "2026-10-30T08:00:00Z"
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	s, stdout, _ := testSys(t, map[string]string{"HOME": t.TempDir(), "XDG_CONFIG_HOME": t.TempDir()})
+	s.now = func() time.Time { return now }
+	run(context.Background(), nil, s)
+	if out := stdout.String(); !strings.Contains(out, "This kman binary was built 2026-10-30, 6 days old.\n") {
+		t.Errorf("plain kman printed:\n%s", out)
+	}
+}
+
+func TestPlainKmanSaysWhenThisBinaryHasNoBuildDate(t *testing.T) {
+	old := date
+	t.Cleanup(func() { date = old })
+	date = "not a date"
+	s, stdout, _ := testSys(t, map[string]string{"HOME": t.TempDir(), "XDG_CONFIG_HOME": t.TempDir()})
+	run(context.Background(), nil, s)
+	if out := stdout.String(); !strings.Contains(out, "age is unknown") {
+		t.Errorf("plain kman printed:\n%s", out)
+	}
+}
+
 func TestPlainKmanAsksForAnUpgradePastSixtyDays(t *testing.T) {
 	now := pricing.Builtin().GeneratedAt().AddDate(0, 0, 61)
 	s, stdout, _ := testSys(t, map[string]string{"HOME": t.TempDir(), "XDG_CONFIG_HOME": t.TempDir()})

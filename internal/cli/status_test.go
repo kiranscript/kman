@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/cli"
@@ -128,5 +129,39 @@ func TestTheSummaryShowsThePriceDataAtEveryStage(t *testing.T) {
 	in.loggedIn(t)
 	if out := in.summaryOf(t, nil, true); !strings.Contains(out, fmt.Sprintf("%d days old", 3)) {
 		t.Errorf("running: no age of the server's price data in:\n%s", out)
+	}
+}
+
+// SPEC §12: the summary always shows how old the binary is, with the install at
+// any stage and whether or not a server answers.
+func TestTheSummaryAlwaysShowsHowOldTheBinaryIs(t *testing.T) {
+	built := time.Date(2026, 11, 1, 9, 30, 0, 0, time.UTC)
+	run := func(in *install, binary func() (time.Time, int, bool), initialised bool) string {
+		var stdout bytes.Buffer
+		cli.Status(context.Background(), cli.Env{
+			Stdout: &stdout, Stderr: &bytes.Buffer{}, Stdin: strings.NewReader(""),
+			Getenv:      func(string) string { return "" },
+			ConfigDir:   in.configDir,
+			Initialised: func() bool { return initialised },
+			BinaryAge:   binary,
+		})
+		return stdout.String()
+	}
+	known := func() (time.Time, int, bool) { return built, 4, true }
+	unknown := func() (time.Time, int, bool) { return time.Time{}, 0, false }
+
+	in := newInstall(t)
+	if out := run(in, known, false); !strings.Contains(out, "This kman binary was built 2026-11-01, 4 days old.\n") {
+		t.Errorf("no install: no age of the binary in:\n%s", out)
+	}
+	in.loggedIn(t)
+	if out := run(in, known, true); !strings.Contains(out, "This kman binary was built 2026-11-01, 4 days old.\n") {
+		t.Errorf("running: no age of the binary in:\n%s", out)
+	}
+	if out := run(in, unknown, true); !strings.Contains(out, "This kman binary carries no build date, so its age is unknown.\n") {
+		t.Errorf("an unstamped binary is not said to be unstamped:\n%s", out)
+	}
+	if out := run(in, nil, true); !strings.Contains(out, "age is unknown") {
+		t.Errorf("a caller that can't say gets no line:\n%s", out)
 	}
 }

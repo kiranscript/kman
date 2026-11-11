@@ -26,11 +26,11 @@ func (g *Gateway) authenticate(x *exchange) *refusal {
 		return &refusal{code: codeInvalidKey}
 	}
 	switch {
-	case route.Key.Status == statusRevoked:
+	case route.Key.Status == registry.KeyRevoked:
 		return &refusal{code: codeKeyRevoked}
-	case route.Key.Status == statusDisabled:
+	case route.Key.Status == registry.KeyDisabled:
 		return &refusal{code: codeKeyDisabled}
-	case route.Key.Status != statusActive:
+	case route.Key.Status != registry.KeyActive:
 		return &refusal{code: codeInvalidKey} // fail closed on a status this kman doesn't know
 	case !route.Key.ExpiresAt.IsZero() && !now.Before(route.Key.ExpiresAt):
 		return &refusal{code: codeKeyExpired}
@@ -40,13 +40,6 @@ func (g *Gateway) authenticate(x *exchange) *refusal {
 	x.route = route
 	return nil
 }
-
-// A key's statuses, as the store and the registry hold them.
-const (
-	statusActive   = "active"
-	statusDisabled = "disabled"
-	statusRevoked  = "revoked"
-)
 
 // secretWorks reports whether hash is a secret of the key, still in its
 // validity. It compares in constant time and looks at every secret, so timing
@@ -62,18 +55,12 @@ func secretWorks(secrets []registry.KeySecret, hash token.Hash, now time.Time) b
 	return found
 }
 
-// keyPrefixes are how a token that names a virtual key starts.
-const (
-	virtualPrefix = "kmn_"
-	childPrefix   = "ek_kmn_"
-)
-
 // looksLikeKey reports whether a header value holds a key, alone or as a bearer
 // token. It is how the key is found in a provider's own header, and how it is
 // kept from going any further.
 func looksLikeKey(v string) bool {
 	v = withoutBearer(v)
-	return strings.HasPrefix(v, virtualPrefix) || strings.HasPrefix(v, childPrefix)
+	return token.IsKeyShaped(v)
 }
 
 func withoutBearer(v string) string {

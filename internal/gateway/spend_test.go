@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -97,6 +98,65 @@ func TestARequestOnAMeteredUpstreamIsChargedForTheUsageItReports(t *testing.T) {
 	}
 	if got := s.spent(); got.CostMicro != 70 || got.Requests != 1 || got.ReservedMicro != 0 {
 		t.Errorf("spend = %+v, want one request of 70", got)
+	}
+}
+
+// endWatcher is the app's side of a response, which notes what the key's spend
+// holds at the write that completes the body: an app that has the whole of a
+// response may send its next request that instant.
+type endWatcher struct {
+	header        http.Header
+	total         int
+	written       int
+	reservedAtEnd int64
+	ended         bool
+	reserved      func() int64
+}
+
+func (w *endWatcher) Header() http.Header { return w.header }
+func (w *endWatcher) WriteHeader(int)     {}
+func (w *endWatcher) Flush()              {}
+func (w *endWatcher) Write(p []byte) (int, error) {
+	w.written += len(p)
+	if w.written == w.total && !w.ended {
+		w.ended, w.reservedAtEnd = true, w.reserved()
+	}
+	return len(p), nil
+}
+
+// A request's reservation is settled before the last byte of a response that has
+// a length goes out, so an app that sends its next request the moment it has the
+// whole answer never meets the last one's reservation (SPEC §1 inv. 4). A response
+// with no length ends when the handler returns, which is after the settle.
+func TestAResponseWithALengthIsNotCompleteBeforeItsRequestIsSettled(t *testing.T) {
+	const errorBody = `{"error":{"message":"overloaded"}}`
+	for name, tc := range map[string]struct {
+		up   http.Handler
+		body string
+	}{
+		"an answer": {answering("application/json", usageResponse), usageResponse},
+		"an error": {http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(503)
+			io.WriteString(w, errorBody)
+		}), errorBody},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := spendingBehind(t, tc.up, `{}`)
+			w := &endWatcher{header: http.Header{}, total: len(tc.body), reserved: func() int64 { return s.spent().ReservedMicro }}
+			r := httptest.NewRequestWithContext(t.Context(), "POST", chatPath, strings.NewReader(chatBody()))
+			r.Header = withBearer(s.secret)
+			s.gw.ServeHTTP(w, r)
+			if w.header.Get("Content-Length") == "" {
+				t.Fatalf("the response has no Content-Length, so this test shows nothing: %v", w.header)
+			}
+			if !w.ended {
+				t.Fatalf("the app was given %d of the %d bytes", w.written, w.total)
+			}
+			if w.reservedAtEnd != 0 {
+				t.Errorf("the reservation of %d was still held when the response's last byte went out", w.reservedAtEnd)
+			}
+		})
 	}
 }
 

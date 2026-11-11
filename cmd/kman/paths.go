@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"path"
 	"path/filepath"
 )
 
@@ -29,11 +30,12 @@ func defaultDirs(goos string, getenv func(string) string) (config, data string, 
 	}
 	home := getenv("HOME")
 	xdgConfig, xdgData := getenv("XDG_CONFIG_HOME"), getenv("XDG_DATA_HOME")
-	// The XDG spec says to ignore relative paths.
-	if !filepath.IsAbs(xdgConfig) {
+	// The XDG spec says to ignore relative paths. These are Unix paths, so
+	// path, not filepath, judges them whatever OS runs this.
+	if !path.IsAbs(xdgConfig) {
 		xdgConfig = ""
 	}
-	if !filepath.IsAbs(xdgData) {
+	if !path.IsAbs(xdgData) {
 		xdgData = ""
 	}
 	if home == "" && (xdgConfig == "" || xdgData == "") {
