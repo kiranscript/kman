@@ -46,3 +46,8 @@ All notable changes to kman are recorded here. The format follows
 - A response is charged what it reports, at the model, tier and cost it reports, whatever its status. A non-2xx with no usage costs nothing. A stream that breaks, an app that leaves, and a 2xx that reports no usage are charged the whole reservation, marked estimated (except the free routes `count_tokens`, `input_tokens` and `moderations`). Capped keys fail closed with `store_unavailable` once spend has failed to reach the store for 60 s.
 - A key with a cap or a model allowlist refuses a request kman can't meter, with `unmetered_request` (no top-level `model`, a body that isn't JSON, or a generic upstream) or `unknown_model_price`, which names the model, the upstream and the `kman price set` command. That includes `GET /v1/models`. Other keys forward such requests and show them as unmetered, never as $0.
 - `kman key show` prints each key's spend today and this month beside its caps, and `key show --json`, `key list --json` and `GET /admin/v1/keys` carry the same `spend`.
+
+### Security
+
+- The proxy no longer lets a request hold a connection or memory by sending its body slowly, or by promising a body it never sends: a body that stops arriving for 30 s, or takes over 5 minutes, ends the connection; request bodies held in memory are capped across all requests (512 MiB, then 429 `rate_limited`); a refused request no longer waits for the rest of its body; listeners close idle connections after 2 minutes and limit a request head to 64 KiB. Found by the v0.1.0 security review ([docs/security-review-v0.1.0.md](docs/security-review-v0.1.0.md)).
+- `kman rekey`'s report no longer points at a command this release does not ship.
