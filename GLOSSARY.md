@@ -18,6 +18,10 @@ _Avoid_: Key name (a name is a separate, operator-chosen label)
 A virtual key whose only purpose is to raise an alert when anyone uses it. Nothing in the key itself distinguishes it from a standard virtual key.
 _Avoid_: Honeytoken, decoy key, canary token
 
+**Address lock**:
+A virtual key's list of the networks (`allowed_cidrs`) and countries (`allowed_countries`) it may be used from. A request from anywhere else is refused before its body is read, and each lock that is set must hold. A key with neither is open to every address.
+_Avoid_: Allowlist (that word is for models and routes), IP restriction
+
 **Child key**:
 A short-lived virtual key minted from another virtual key, so a less-trusted client such as a browser can open a realtime session without holding the parent. It can only narrow its parent's policy, and its spend counts against the parent. Unlike other virtual keys, a child key is recognisable as one.
 _Avoid_: Ephemeral token (that is the provider's own concept)
@@ -57,6 +61,26 @@ _Avoid_: User, admin (too vague)
 **Dashboard**:
 The web interface, served by kman itself, for watching keys and responding to leaks.
 _Avoid_: Web UI, console, TUI (the TUI no longer exists)
+
+**Exposure**:
+How easy a working virtual key would be to abuse if it leaked: open to every address, never expiring, or unused for 30 days. `kman exposure` lists each finding with the command that fixes it.
+_Avoid_: Risk score, key at risk (that is the state of a key, and an exposure finding is one rule it breaks)
+
+**Scan**:
+Searching files or standard input for virtual keys that ended up where they should not be, offline and by the key's checksum. It reports where a key is and which key id to look up, never the secret.
+_Avoid_: Leak check (a scan cannot say whether a key is still live)
+
+**Backup**:
+A consistent copy of the database, taken while kman runs. It holds ciphertext only and opens only with the master key it was made under, which is not in it.
+_Avoid_: Export, dump, snapshot
+
+**Restore**:
+Replacing the database with a backup, offline. Everything written after the backup is gone, and the database it replaced is kept aside.
+_Avoid_: Import, recover
+
+**Retention**:
+How long kman keeps the data that grows: events, hourly usage and delivered alerts are pruned past their windows, and daily spend, incidents and the audit log are kept forever. `kman prune --before` prunes by a date of the operator's own.
+_Avoid_: Cleanup, expiry (that is a key's)
 
 ### Upstreams and credentials
 
@@ -132,6 +156,20 @@ _Avoid_: Alert, event
 A message kman sends to a channel when an incident opens or escalates, or when a spend or lifecycle warning is due.
 _Avoid_: Notification, detection
 
+**Warning**:
+An alert about lifecycle news rather than a change or a use: a soft budget crossed, a month on course to pass its limit, a key about to expire, or an upstream that refused kman's credential. A channel takes warnings only if its lifecycle toggle is on.
+
+**Channel**:
+Where alerts are sent: a Slack address or a signed webhook, with the lowest severity it takes. Its address is sealed like a credential and never shown again.
+_Avoid_: Destination, integration, sink
+
+**Alert outbox**:
+The persisted queue of alerts waiting to be delivered, one entry per channel. An alert is queued in the transaction of the change that raised it, so it is never lost with it, and delivery retries with backoff until it succeeds or is given up on.
+_Avoid_: Notification queue
+
+**Priority lane**:
+The path that takes the use of a disabled key or a canary key from the gateway to the alert outbox without waiting behind ordinary events. Its alerts say where the request came from and never what it said.
+
 **Known source**:
 A labelled address range, country, or network that the operator has said is legitimate, either for every key or for one key. Use from a known source never counts as a new location.
 _Avoid_: Allowlist (an allowlist refuses everything else; a known source refuses nothing)
@@ -150,6 +188,9 @@ A hard daily or monthly limit on a virtual key's spend. Requests that would exce
 **Soft budget**:
 A spend threshold that raises a warning and refuses nothing. A key can have one with or without a spend cap.
 _Avoid_: Soft cap (it never caps)
+
+**Hourly usage**:
+One key's requests, refusals, errors, tokens and cost for one hour, counted as events arrive. It outlives the events it counts (400 days by default), and it is where "last used" comes from.
 
 **Committed spend**:
 What a virtual key has actually been charged in the current day or month.

@@ -39,6 +39,8 @@ kman channel rm ops        # remove it, wipe its address, give up what still wai
 | **Key expiry** | medium, then high | A key is about to expire, or has |
 | **A refused credential** | high | An upstream answered 401 to the credential kman presented |
 
+The two key-use rows go beyond the producers SPEC §9 lists for the first release, and they are the only ones that react to a request rather than a change. They name the key and where the request came from, and never the request's path or anything else it said, because a stranger holding a disabled key or a canary writes that text. A key kman refuses for any other reason, such as a deleted credential, is not a canary and raises nothing.
+
 The audit log is a producer, so the change and its alert commit in one transaction: an alert is never lost with a change that went through. The severity of an audit entry follows its action:
 
 - **high:** `admin_token.create|rotate|revoke`, `credential.compromise`, `key.revoke`
@@ -47,13 +49,15 @@ The audit log is a producer, so the change and its alert commit in one transacti
 
 With the default `--min-severity medium`, a channel hears about the first two groups. A key that is used again and again alerts once per 10 minutes, and the next alert says how many uses it held back.
 
+Retention's own pass (`data.prune`, actor `system:retention`) is alerted on like any other entry. `kman restore` and `kman rekey` run with the server stopped: they are audited, but no alert is queued or sent for them.
+
 Not yet: incidents and the detection rules, Discord and ntfy.
 
 ## Warnings
 
 Spend, expiry and a refused credential are **warnings**: lifecycle news rather than a change or a use. A channel's `--lifecycle-alerts` toggle (on by default) decides whether it hears them, and its `--min-severity` still applies.
 
-- **Spend.** A key's spend reaches 50, 80 and 100 percent of each of its caps, by default. Each threshold alerts **once per period** (a day for a daily limit, a month for a monthly one), and several thresholds crossed between two checks make one alert, for the highest. A key can have its own percentages (`soft_budget_percents`), and a soft budget (`daily_budget_micro`, `monthly_budget_micro`) with no cap at all; `kman settings set soft_budget_defaults 25,50,90` changes the default for every other key, and `none` turns the default off. See [Soft budgets and warnings](../policy.md#soft-budgets-and-warnings).
+- **Spend.** A key's spend reaches 50, 80 and 100 percent of each of its caps, by default. A warning counts as sent only once a channel has received it: a threshold crossed while you have no channel, or none that takes warnings at that severity, is still owed, and alerts when you add one. Each threshold alerts **once per period** (a day for a daily limit, a month for a monthly one), and several thresholds crossed between two checks make one alert, for the highest. A key can have its own percentages (`soft_budget_percents`), and a soft budget (`daily_budget_micro`, `monthly_budget_micro`) with no cap at all; `kman settings set soft_budget_defaults 25,50,90` changes the default for every other key, and `none` turns the default off. See [Soft budgets and warnings](../policy.md#soft-budgets-and-warnings).
 - **A projection.** Once per month, when the spend so far plus the last 7 full days' daily average times the days left would pass the monthly cap or soft budget. It is silent once the month is already over the limit.
 - **Key expiry.** A key that is active and not a canary alerts 7 days before it expires (medium), 1 day before (high), and when it has expired (high), each once. A key made for less than a week does not warn a week ahead. Extending a key's expiry (`kman key update <key> --ttl 90d`) starts the warnings again for the new date.
 - **A refused credential.** A request kman forwarded got `401` from the provider, so the credential kman holds for that upstream was revoked or has expired there, and every key on it is failing. The alert names the upstream and its credentials, never a secret, comes once an hour for each upstream, and says how many it held back. The fix is at the provider first, then `kman credential update <name> --secret`.
