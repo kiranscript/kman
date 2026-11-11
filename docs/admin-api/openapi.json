@@ -456,6 +456,14 @@
             "description": "The version of the policy format the policy is in.",
             "type": "integer"
           },
+          "spend": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KeySpend"
+              }
+            ],
+            "description": "What the key has spent today and this month, beside its caps. Shown when the key is read, and not in the audit log."
+          },
           "status": {
             "description": "active, disabled or revoked.",
             "type": "string"
@@ -498,6 +506,22 @@
         },
         "required": [
           "keys"
+        ],
+        "type": "object"
+      },
+      "KeySpend": {
+        "additionalProperties": false,
+        "properties": {
+          "month": {
+            "$ref": "#/components/schemas/SpendPeriod"
+          },
+          "today": {
+            "$ref": "#/components/schemas/SpendPeriod"
+          }
+        },
+        "required": [
+          "today",
+          "month"
         ],
         "type": "object"
       },
@@ -956,7 +980,7 @@
             "type": "array"
           },
           "spend_timezone": {
-            "description": "The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC.",
+            "description": "The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC. A change takes effect when kman restarts.",
             "type": "string"
           }
         },
@@ -990,6 +1014,54 @@
           }
         },
         "required": [],
+        "type": "object"
+      },
+      "SpendPeriod": {
+        "additionalProperties": false,
+        "properties": {
+          "cap_micro": {
+            "description": "The key's cap for the period, in microdollars. Absent for none.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cost_micro": {
+            "description": "What has been charged, in microdollars, estimated_micro included.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "estimated_micro": {
+            "description": "The part of cost_micro charged as an estimate: the whole reservation, for a response that was cut off or reported no usage.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "period": {
+            "description": "The day, such as 2026-11-11, or the month, such as 2026-11.",
+            "type": "string"
+          },
+          "requests": {
+            "description": "Requests charged.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "reserved_micro": {
+            "description": "Held for requests in flight. A cap counts it as it counts cost_micro.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "unmetered_requests": {
+            "description": "Requests forwarded that could not be metered, whose cost is unknown and so is not in cost_micro.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "period",
+          "cost_micro",
+          "estimated_micro",
+          "reserved_micro",
+          "requests",
+          "unmetered_requests"
+        ],
         "type": "object"
       },
       "Upstream": {

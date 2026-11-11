@@ -35,6 +35,16 @@ type install struct {
 	svc       *admin.Service
 	logs      *bytes.Buffer
 	serve     func(*testing.T, []registry.Preset)
+	// spend is what the meter says a key has spent, for a service made after it is set. Nil
+	// is no meter.
+	spend func(keyID, policy string) admin.KeySpend
+}
+
+// withSpend restarts the API over a meter that says what spend gives.
+func (in *install) withSpend(t *testing.T, spend func(keyID, policy string) admin.KeySpend) {
+	t.Helper()
+	in.spend = spend
+	in.upgrade(t, profiles.Presets())
 }
 
 // upgrade restarts the API with other presets, as a new release of kman would
@@ -117,9 +127,14 @@ func newInstallWith(t *testing.T, presets []registry.Preset, opts ...func(*admin
 	if err != nil {
 		t.Fatal(err)
 	}
+	var in *install
 	newService := func(presets []registry.Preset) *admin.Service {
-		return admin.New(admin.Options{Store: st, Now: func() time.Time { return t0 }, Vault: v, Presets: presets, NormalizePolicy: policy.Normalize,
-			Prices: func() admin.PriceTable { return prices }})
+		o := admin.Options{Store: st, Now: func() time.Time { return t0 }, Vault: v, Presets: presets, NormalizePolicy: policy.Normalize,
+			Prices: func() admin.PriceTable { return prices }}
+		if in != nil {
+			o.Spend = in.spend
+		}
+		return admin.New(o)
 	}
 	svc := newService(presets)
 	owner, err := svc.CreateAdminToken(admin.WithCaller(context.Background(), admin.Caller{Actor: "system:init"}),
@@ -127,7 +142,7 @@ func newInstallWith(t *testing.T, presets []registry.Preset, opts ...func(*admin
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := &install{owner: owner.Secret, configDir: t.TempDir(), dataDir: dataDir, svc: svc, logs: &bytes.Buffer{}}
+	in = &install{owner: owner.Secret, configDir: t.TempDir(), dataDir: dataDir, svc: svc, logs: &bytes.Buffer{}}
 	in.serve = func(t *testing.T, presets []registry.Preset) {
 		in.svc = newService(presets)
 		ts := httptest.NewServer(adminapi.Handler(in.svc, slog.New(slog.NewTextHandler(in.logs, nil))))

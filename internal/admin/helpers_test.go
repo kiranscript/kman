@@ -34,6 +34,8 @@ type install struct {
 	// normalize is the policy's rules; a test may swap them for rules that
 	// know more fields than policy does yet.
 	normalize func([]byte) (int, []byte, error)
+	// spend stands for the meter, when a test shows spend.
+	spend func(keyID, policy string) admin.KeySpend
 }
 
 func newInstall(t *testing.T) *install {
@@ -68,6 +70,7 @@ func (in *install) service(presets []registry.Preset) *admin.Service {
 		Vault:           in.vault,
 		Presets:         presets,
 		NormalizePolicy: func(raw []byte) (int, []byte, error) { return in.normalize(raw) },
+		Spend:           in.spend,
 		Apply: func(c registry.Change) {
 			in.applied = append(in.applied, c)
 			in.reg.Apply(c)
