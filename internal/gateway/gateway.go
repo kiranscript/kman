@@ -112,6 +112,8 @@ type exchange struct {
 	// status is the upstream's, or zero while it hasn't answered.
 	res    *meter.Reservation
 	status int
+	// settled is whether settle has run: it may run before the response's last byte.
+	settled bool
 	// held is how many bytes of its body the request has counted against the
 	// gateway's MaxBuffered, until it ends.
 	held int64

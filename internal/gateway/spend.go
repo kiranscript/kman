@@ -60,8 +60,12 @@ func (g *Gateway) reserve(x *exchange) *refusal {
 
 // settle charges the request what it cost, or gives its reservation back, and
 // hands the usage read from the response on. It runs for every request, refused
-// or not.
+// or not, and once: a response with a length settles before its last byte goes.
 func (g *Gateway) settle(x *exchange) {
+	if x.settled {
+		return
+	}
+	x.settled = true
 	var usage profiles.Usage
 	if x.usage != nil {
 		usage = x.usage.Usage()
