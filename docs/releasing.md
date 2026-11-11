@@ -38,6 +38,8 @@ Then merge the work onto `main`: PR #57 (`m1-contain` into `main`) and this tick
 
 ### 2. Last checks on `main`
 
+`docs/v0.1.0-done.md` says which test checks each of M1's done criteria.
+
 ```sh
 git switch main && git pull --ff-only
 sh scripts/check-fixture.sh v0.1.0         # the fixture is committed

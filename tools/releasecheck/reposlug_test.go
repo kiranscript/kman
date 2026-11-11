@@ -91,6 +91,9 @@ func TestSetRepoMovesEveryPlaceTheRepoIsNamed(t *testing.T) {
 	}
 	var left []string
 	for f := range files {
+		if f == "tools/releasecheck/reposlug_test.go" {
+			continue // names the old owner to say what it checks
+		}
 		b, err := os.ReadFile(filepath.Join(dir, f))
 		if err != nil {
 			t.Fatal(err)
