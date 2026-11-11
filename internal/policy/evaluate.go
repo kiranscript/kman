@@ -3,6 +3,7 @@ package policy
 import (
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"strings"
 )
 
@@ -10,15 +11,17 @@ import (
 // the registry's snapshot is, and is immutable: Evaluate reads it and parses
 // nothing.
 type Compiled struct {
-	paths    *Paths // the key's own list, or nil for its upstream's
-	exact    map[string]struct{}
-	prefixes []string
-	models   bool // an allowlist is set, which may be empty only by being absent
-	rpm      int
-	daily    int64
-	monthly  int64
-	strict   bool  // the key may send only requests kman can meter
-	broken   error // why the policy can't be read, if it can't
+	paths     *Paths // the key's own list, or nil for its upstream's
+	exact     map[string]struct{}
+	prefixes  []string
+	cidrs     []netip.Prefix // the address lock's networks, none for no lock
+	countries []string       // and its countries, in capitals
+	models    bool           // an allowlist is set, which may be empty only by being absent
+	rpm       int
+	daily     int64
+	monthly   int64
+	strict    bool  // the key may send only requests kman can meter
+	broken    error // why the policy can't be read, if it can't
 }
 
 // Compile builds the compiled form of a stored policy: the JSON and the version
@@ -39,6 +42,14 @@ func Compile(version int, stored string) (*Compiled, error) {
 		return fail(err)
 	}
 	c := &Compiled{rpm: p.RPMLimit, daily: p.DailyCapMicro, monthly: p.MonthlyCapMicro, strict: p.RequiresMetering()}
+	c.countries = p.AllowedCountries
+	for _, n := range p.AllowedCIDRs {
+		prefix, err := netip.ParsePrefix(n)
+		if err != nil {
+			return fail(err)
+		}
+		c.cidrs = append(c.cidrs, prefix)
+	}
 	if len(p.AllowedPaths) > 0 {
 		if c.paths, err = CompilePaths(p.AllowedPaths); err != nil {
 			return fail(err)
@@ -112,6 +123,7 @@ const (
 	PathNotAllowed
 	ModelNotAllowed
 	Unmetered
+	AddressNotAllowed
 )
 
 func (d Decision) String() string {
@@ -124,6 +136,8 @@ func (d Decision) String() string {
 		return "model_not_allowed"
 	case Unmetered:
 		return "unmetered_request"
+	case AddressNotAllowed:
+		return "address_not_allowed"
 	}
 	return fmt.Sprintf("decision(%d)", uint8(d))
 }

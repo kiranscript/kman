@@ -151,3 +151,26 @@ func TestTheAPIDisablesEnablesAndRevokesAKeyByItsId(t *testing.T) {
 		t.Errorf("revoking with no token = %d, want 401", r.status)
 	}
 }
+
+func TestTheAPIListsTheExposedKeysWithTheirFixes(t *testing.T) {
+	s := newServer(t)
+	withUpstreamAndCredential(t, s)
+	open := createKey(t, s, `{"name":"my-app","upstream":"openai"}`)
+	createKey(t, s, `{"name":"locked","upstream":"openai","policy":{"allowed_cidrs":["203.0.113.0/24"]}}`)
+
+	if r := s.do(t, "", "GET", "/admin/v1/exposure", ""); r.status != http.StatusUnauthorized {
+		t.Errorf("GET /exposure with no token: %d, want 401", r.status)
+	}
+	r := s.do(t, s.owner, "GET", "/admin/v1/exposure", "")
+	var got admin.Exposure
+	if err := json.Unmarshal(r.body, &got); err != nil || r.status != http.StatusOK {
+		t.Fatalf("GET /exposure: %d %s %v", r.status, r.body, err)
+	}
+	if got.KeysChecked != 2 || len(got.Findings) != 1 || got.Findings[0].KeyID != open.Key.ID ||
+		got.Findings[0].Rule != admin.ExposureOpenToEveryAddress || !strings.HasPrefix(got.Findings[0].Fix, "kman key update my-app --policy") {
+		t.Errorf("exposure = %s", r.body)
+	}
+	if strings.Contains(string(r.body), string(open.Secret)) {
+		t.Error("the exposure report holds a key's secret")
+	}
+}

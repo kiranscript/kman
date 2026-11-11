@@ -59,6 +59,8 @@ type API interface {
 	RemovePriceOverride(ctx context.Context, req PriceOverrideRef) (PriceOverride, error)
 	ImportPriceOverrides(ctx context.Context, req PriceOverrideImport) (PriceOverrideImportResult, error)
 
+	Exposure(ctx context.Context) (Exposure, error)
+
 	AddChannel(ctx context.Context, req AddChannelRequest) (CreatedChannel, error)
 	ListChannels(ctx context.Context) (ChannelList, error)
 	TestChannel(ctx context.Context, req ChannelRef) (ChannelTestResult, error)

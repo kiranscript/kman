@@ -73,6 +73,9 @@ type Config struct {
 	// a request's address is its connection's.
 	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
 
+	// GeoIP names the GeoIP databases kman reads, if any (see GeoIPConfig).
+	GeoIP GeoIPConfig `yaml:"geoip,omitempty"`
+
 	Dashboard DashboardConfig `yaml:"dashboard,omitempty"`
 }
 
@@ -172,6 +175,9 @@ func (c Config) check() error {
 		if _, err := parseProxy(s); err != nil {
 			return err
 		}
+	}
+	if err := c.GeoIP.check(); err != nil {
+		return err
 	}
 	for _, l := range []struct {
 		name string

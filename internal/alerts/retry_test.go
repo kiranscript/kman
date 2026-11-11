@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/kirank55/kman/internal/alerts"
-	"github.com/kirank55/kman/internal/store"
 )
 
 // answers makes a host answer with these statuses in turn, then 200.
@@ -184,8 +183,7 @@ func TestAnAlertHeldWhileShuttingDownStaysInTheOutbox(t *testing.T) {
 		in.svc.Notify(context.Background(), sample())
 		synctest.Wait()
 		stop() // the attempt is cancelled, which says nothing about the channel
-		var c store.OutboxCount
-		c = in.outbox("ch_1")
+		c := in.outbox("ch_1")
 		if c.Pending != 1 || c.Failed != 0 || c.Delivered != 0 {
 			t.Errorf("outbox = %+v, want the alert still pending", c)
 		}

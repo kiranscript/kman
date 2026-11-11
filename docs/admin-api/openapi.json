@@ -588,6 +588,60 @@
         ],
         "type": "object"
       },
+      "Exposure": {
+        "additionalProperties": false,
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ExposureFinding"
+            },
+            "type": "array"
+          },
+          "keys_checked": {
+            "description": "How many keys were looked at: the keys that work now. A disabled, revoked or expired key cannot be abused, and a canary is meant to be left alone.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "findings",
+          "keys_checked"
+        ],
+        "type": "object"
+      },
+      "ExposureFinding": {
+        "additionalProperties": false,
+        "properties": {
+          "fix": {
+            "description": "The kman command that fixes it, ready to run. An open key's has a placeholder to replace with the network the key is used from.",
+            "type": "string"
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "description": "For unused: the start of the last hour in which the key forwarded a request. Absent if it never has.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rule": {
+            "description": "open_to_every_address, never_expires or unused.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "rule",
+          "message",
+          "fix"
+        ],
+        "type": "object"
+      },
       "Key": {
         "additionalProperties": false,
         "properties": {
@@ -2080,6 +2134,34 @@
           }
         },
         "summary": "Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once"
+      }
+    },
+    "/admin/v1/exposure": {
+      "get": {
+        "operationId": "getExposure",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Exposure"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List the keys that work now and would be easy to abuse: open to every address, never expiring, or unused for 30 days, each with the command that fixes it"
       }
     },
     "/admin/v1/keys": {

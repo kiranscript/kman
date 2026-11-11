@@ -50,9 +50,15 @@ kman key update my-app --policy '{"daily_cap_micro":5000000,"monthly_cap_micro":
 | `monthly_cap_micro` | The same for a month. Above 0, and at least the daily cap. |
 | `allowed_models` | Model ids the key may ask for: exact, or a prefix ending in `*` (`gpt-4.1*`). |
 | `allowed_paths` | Rules the key's requests must match, such as `POST /v1/chat/completions`. |
+| `allowed_cidrs` | Networks the key may be used from, such as `203.0.113.0/24`; a bare address is a network of one. |
+| `allowed_countries` | Countries the key may be used from, as ISO 3166-1 codes (`US`). Needs a GeoIP database. |
 | `rpm_limit` | The most requests per minute. |
 
 A cap of `0` or less is refused, never read as "no cap".
+
+### Address locks
+
+`allowed_cidrs` and `allowed_countries` lock a key to where it may be used from. A request from anywhere else is refused with `403 address_not_allowed`, before its body is read. With both, the address must satisfy both. A country lock is refused when you set it unless kman has a GeoIP country database, and an address the database does not know fails the lock. See [Address locks and GeoIP](operator-guide/geoip.md).
 
 ### Paths
 
@@ -113,6 +119,7 @@ Every error from kman is OpenAI-shaped JSON, with an `X-Kman-Error` header carry
 | 403 | `key_disabled` | The key was disabled. |
 | 403 | `path_not_allowed` | The method and path match no rule. |
 | 403 | `model_not_allowed` | The model is not on the allowlist. |
+| 403 | `address_not_allowed` | The client address is outside the key's `allowed_cidrs`, or its country outside `allowed_countries`. |
 | 403 | `unmetered_request` | The key may send only requests kman can meter, and this is not one. |
 | 403 | `unknown_model_price` | A capped key asked for a model with no price. |
 | 403 | `spend_cap_reached` | The request would take the key over a cap. |
@@ -121,4 +128,4 @@ Every error from kman is OpenAI-shaped JSON, with an `X-Kman-Error` header carry
 | 502 | `upstream_unavailable` | kman could not get an answer from the upstream, or the upstream redirected somewhere else. |
 | 503 | `store_unavailable` | Spend can't be recorded (see above). |
 
-Errors the upstream itself sends (a wrong real key, a provider outage, its own rate limit) pass through unchanged. `address_not_allowed` is reserved for address locks, which v0.1.0 does not have.
+Errors the upstream itself sends (a wrong real key, a provider outage, its own rate limit) pass through unchanged.
