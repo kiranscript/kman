@@ -57,14 +57,14 @@ Fifteen modules, one Go package each under `internal/`, plus the `token` leaf pa
 | `profiles` | `Profile`, `RealtimeAdapter` | OpenAI, Anthropic, and generic profiles; realtime adapters; presets as data. |
 | `policy` | `Evaluate(facts, policy) Decision`, pure | Allowlists, locks (`allowed_cidrs`, `allowed_countries`; each lock that is set must hold), model rules, the unmetered rule, and the GeoIP reader (`policy/geoip`, files only, no network). |
 | `limiter` | `Allow(key)`, `AllowInvalid(ip)` | RPM limits and invalid-key throttling, in bounded LRU memory. |
-| `meter` | `Reserve`, `Settle`, `Spend` | All spend: counters, periods, increment flushes, fail-closed, soft-budget crossings. |
+| `meter` | `Reserve`, `Settle`, `Spend` | All spend: counters, periods, increment flushes, fail-closed. |
 | `pricing` | `Estimate`, `Cost` | The **price table** and **price overrides**. |
 | `registry` | `Lookup(keyID)`, `Apply(change)` | The snapshot, swapped atomically, and its generation. |
 | `vault` | `Credential(id) []byte`, `Seal`, offline `Rekey` | Envelope encryption, the wipeable plaintext cache, four key-source adapters. |
 | `store` | `Do(ctx, func(Tx) error)`, typed repos | SQLite, migrations, typed errors (`ErrConflict`, `ErrNotFound`). |
 | `events` | `Emit`, `Subscribe` | A bounded queue with a priority lane, and fan-out. |
 | `detect` | `Observe(event) []Decision` | Baselines, rules, incidents. Returns decisions, mutates nothing. |
-| `alerts` | `Notify(alert)` | The persisted outbox, retries, and the channel adapters. |
+| `alerts` | `Notify(alert)` | The persisted outbox, retries, the channel adapters, and the M1 warning producers: soft-budget crossings and projections (from the spend the meter flushed), expiry, and refused credentials. |
 | `sessions` | `Open`, `CloseKey(keyID)`, child-key mint | Live realtime sessions and in-memory child keys. |
 | `admin` | one command per operation | Store transaction → registry update → audit entry. |
 | `adminapi`, `dashboard`, `cli` | transports over `admin` | Typed DTOs and OpenAPI, templ pages, the one typed client. |
@@ -379,7 +379,7 @@ Put real keys behind kman and kill a leak.
 7. **Security review:** one focused review of everything `v0.1.0` ships ([#59](https://github.com/kirank55/kman/issues/59)).
 8. **Ship:** the release pipeline, `install.sh`, the image and Compose example, the Homebrew formula and packages, `README`, quickstart, operator guide, `SECURITY.md`, `THREAT-MODEL.md`, the quickstart CI test, the `v0.1.0` fixture.
 
-**Deferred past `v0.1.0`** (these sections of the spec still describe where kman is going, not what `v0.1.0` does): CIDR and country locks ([#43](https://github.com/kirank55/kman/issues/43)); key rotation and credential compromise ([#45](https://github.com/kirank55/kman/issues/45)); events, `usage_hourly` and `/metrics` ([#46](https://github.com/kirank55/kman/issues/46)); the alert outbox and channels ([#47](https://github.com/kirank55/kman/issues/47)); soft budgets and warnings ([#48](https://github.com/kirank55/kman/issues/48)); `scan` and `exposure` ([#49](https://github.com/kirank55/kman/issues/49)); `backup`, `restore`, `prune` and retention ([#50](https://github.com/kirank55/kman/issues/50)). M2 needs events and alerts, so #46 and #47 return before it starts.
+**Shipped after the `v0.1.0` cut.** The first release left these out, and they have all since been implemented, so the sections that describe them describe what kman now does: CIDR and country locks ([#43](https://github.com/kirank55/kman/issues/43)); key rotation and credential compromise ([#45](https://github.com/kirank55/kman/issues/45)); events, `usage_hourly` and `/metrics` ([#46](https://github.com/kirank55/kman/issues/46)); the alert outbox and channels ([#47](https://github.com/kirank55/kman/issues/47)); soft budgets and warnings ([#48](https://github.com/kirank55/kman/issues/48)); `scan` and `exposure` ([#49](https://github.com/kirank55/kman/issues/49)); `backup`, `restore`, `prune` and retention ([#50](https://github.com/kirank55/kman/issues/50)). They are in the changelog's Unreleased section, not in a tagged release yet, and the `v0.1.0` release notes and [what `v0.1.0` leaves out](docs/v0.1.0-scope.md) still describe the first release as it was. M2, which needs events and alerts, can start.
 
 **Done when:**
 - The quickstart test passes on Linux and macOS, word for word from the docs.

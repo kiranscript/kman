@@ -35,6 +35,9 @@ kman channel rm ops        # remove it, wipe its address, give up what still wai
 | **The audit log** | by action, below | Every change made through the admin API |
 | **A disabled key in use** | high | A request arrived with the secret of a disabled key |
 | **A canary key in use** | critical | A request arrived with the secret of a key that has no credential |
+| **Spend** | medium, high at 100% | A key's spend reaches a threshold of a cap or soft budget, or the month is on course to pass it |
+| **Key expiry** | medium, then high | A key is about to expire, or has |
+| **A refused credential** | high | An upstream answered 401 to the credential kman presented |
 
 The audit log is a producer, so the change and its alert commit in one transaction: an alert is never lost with a change that went through. The severity of an audit entry follows its action:
 
@@ -44,7 +47,31 @@ The audit log is a producer, so the change and its alert commit in one transacti
 
 With the default `--min-severity medium`, a channel hears about the first two groups. A key that is used again and again alerts once per 10 minutes, and the next alert says how many uses it held back.
 
-Not yet: soft-budget and expiry warnings, incidents and the detection rules, Discord and ntfy. A channel's `--lifecycle-alerts` toggle is already stored and will govern the spend and lifecycle warnings when they ship.
+Not yet: incidents and the detection rules, Discord and ntfy.
+
+## Warnings
+
+Spend, expiry and a refused credential are **warnings**: lifecycle news rather than a change or a use. A channel's `--lifecycle-alerts` toggle (on by default) decides whether it hears them, and its `--min-severity` still applies.
+
+- **Spend.** A key's spend reaches 50, 80 and 100 percent of each of its caps, by default. Each threshold alerts **once per period** (a day for a daily limit, a month for a monthly one), and several thresholds crossed between two checks make one alert, for the highest. A key can have its own percentages (`soft_budget_percents`), and a soft budget (`daily_budget_micro`, `monthly_budget_micro`) with no cap at all; `kman settings set soft_budget_defaults 25,50,90` changes the default for every other key, and `none` turns the default off. See [Soft budgets and warnings](../policy.md#soft-budgets-and-warnings).
+- **A projection.** Once per month, when the spend so far plus the last 7 full days' daily average times the days left would pass the monthly cap or soft budget. It is silent once the month is already over the limit.
+- **Key expiry.** A key that is active and not a canary alerts 7 days before it expires (medium), 1 day before (high), and when it has expired (high), each once. A key made for less than a week does not warn a week ahead. Extending a key's expiry (`kman key update <key> --ttl 90d`) starts the warnings again for the new date.
+- **A refused credential.** A request kman forwarded got `401` from the provider, so the credential kman holds for that upstream was revoked or has expired there, and every key on it is failing. The alert names the upstream and its credentials, never a secret, comes once an hour for each upstream, and says how many it held back. The fix is at the provider first, then `kman credential update <name> --secret`.
+
+kman checks spend and expiry when it starts and then every minute, so a warning follows the spend by about a minute. What it counts is what the meter has saved, which is at most 5 seconds behind. A key that is disabled or revoked, and a canary, raise no spend or expiry warning.
+
+The alert for a threshold says the key, the period, what was spent, the limit and whether it is a cap or a soft budget, with `kman key show <id>` to copy:
+
+````
+*[MEDIUM] my-app has used 80% of its daily cap*
+Key: my-app (a1b2c3d4)
+Period: 2026-11-04
+Spent: $8.50
+Limit: $10 (daily cap)
+```
+kman key show a1b2c3d4
+```
+````
 
 ## What an alert says
 
@@ -88,6 +115,8 @@ A webhook channel gets a signing secret, `kmwhsec_` and 64 hex digits, printed o
   "commands": ["kman key show a1b2c3d4"]
 }
 ```
+
+`kind` is `audit`, `disabled_key`, `canary`, `budget`, `budget_projection`, `key_expiry` or `credential_refused`, and `key` is absent in an alert that is not about one key.
 
 with these headers:
 

@@ -20,6 +20,9 @@ const (
 	DefaultGiveUpAfter = 24 * time.Hour
 	// DefaultThrottleWindow is how often one key's use alerts.
 	DefaultThrottleWindow = 10 * time.Minute
+	// DefaultWatchEvery is how often spend and key expiry are checked: a spend
+	// warning follows the spend by at most this and the 5 s flush.
+	DefaultWatchEvery = time.Minute
 	// rescanEvery is the longest a worker or Run sleeps with nothing due: the
 	// outbox and the channels are read again at least this often.
 	rescanEvery = 30 * time.Second
@@ -55,7 +58,32 @@ type Options struct {
 	// DashboardURL is dashboard.url from kman.yaml. Only when it is set does an
 	// alert carry a link, and then only to its incident's page.
 	DashboardURL string
-	Log          *slog.Logger // defaults to discarding
+	// Limits reads a key's policy as the amounts its spend warnings count from.
+	// The composition root fills it from the policy module, which alerts may not
+	// import (SPEC §2). Without it no key has a spend warning.
+	Limits func(policyJSON string) (Limits, error)
+	// Settings returns the install's settings that spend warnings read, at each
+	// check. The composition root fills it from admin's settings (alerts may not
+	// import it). Without it, or when it fails, the defaults apply.
+	Settings func(context.Context) (Settings, error)
+	// CredentialWarningWindow is how long an upstream's refused credential is held
+	// to one warning. Default DefaultCredentialWarningWindow.
+	CredentialWarningWindow time.Duration
+	// WatchEvery is how often RunWatch checks spend and expiry. Default
+	// DefaultWatchEvery.
+	WatchEvery time.Duration
+	Log        *slog.Logger // defaults to discarding
+}
+
+// Settings are the install's settings that spend warnings read (SPEC §3).
+type Settings struct {
+	// SoftBudgets is the soft_budget_defaults setting: the percentages of a cap
+	// or soft budget that warn for a key that sets none. Empty is "none": only a
+	// key's own percentages warn.
+	SoftBudgets []int
+	// Location is the spend_timezone: a day and a month begin at 00:00 in it, as
+	// the meter counts them. Nil is UTC.
+	Location *time.Location
 }
 
 // Service is the alert outbox and the delivery of what it holds.
@@ -80,6 +108,12 @@ func New(o Options) *Service {
 	}
 	if o.ThrottleWindow <= 0 {
 		o.ThrottleWindow = DefaultThrottleWindow
+	}
+	if o.CredentialWarningWindow <= 0 {
+		o.CredentialWarningWindow = DefaultCredentialWarningWindow
+	}
+	if o.WatchEvery <= 0 {
+		o.WatchEvery = DefaultWatchEvery
 	}
 	if o.Backoff == nil {
 		o.Backoff = defaultBackoff

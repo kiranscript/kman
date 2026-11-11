@@ -40,6 +40,7 @@ kman key update my-app --policy '{"allowed_paths":["POST /v1/chat/completions","
 kman key update my-app --policy '{"monthly_cap_micro":50000000}'
 kman key update my-app --policy '{}'
 kman key update my-app --policy '{"daily_cap_micro":5000000,"monthly_cap_micro":50000000,"rpm_limit":120}'
+kman key update my-app --policy '{"monthly_cap_micro":50000000,"monthly_budget_micro":40000000,"soft_budget_percents":[50,90,100]}'
 ```
 
 <!-- policy:end -->
@@ -48,13 +49,24 @@ kman key update my-app --policy '{"daily_cap_micro":5000000,"monthly_cap_micro":
 |---|---|
 | `daily_cap_micro` | The most the key may spend in a day, in microdollars (1 000 000 = $1). Above 0. |
 | `monthly_cap_micro` | The same for a month. Above 0, and at least the daily cap. |
+| `daily_budget_micro` | A soft budget for a day: a warning level that never refuses a request. Above 0, and at most the daily cap if there is one. |
+| `monthly_budget_micro` | The same for a month. At least the daily budget, and at most the monthly cap if there is one. |
+| `soft_budget_percents` | The percentages of a cap or budget that warn, rising, from 1 to 1000, at most 10. Leave it out to use the install's `soft_budget_defaults`. |
 | `allowed_models` | Model ids the key may ask for: exact, or a prefix ending in `*` (`gpt-4.1*`). |
 | `allowed_paths` | Rules the key's requests must match, such as `POST /v1/chat/completions`. |
 | `allowed_cidrs` | Networks the key may be used from, such as `203.0.113.0/24`; a bare address is a network of one. |
 | `allowed_countries` | Countries the key may be used from, as ISO 3166-1 codes (`US`). Needs a GeoIP database. |
 | `rpm_limit` | The most requests per minute. |
 
-A cap of `0` or less is refused, never read as "no cap".
+A cap or budget of `0` or less is refused, never read as "no cap".
+
+### Soft budgets and warnings
+
+A cap refuses. A soft budget only tells you. kman warns through your [alert channels](operator-guide/alerts.md) when a key's spend reaches **50, 80 and 100 percent** of each of its caps (or `daily_budget_micro` and `monthly_budget_micro`, which count in place of the cap for that period, and work with no cap at all). Each threshold warns **once per period**: once per day for a daily limit, once per month for a monthly one. Spend that jumps over several thresholds between two checks is one alert, for the highest. Change the percentages for every key that sets none with `kman settings set soft_budget_defaults 25,50,90` (or `none`), and for one key with `soft_budget_percents`.
+
+A **projection** warns once per month when the month is on course to pass its monthly cap or budget: the spend so far this month, plus the daily average of the last 7 full days for each day left. It says nothing once the month has passed the limit, since the 100 percent warning has said so. A soft budget never refuses anything, so unlike a cap it does not require every request to be one kman can meter.
+
+Spend and expiry are checked when kman starts and then every minute, on what the meter has saved (every 5 seconds), in the `spend_timezone` read when kman started. A warning goes only to channels with `--lifecycle-alerts` on, at medium severity below 100 percent and high at 100 percent. kman [also warns](operator-guide/alerts.md#warnings) before a key expires.
 
 ### Address locks
 

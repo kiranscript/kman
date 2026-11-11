@@ -36,6 +36,15 @@ type Policy struct {
 	// no cap.
 	DailyCapMicro   int64 `json:"daily_cap_micro,omitzero"`
 	MonthlyCapMicro int64 `json:"monthly_cap_micro,omitzero"`
+	// DailyBudgetMicro and MonthlyBudgetMicro are soft budgets: amounts that warn
+	// and never refuse, with or without a cap (SPEC §7). Where a period has one,
+	// its warnings count from the budget in place of the cap. Zero is none.
+	DailyBudgetMicro   int64 `json:"daily_budget_micro,omitzero"`
+	MonthlyBudgetMicro int64 `json:"monthly_budget_micro,omitzero"`
+	// SoftBudgetPercents are the percentages of a cap or budget that warn when
+	// crossed, rising: this key's own in place of the install's
+	// soft_budget_defaults setting. Empty uses the setting.
+	SoftBudgetPercents []int `json:"soft_budget_percents,omitempty"`
 }
 
 // RequiresMetering reports whether a key under this policy may send only
@@ -51,6 +60,10 @@ const (
 	maxModels   = 256
 	maxModelLen = 128
 	maxRPM      = 1_000_000
+	// maxSoftPercents and maxSoftPercent are the same limits that the
+	// soft_budget_defaults setting has.
+	maxSoftPercents = 10
+	maxSoftPercent  = 1000
 )
 
 // check reports the first thing wrong with p.
@@ -84,6 +97,36 @@ func (p Policy) check() error {
 	if p.RPMLimit < 0 || p.RPMLimit > maxRPM {
 		return fmt.Errorf("rpm_limit: use 1 to %d, or 0 for no limit", maxRPM)
 	}
+	return p.checkSoftBudgets()
+}
+
+func (p Policy) checkSoftBudgets() error {
+	if p.SoftBudgetPercents != nil {
+		if len(p.SoftBudgetPercents) == 0 || len(p.SoftBudgetPercents) > maxSoftPercents {
+			return fmt.Errorf("soft_budget_percents: list 1 to %d percentages, or leave it out to use the install's", maxSoftPercents)
+		}
+		prev := 0
+		for _, pc := range p.SoftBudgetPercents {
+			if pc <= prev || pc > maxSoftPercent {
+				return fmt.Errorf("soft_budget_percents: use rising percentages from 1 to %d", maxSoftPercent)
+			}
+			prev = pc
+		}
+	}
+	for _, b := range []struct {
+		name          string
+		budget, limit int64
+	}{
+		{"daily", p.DailyBudgetMicro, p.DailyCapMicro},
+		{"monthly", p.MonthlyBudgetMicro, p.MonthlyCapMicro},
+	} {
+		if b.budget > 0 && b.limit > 0 && b.budget > b.limit {
+			return fmt.Errorf("%s_budget_micro is above %s_cap_micro: a soft budget warns before the cap refuses, not after", b.name, b.name)
+		}
+	}
+	if p.DailyBudgetMicro > 0 && p.MonthlyBudgetMicro > 0 && p.MonthlyBudgetMicro < p.DailyBudgetMicro {
+		return errors.New("monthly_budget_micro is below daily_budget_micro, and a month holds a day")
+	}
 	return nil
 }
 
@@ -113,6 +156,10 @@ type wire struct {
 	RPMLimit         int      `json:"rpm_limit"`
 	DailyCapMicro    *int64   `json:"daily_cap_micro"`
 	MonthlyCapMicro  *int64   `json:"monthly_cap_micro"`
+
+	DailyBudgetMicro   *int64 `json:"daily_budget_micro"`
+	MonthlyBudgetMicro *int64 `json:"monthly_budget_micro"`
+	SoftBudgetPercents []int  `json:"soft_budget_percents"`
 }
 
 // decode reads a policy, refusing a field kman does not know, since a mistyped
@@ -130,7 +177,7 @@ func decode(raw []byte) (Policy, error) {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return Policy{}, errors.New("the policy holds more than one JSON value")
 	}
-	p := Policy{AllowedPaths: w.AllowedPaths, AllowedModels: w.AllowedModels, RPMLimit: w.RPMLimit}
+	p := Policy{AllowedPaths: w.AllowedPaths, AllowedModels: w.AllowedModels, RPMLimit: w.RPMLimit, SoftBudgetPercents: w.SoftBudgetPercents}
 	var err error
 	if p.AllowedCIDRs, p.AllowedCountries, err = normalizeLocks(w.AllowedCIDRs, w.AllowedCountries); err != nil {
 		return Policy{}, fmt.Errorf("the policy: %w", err)
@@ -142,6 +189,8 @@ func decode(raw []byte) (Policy, error) {
 	}{
 		{"daily_cap_micro", w.DailyCapMicro, &p.DailyCapMicro},
 		{"monthly_cap_micro", w.MonthlyCapMicro, &p.MonthlyCapMicro},
+		{"daily_budget_micro", w.DailyBudgetMicro, &p.DailyBudgetMicro},
+		{"monthly_budget_micro", w.MonthlyBudgetMicro, &p.MonthlyBudgetMicro},
 	} {
 		if c.in == nil {
 			continue

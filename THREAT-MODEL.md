@@ -105,7 +105,7 @@ The review checked each of SPEC §1's eight invariants against the code and by r
 - **An alert is not authentication.** Slack and the receiver of an unsigned address take what arrives: only a webhook is signed, and a receiver has to check the signature and the timestamp.
 - **A key's name and id travel to the channel.** They are labels, not secrets, but a Slack workspace will hold them. The outbox holds delivered alerts, with the same content, for the retention period (30 days).
 - **A failing alert pipeline is silent to the app** and visible only in `kman channel list` and the log. Watch for a channel with alerts pending.
-- **A request kman never saw cannot alert.** Alerts follow the audit log and the priority lane; the detection rules and soft budgets are not in this release.
+- **A request kman never saw cannot alert.** Alerts follow the audit log and the priority lane; the detection rules are not in this release. Spend, expiry and refused-credential warnings are alerts too, with the same content rules, and a warning can come up to a minute after the spend that raised it.
 
 ### The supply chain
 
@@ -131,7 +131,7 @@ kman is only as safe as these hold:
 
 ## What v0.1.0 does not do
 
-Detection, soft budgets and expiry warnings, address locks, the dashboard, leak scanning, backup and restore commands, and realtime: [the list, and what to do meanwhile](docs/v0.1.0-scope.md). The review did not cover Windows or macOS behaviour, whether the systemd and Docker guides run end to end (no CI job runs `rekey` in them), or what a live provider really sends: the test transcripts are written from the SDKs' types, not captured.
+Detection, soft budgets and expiry warnings, address locks, the dashboard, leak scanning, backup and restore commands, and realtime (later builds add all but detection, the dashboard and realtime): [the list, and what to do meanwhile](docs/v0.1.0-scope.md). The review did not cover Windows or macOS behaviour, whether the systemd and Docker guides run end to end (no CI job runs `rekey` in them), or what a live provider really sends: the test transcripts are written from the SDKs' types, not captured.
 
 ## How this was checked, and what to rerun
 

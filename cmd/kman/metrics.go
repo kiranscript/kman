@@ -41,11 +41,14 @@ func startEvents(ctx context.Context, st *store.Store, log *slog.Logger, alert *
 	// The priority lane goes to the alert outbox on its own subscription, so
 	// neither the store writer nor a hung channel stands in its way.
 	alertSub := p.bus.Subscribe("alerts", events.SubOptions{PriorityOnly: true, Buffer: events.DefaultPriorityCapacity})
+	// An upstream that answers 401 to kman's credential is a credential warning.
+	credSub := p.bus.Subscribe("credential-warnings", events.SubOptions{Buffer: events.DefaultCapacity})
 	ctx, p.cancel = context.WithCancel(context.WithoutCancel(ctx))
 	p.done.Go(func() { p.bus.Run(ctx) })
 	p.done.Go(func() { p.writer.Run(storeSub) })
 	p.done.Go(func() { p.metrics.Run(metricsSub) })
 	p.done.Go(func() { alert.RunPriority(alertSub) })
+	p.done.Go(func() { alert.RunCredentialWarnings(credSub) })
 	return p
 }
 

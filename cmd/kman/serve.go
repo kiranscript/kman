@@ -119,7 +119,9 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	var spend *meter.Meter // made once the settings are read, which the service reads
 	// Alerts reach the network only through the channels the operator added
 	// (ADR 0008). The vault holds each channel's address once admin has loaded it.
-	alert := alerts.New(alerts.Options{Store: st, Secret: v.Credential, Now: s.now, DashboardURL: cfg.Dashboard.URL, Log: log})
+	var svc *admin.Service // made below, after alerts, which it calls; the warnings read its settings
+	alert := alerts.New(alerts.Options{Store: st, Secret: v.Credential, Now: s.now, DashboardURL: cfg.Dashboard.URL, Log: log,
+		Limits: alertLimits, Settings: alertSettings(func() *admin.Service { return svc })})
 	// The update check is the one thing kman asks the network by itself, and only
 	// when the operator turned it on (ADR 0008).
 	var updates *updateChecker
@@ -132,7 +134,7 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 		updates = newUpdateChecker(current, s.now, func(ctx context.Context) (release, error) { return fetchLatest(ctx, hc, current) })
 		adminOpts.Update = updates.Status
 	}
-	svc := admin.New(adminOpts)
+	svc = admin.New(adminOpts)
 	if err := svc.Load(ctx); err != nil {
 		return err
 	}
@@ -174,6 +176,11 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	alertsDone := make(chan struct{})
 	go func() { alert.Run(alertCtx); close(alertsDone) }()
 	defer func() { stopAlerts(); <-alertsDone }() // what is undelivered waits in the outbox for the next run
+	// Spend and key expiry warnings are checked at start and then every minute.
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	watchDone := make(chan struct{})
+	go func() { alert.RunWatch(watchCtx); close(watchDone) }()
+	defer func() { stopWatch(); <-watchDone }()
 	var more []events.Metric
 	if updates != nil {
 		more = append(more, updateMetric(updates))

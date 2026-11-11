@@ -1298,7 +1298,7 @@
             "type": "integer"
           },
           "soft_budget_defaults": {
-            "description": "The percentages of each spend cap that warn when crossed, rising, for keys that set none. Default 50, 80, 100.",
+            "description": "The percentages of each spend cap or soft budget that raise a warning when crossed, rising, for keys whose policy sets none (soft_budget_percents). Each warns once per day or month. Default 50, 80, 100; an empty list warns for no key that sets none. A change takes effect at the next check, within a minute.",
             "items": {
               "type": "integer"
             },

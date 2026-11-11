@@ -198,3 +198,43 @@ func TestAChannelTestSendsAlertAndSaysWhenItFails(t *testing.T) {
 		t.Errorf("a refused test: exit %d\n%s", code, stderr)
 	}
 }
+
+// A provider that answers 401 to the credential kman presents is a credential
+// warning: every key on that upstream is failing. The alert names the upstream
+// and the credential, and holds no secret.
+func TestAProviderRefusingKmansCredentialIsAWarningThatHoldsNoSecret(t *testing.T) {
+	p := behindKmanAs(t, "openai-401", "openai")
+	k := newSink(t, 200)
+	secret := p.h.addWebhook(t, "pager", k)
+
+	resp, body := p.chat(chatRequest)
+	if resp.StatusCode != 401 {
+		t.Fatalf("the app got %d %s, want the upstream's 401", resp.StatusCode, body)
+	}
+	got := k.waitFor(t, "refused kman's credential", `"kind":"credential_refused"`, "mock")
+	var alert struct {
+		Severity string
+		Evidence []struct{ Label, Value string }
+		Commands []string
+	}
+	if err := json.Unmarshal([]byte(got.body), &alert); err != nil || alert.Severity != "high" || len(alert.Commands) == 0 {
+		t.Errorf("alert = %+v (%v):\n%s", alert, err, got.body)
+	}
+	for _, leak := range []string{p.secret, sentinel, secret, "TOKEN-pager"} {
+		if strings.Contains(got.body, leak) {
+			t.Errorf("the alert holds %q:\n%s", leak, got.body)
+		}
+	}
+	// A second refusal inside the window is held back, not a second alert.
+	p.chat(chatRequest)
+	time.Sleep(300 * time.Millisecond)
+	n := 0
+	for _, r := range k.received() {
+		if strings.Contains(r.body, "refused kman's credential") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("%d credential warnings for two refusals, want 1", n)
+	}
+}
