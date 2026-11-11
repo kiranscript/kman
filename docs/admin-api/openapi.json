@@ -231,6 +231,39 @@
         ],
         "type": "object"
       },
+      "CompromiseCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "secret": {
+            "description": "The new real secret, made at the provider after the leaked one was revoked there. kman seals it and never shows it again.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret"
+        ],
+        "type": "object"
+      },
+      "CompromisedCredential": {
+        "additionalProperties": false,
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/Credential"
+          },
+          "rotated_keys": {
+            "description": "Every virtual key on the credential that was not revoked, oldest first, with its new secret, shown only this once. Each is an app that needs its new key.",
+            "items": {
+              "$ref": "#/components/schemas/RotatedKey"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "credential",
+          "rotated_keys"
+        ],
+        "type": "object"
+      },
       "CreateAdminTokenRequest": {
         "additionalProperties": false,
         "properties": {
@@ -959,6 +992,49 @@
         ],
         "type": "object"
       },
+      "RotateKeyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "grace_seconds": {
+            "description": "How long the old secret keeps working beside the new one, at most 30 days. Absent or 0 ends it at once, on the next request.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "RotatedKey": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Key"
+              }
+            ],
+            "description": "The same key, with the same id, spend, policy and history: only its secret is new."
+          },
+          "previous_valid_until": {
+            "description": "When the old secret stops working. Absent when it stopped at once.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "sdk_env": {
+            "description": "The variable an SDK for its upstream reads the key from.",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The new virtual key (kmn_...). kman keeps only its hash, so it is shown only this once.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "secret"
+        ],
+        "type": "object"
+      },
       "Settings": {
         "additionalProperties": false,
         "properties": {
@@ -1675,6 +1751,55 @@
         "summary": "Rename a credential or replace its secret"
       }
     },
+    "/admin/v1/credentials/{ref}/compromise": {
+      "post": {
+        "operationId": "compromiseCredential",
+        "parameters": [
+          {
+            "description": "The credential's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompromiseCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompromisedCredential"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once"
+      }
+    },
     "/admin/v1/keys": {
       "get": {
         "operationId": "listKeys",
@@ -1951,6 +2076,55 @@
           }
         },
         "summary": "End a virtual key for good, from the next request; it cannot be undone"
+      }
+    },
+    "/admin/v1/keys/{id}/rotate": {
+      "post": {
+        "operationId": "rotateKey",
+        "parameters": [
+          {
+            "description": "The key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotateKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotatedKey"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Replace a virtual key's secret and keep the key; the new secret is returned only this once"
       }
     },
     "/admin/v1/openapi.json": {

@@ -502,6 +502,22 @@ usage: kman credential rm <name> [--json]
     	print the admin API's JSON response
 ```
 
+### `kman credential compromise`
+
+```
+usage: kman credential compromise <name> [--credential-env VAR] [--json]
+
+For a real credential that leaked. First revoke it at the provider and make a new one there: that is what stops the damage. Then this replaces the credential's secret and rotates every virtual key on it at once, with no grace, and lists the apps that need new keys. The credential keeps its id; the keys keep theirs, with their spend, policy and history.
+
+The secret is asked for without echo, or read as one line of stdin when piped, or from the variable --credential-env names. It is never an argument, which would end up in shell history and process lists.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -credential-env string
+    	read the secret from this environment variable
+  -json
+    	print the admin API's JSON response
+```
+
 ## `kman key`
 
 Create, list, show, update, disable, enable or revoke virtual keys.
@@ -596,6 +612,20 @@ usage: kman key enable <name or key id> [--json]
 usage: kman key revoke <name or key id> [--json]
   -config-dir string
     	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+### `kman key rotate`
+
+```
+usage: kman key rotate <name or key id> [--grace <duration>] [--json]
+
+Replaces the key's secret and keeps the key: its id, spend, policy and history stay. The new secret is printed once. With --grace the old secret keeps working that long, at most 30 days, so an app can be moved over without a gap; with none, the old secret stops at the next request. A second rotation inside a grace ends the older secret at once.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -grace string
+    	how long the old secret keeps working, such as 24h; 0 ends it at once (default "0")
   -json
     	print the admin API's JSON response
 ```

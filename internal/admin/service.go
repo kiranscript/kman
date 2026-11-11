@@ -42,6 +42,7 @@ type API interface {
 	AddCredential(ctx context.Context, req AddCredentialRequest) (Credential, error)
 	UpdateCredential(ctx context.Context, req CredentialUpdate) (Credential, error)
 	RemoveCredential(ctx context.Context, req CredentialRef) (Credential, error)
+	CompromiseCredential(ctx context.Context, req CompromiseCredentialRequest) (CompromisedCredential, error)
 
 	CreateKey(ctx context.Context, req CreateKeyRequest) (CreatedKey, error)
 	ListKeys(ctx context.Context, req KeyQuery) (KeyList, error)
@@ -50,6 +51,7 @@ type API interface {
 	DisableKey(ctx context.Context, req KeyRef) (Key, error)
 	EnableKey(ctx context.Context, req KeyRef) (Key, error)
 	RevokeKey(ctx context.Context, req KeyRef) (Key, error)
+	RotateKey(ctx context.Context, req RotateKeyRequest) (RotatedKey, error)
 
 	ListPrices(ctx context.Context, req PriceQuery) (PriceList, error)
 	PriceDataStatus(ctx context.Context) (PriceDataStatus, error)
@@ -114,11 +116,15 @@ type Service struct {
 	// memory sees commands in the order they committed. The request path
 	// never takes it.
 	publishing sync.Mutex
+
+	// settle wakes RunSettling after a rotation.
+	settle chan struct{}
 }
 
 // New returns the admin service over opts.Store.
 func New(opts Options) *Service {
 	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices, spend: opts.Spend}
+	s.settle = make(chan struct{}, 1)
 	if s.rand == nil {
 		s.rand = rand.Reader
 	}

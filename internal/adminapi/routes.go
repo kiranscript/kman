@@ -79,6 +79,7 @@ var routes = []route{
 	op("POST", "/credentials", "addCredential", "Seal a secret as a credential on an upstream; it is never shown again", http.StatusCreated, Service.AddCredential),
 	op("PATCH", "/credentials/{ref}", "updateCredential", "Rename a credential or replace its secret", http.StatusOK, Service.UpdateCredential),
 	op("DELETE", "/credentials/{ref}", "removeCredential", "Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it", http.StatusOK, Service.RemoveCredential),
+	op("POST", "/credentials/{ref}/compromise", "compromiseCredential", "Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once", http.StatusOK, Service.CompromiseCredential),
 
 	op("GET", "/keys", "listKeys", "List every virtual key, or the one with a name, never their secrets", http.StatusOK, Service.ListKeys),
 	op("POST", "/keys", "createKey", "Create a virtual key on an upstream; its secret is returned only this once", http.StatusCreated, Service.CreateKey),
@@ -87,6 +88,7 @@ var routes = []route{
 	op("POST", "/keys/{id}/disable", "disableKey", "Stop a virtual key from the next request until it is enabled again", http.StatusOK, Service.DisableKey),
 	op("POST", "/keys/{id}/enable", "enableKey", "Let a disabled virtual key work again; a revoked key cannot be enabled", http.StatusOK, Service.EnableKey),
 	op("POST", "/keys/{id}/revoke", "revokeKey", "End a virtual key for good, from the next request; it cannot be undone", http.StatusOK, Service.RevokeKey),
+	op("POST", "/keys/{id}/rotate", "rotateKey", "Replace a virtual key's secret and keep the key; the new secret is returned only this once", http.StatusOK, Service.RotateKey),
 }
 
 // docPath serves the OpenAPI document. It needs no token.

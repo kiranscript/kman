@@ -124,6 +124,10 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	if err := checkCountryLocks(reg.Snapshot(), geo); err != nil {
 		return err
 	}
+	settleCtx, stopSettling := context.WithCancel(ctx)
+	settleDone := make(chan struct{})
+	go func() { svc.RunSettling(settleCtx); close(settleDone) }() // a grace that has ended turns its secret into a retired one
+	defer func() { stopSettling(); <-settleDone }()
 	spend, err = startMeter(ctx, s, log, svc, st, prices)
 	if err != nil {
 		return err
