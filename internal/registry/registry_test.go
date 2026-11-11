@@ -207,3 +207,31 @@ func seeded() *registry.Registry {
 	})
 	return r
 }
+
+// The request path reads a key's policy as fields, not as JSON: Apply reads it
+// once, so that a request parses nothing.
+func TestAPublishedKeyCarriesItsPolicyAsFields(t *testing.T) {
+	r := registry.New()
+	r.Apply(registry.Change{Generation: 1, Keys: []registry.Key{
+		{ID: "capped000", Policy: `{"daily_cap_micro":5000000}`},
+		{ID: "plain0000", Policy: `{}`},
+		{ID: "legacy000"},
+	}})
+	for id, want := range map[string]int64{"capped000": 5_000_000, "plain0000": 0, "legacy000": 0} {
+		route, _ := r.Lookup(id)
+		if got := route.Key.Rules.DailyCapMicro; got != want || route.Key.PolicyErr != nil {
+			t.Errorf("%s: cap %d, err %v; want %d", id, got, route.Key.PolicyErr, want)
+		}
+	}
+}
+
+// A policy kman cannot read is no policy at all, which would let a key go free:
+// the key says so, and the gateway refuses it.
+func TestAPolicyKmanCannotReadIsMarkedSoItCanBeRefused(t *testing.T) {
+	r := registry.New()
+	r.Apply(registry.Change{Generation: 1, Keys: []registry.Key{{ID: "future000", Policy: `{"cap_from_the_future":1}`}}})
+	route, _ := r.Lookup("future000")
+	if route.Key.PolicyErr == nil {
+		t.Error("an unreadable policy left no error on the key")
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/token"
 )
 
@@ -39,7 +40,12 @@ type Key struct {
 	ExpiresAt     time.Time
 	Policy        string // the policy as JSON, in the form policy.Normalize gives
 	PolicyVersion int
-	Generation    int64
+	// Rules is Policy read once, when the key is published, so that a request
+	// parses nothing. PolicyErr is set instead when it can't be read, and the
+	// request path refuses the key: an unreadable policy must not mean none.
+	Rules      policy.Policy
+	PolicyErr  error
+	Generation int64
 }
 
 // KeySecret is the hash of a secret that can authenticate a key.
@@ -157,23 +163,29 @@ func (r *Registry) Apply(c Change) {
 	}
 	next := &Snapshot{
 		generation:  c.Generation,
-		upstreams:   merged(cur.upstreams, c.Upstreams, func(u *Upstream) string { return u.ID }, c.DeletedUpstreams),
-		credentials: merged(cur.credentials, c.Credentials, func(x *Credential) string { return x.ID }, c.DeletedCredentials),
-		keys:        merged(cur.keys, c.Keys, func(k *Key) string { return k.ID }, c.DeletedKeys),
+		upstreams:   merged(cur.upstreams, c.Upstreams, func(u *Upstream) string { return u.ID }, c.DeletedUpstreams, nil),
+		credentials: merged(cur.credentials, c.Credentials, func(x *Credential) string { return x.ID }, c.DeletedCredentials, nil),
+		keys:        merged(cur.keys, c.Keys, func(k *Key) string { return k.ID }, c.DeletedKeys, readPolicy),
 	}
 	r.snap.Store(next)
 }
 
+// readPolicy reads a key's policy once, as it is published.
+func readPolicy(k *Key) { k.Rules, k.PolicyErr = policy.Parse(k.Policy) }
+
 // merged returns cur with rows set and deleted removed. It returns cur itself
 // when there is nothing to do, which is safe because no snapshot's maps ever
 // change once it is published.
-func merged[T any](cur map[string]*T, rows []T, id func(*T) string, deleted []string) map[string]*T {
+func merged[T any](cur map[string]*T, rows []T, id func(*T) string, deleted []string, prepare func(*T)) map[string]*T {
 	if len(rows) == 0 && len(deleted) == 0 {
 		return cur
 	}
 	next := maps.Clone(cur)
 	for i := range rows {
 		row := rows[i] // a copy, so the snapshot shares nothing with the caller
+		if prepare != nil {
+			prepare(&row)
+		}
 		next[id(&row)] = &row
 	}
 	for _, d := range deleted {
