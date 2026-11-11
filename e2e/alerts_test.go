@@ -132,8 +132,8 @@ func TestAlertsReachAWebhookSignedAndAHungChannelHoldsUpNoOther(t *testing.T) {
 	resp, rb := p.send("POST", "/v1/things", strings.NewReader("{}"))
 	wantError(t, resp, rb, 403, "key_disabled")
 	used := ok.waitFor(t, "disabled_key", id)
-	if !strings.Contains(used.body, "POST /v1/things") {
-		t.Errorf("the alert does not name the operation:\n%s", used.body)
+	if !strings.Contains(used.body, `"POST"`) || strings.Contains(used.body, "/v1/things") {
+		t.Errorf("the alert should name the method and never the caller's path:\n%s", used.body)
 	}
 
 	// No alert holds a secret: not the key's, not the upstream credential, not
