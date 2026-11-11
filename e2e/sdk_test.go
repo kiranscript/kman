@@ -72,26 +72,34 @@ var sdkScenarios = []struct {
 	wantText                            string
 	wantUsage                           map[string]int64 // what the SDK must have made of the usage
 	wantAsked                           bool             // the upstream must be asked for a stream's usage
+	// wantSpend is what the key must have been charged, in microdollars. The test
+	// prices every model at 1 µ$ an input token and 2 an output token, cached and
+	// cache-write tokens at the input price, so each is worked out by hand from the
+	// transcript's usage (see its "usage") rather than from kman's own sums.
+	wantSpend int64
+	// models are the ids the scenario asks for and the response names, which the
+	// test prices.
+	models []string
 }{
 	{name: "openai-chat", profile: "openai", basePath: "/v1", authHeader: authBearer, wantText: "Hello there",
-		wantUsage: map[string]int64{"prompt_tokens": 12, "completion_tokens": 5}},
+		wantUsage: map[string]int64{"prompt_tokens": 12, "completion_tokens": 5}, wantSpend: 22, models: []string{"gpt-4o-mini", "gpt-4o-mini-2024-07-18"}},
 	{name: "openai-chat-stream", profile: "openai", basePath: "/v1", authHeader: authBearer, wantText: "Hello there", wantAsked: true,
-		wantUsage: map[string]int64{"prompt_tokens": 12, "completion_tokens": 5}},
+		wantUsage: map[string]int64{"prompt_tokens": 12, "completion_tokens": 5}, wantSpend: 22, models: []string{"gpt-4o-mini", "gpt-4o-mini-2024-07-18"}},
 	{name: "openai-completions", profile: "openai", basePath: "/v1", authHeader: authBearer, wantText: "Hello there",
-		wantUsage: map[string]int64{"prompt_tokens": 3, "completion_tokens": 2}},
+		wantUsage: map[string]int64{"prompt_tokens": 3, "completion_tokens": 2}, wantSpend: 7, models: []string{"gpt-3.5-turbo-instruct"}},
 	{name: "openai-completions-stream", profile: "openai", basePath: "/v1", authHeader: authBearer, wantText: "Hello there", wantAsked: true,
-		wantUsage: map[string]int64{"prompt_tokens": 3, "completion_tokens": 2}},
+		wantUsage: map[string]int64{"prompt_tokens": 3, "completion_tokens": 2}, wantSpend: 7, models: []string{"gpt-3.5-turbo-instruct"}},
 	{name: "openai-embeddings", profile: "openai", basePath: "/v1", authHeader: authBearer, wantText: "0.5,-0.25",
-		wantUsage: map[string]int64{"prompt_tokens": 6, "total_tokens": 6}},
+		wantUsage: map[string]int64{"prompt_tokens": 6, "total_tokens": 6}, wantSpend: 6, models: []string{"text-embedding-3-small"}},
 	{name: "openai-responses", profile: "openai", basePath: "/v1", authHeader: authBearer, wantText: "Hello there",
-		wantUsage: map[string]int64{"input_tokens": 20, "output_tokens": 7}},
+		wantUsage: map[string]int64{"input_tokens": 20, "output_tokens": 7}, wantSpend: 34, models: []string{"gpt-5", "gpt-5-2026-01-01"}},
 	{name: "openai-responses-stream", profile: "openai", basePath: "/v1", authHeader: authBearer, wantText: "Hello there",
-		wantUsage: map[string]int64{"input_tokens": 20, "output_tokens": 7}},
+		wantUsage: map[string]int64{"input_tokens": 20, "output_tokens": 7}, wantSpend: 34, models: []string{"gpt-5", "gpt-5-2026-01-01"}},
 	{name: "anthropic-messages", profile: "anthropic", authHeader: authAPIKey, wantText: "Hello there",
-		wantUsage: map[string]int64{"input_tokens": 25, "output_tokens": 9, "cache_read_input_tokens": 10}},
+		wantUsage: map[string]int64{"input_tokens": 25, "output_tokens": 9, "cache_read_input_tokens": 10}, wantSpend: 59, models: []string{"claude-sonnet-5-5"}},
 	{name: "anthropic-messages-stream", profile: "anthropic", authHeader: authAPIKey, wantText: "Hello there",
-		wantUsage: map[string]int64{"input_tokens": 25, "output_tokens": 9, "cache_read_input_tokens": 10}},
-	{name: "anthropic-error", profile: "anthropic", authHeader: authAPIKey, wantText: "rate_limit_error"},
+		wantUsage: map[string]int64{"input_tokens": 25, "output_tokens": 9, "cache_read_input_tokens": 10}, wantSpend: 59, models: []string{"claude-sonnet-5-5"}},
+	{name: "anthropic-error", profile: "anthropic", authHeader: authAPIKey, wantText: "rate_limit_error", wantSpend: 0, models: []string{"claude-sonnet-5-5"}},
 }
 
 // The official SDKs, pinned, work through the real binary, against transcripts:
@@ -105,6 +113,7 @@ func TestOfficialSDKsWorkThroughKman(t *testing.T) {
 				t.Run(sc.name, func(t *testing.T) {
 					t.Parallel()
 					p := behindKmanAs(t, sc.name, sc.profile)
+					p.setPrices(sc.models...)
 					cmd := exec.Command(command[0], append(command[1:], sc.name)...)
 					cmd.Env = []string{
 						"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "SYSTEMROOT=" + os.Getenv("SYSTEMROOT"),
@@ -135,6 +144,11 @@ func TestOfficialSDKsWorkThroughKman(t *testing.T) {
 					}
 					req := p.mock.only(t)
 					wantForwardedAsAMeteredRequest(t, req, p.secret, sc.authHeader, sc.wantAsked)
+					// The spend is metered, and visible per key.
+					spent := p.settled(1).Spend
+					if spent.Today.CostMicro != sc.wantSpend || spent.Month.CostMicro != sc.wantSpend || spent.Today.EstimatedMicro != 0 {
+						t.Errorf("the key was charged %+v this month, want %d µ$ reported and none estimated", spent, sc.wantSpend)
+					}
 				})
 			}
 		})

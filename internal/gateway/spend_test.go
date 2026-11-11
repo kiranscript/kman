@@ -199,7 +199,7 @@ func TestACapIsEnforcedBeforeTheRequestReachesTheUpstream(t *testing.T) {
 	up.none(t)
 }
 
-func TestACapAddedAfterSpendingCountsWhatWasSpent(t *testing.T) { // F3, through the gateway
+func TestRegression_F3_ACapAddedAfterSpendingCountsWhatWasSpent(t *testing.T) { // F3, through the gateway
 	s := spendingBehind(t, answering("application/json", usageResponse), `{}`)
 	for range 3 {
 		s.chat(chatBody())

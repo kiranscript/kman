@@ -1,0 +1,69 @@
+{
+  "note": "Written by hand, not captured from the live API (no credentials were to hand): the shape follows the types in the pinned SDKs under e2e/testdata/sdk. An upstream that refuses with 429 and reports no usage, three times.",
+  "profile": "openai",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 429,
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ],
+          "Retry-After": [
+            "1"
+          ]
+        },
+        "chunks": [
+          "{\"error\":{\"message\":\"Rate limit reached\",\"type\":\"requests\",\"param\":null,\"code\":\"rate_limit_exceeded\"}}"
+        ]
+      },
+      "usage": {}
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 429,
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ],
+          "Retry-After": [
+            "1"
+          ]
+        },
+        "chunks": [
+          "{\"error\":{\"message\":\"Rate limit reached\",\"type\":\"requests\",\"param\":null,\"code\":\"rate_limit_exceeded\"}}"
+        ]
+      },
+      "usage": {}
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 429,
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ],
+          "Retry-After": [
+            "1"
+          ]
+        },
+        "chunks": [
+          "{\"error\":{\"message\":\"Rate limit reached\",\"type\":\"requests\",\"param\":null,\"code\":\"rate_limit_exceeded\"}}"
+        ]
+      },
+      "usage": {}
+    }
+  ]
+}
