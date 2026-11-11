@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"sync/atomic"
+	"sync"
 	"time"
 )
 
@@ -55,9 +55,10 @@ func (g *Gateway) buffer(x *exchange) *refusal {
 	if n := r.ContentLength; n > 0 {
 		buf.Grow(int(min(n, initialBuffer)) + bytes.MinRead)
 	}
-	watch := g.watchBody(x.w)
-	defer watch.stop()
-	_, err := buf.ReadFrom(&heldReader{r: http.MaxBytesReader(x.w, r.Body, limit), g: g, x: x, watch: watch})
+	guard := guards.Get().(*bodyGuard)
+	guard.start(g, x, http.MaxBytesReader(x.w, r.Body, limit))
+	_, err := buf.ReadFrom(guard)
+	fired := guard.stop()
 	if err != nil {
 		switch {
 		case isMaxBytes(err):
@@ -65,7 +66,7 @@ func (g *Gateway) buffer(x *exchange) *refusal {
 		case errors.Is(err, errBufferFull):
 			return &refusal{code: codeRateLimited, retryAfter: time.Second,
 				message: "kman is holding as many request bodies as it can. Try again in a moment."}
-		case watch.fired.Load():
+		case fired:
 			g.opts.Log.Warn("a request body stopped arriving, or took too long, so the connection was closed", "key", x.route.Key.ID)
 		}
 		x.abort = true // the app went away, or was cut off, part way through its body
@@ -80,57 +81,93 @@ func isMaxBytes(err error) bool {
 	return ok
 }
 
-// heldReader reads a body, counting what it has read against the gateway's
-// bound on memory, and telling the watch that bytes are still arriving.
-type heldReader struct {
-	r     io.Reader
-	g     *Gateway
-	x     *exchange
-	watch *bodyWatch
+// bodyGuard reads one request's body under the bounds above. It counts what it
+// reads against the gateway's bound on memory, and ends the connection if the
+// body stalls or takes too long, by moving the connection's read deadline into
+// the past, which fails the read. Guards are pooled, timers included, so a
+// request pays nothing for one.
+type bodyGuard struct {
+	g *Gateway
+	x *exchange
+	r io.Reader
+
+	stall, total *time.Timer
+	every        time.Duration
+
+	mu    sync.Mutex // fire against stop
+	set   deadliner
+	done  bool
+	fired bool
 }
 
-func (h *heldReader) Read(p []byte) (int, error) {
-	n, err := h.r.Read(p)
+var guards = sync.Pool{New: func() any {
+	b := &bodyGuard{}
+	b.stall = time.AfterFunc(time.Hour, b.fire)
+	b.total = time.AfterFunc(time.Hour, b.fire)
+	b.stall.Stop()
+	b.total.Stop()
+	return b
+}}
+
+// deadliner is what net/http's response writers have, and a ResponseController
+// would find.
+type deadliner interface{ SetReadDeadline(time.Time) error }
+
+func (b *bodyGuard) start(g *Gateway, x *exchange, r io.Reader) {
+	b.g, b.x, b.r, b.every = g, x, r, g.opts.BodyStall
+	b.set, _ = x.w.(deadliner) // nil for a writer that can't, such as a test's recorder: no time bound
+	b.mu.Lock()
+	b.done, b.fired = false, false
+	b.mu.Unlock()
+	if b.set != nil {
+		b.stall.Reset(b.every)
+		b.total.Reset(g.opts.BodyTimeout)
+	}
+}
+
+func (b *bodyGuard) fire() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.done && b.set != nil {
+		b.fired = true
+		b.set.SetReadDeadline(time.Unix(1, 0))
+	}
+}
+
+// Read reads the body, telling the timers that bytes are still arriving.
+func (b *bodyGuard) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
 	if n > 0 {
-		h.watch.progress()
-		h.x.held += int64(n)
-		if h.g.buffered.Add(int64(n)) > h.g.opts.MaxBuffered {
+		if b.set != nil {
+			b.stall.Reset(b.every)
+		}
+		b.x.held += int64(n)
+		if b.g.buffered.Add(int64(n)) > b.g.opts.MaxBuffered {
 			return 0, errBufferFull // what it counted is given back when the request ends
 		}
 	}
 	return n, err
 }
 
-// bodyWatch ends a request's connection if its body stalls or takes too long, by
-// moving the connection's read deadline into the past, which fails the read.
-type bodyWatch struct {
-	rc           *http.ResponseController
-	stall, total *time.Timer
-	every        time.Duration
-	fired        atomic.Bool
-}
-
-// watchBody starts the bounds on one request body. A server that can't set read
-// deadlines, such as a test's recorder, gets no bound.
-func (g *Gateway) watchBody(w http.ResponseWriter) *bodyWatch {
-	b := &bodyWatch{rc: http.NewResponseController(w), every: g.opts.BodyStall}
-	fire := func() {
-		b.fired.Store(true)
-		b.rc.SetReadDeadline(time.Unix(1, 0))
+// stop ends the guard, reporting whether it fired, and returns the connection's
+// read deadline to none, unless it fired: it outlives this request, and the next
+// one would meet it. A guard whose timer was already running is not pooled again, since its
+// function could still be waiting to run against the next request.
+func (b *bodyGuard) stop() (fired bool) {
+	stalled, late := b.stall.Stop(), b.total.Stop()
+	quiet := b.set == nil || (stalled && late) // timers never armed have nothing to wait for
+	b.mu.Lock()
+	b.done = true
+	fired = b.fired
+	if !fired && b.set != nil {
+		// Once it has fired the deadline stays in the past, which is what keeps net/http
+		// from waiting on the rest of the body when it closes the connection.
+		b.set.SetReadDeadline(time.Time{})
 	}
-	b.stall = time.AfterFunc(b.every, fire)
-	b.total = time.AfterFunc(g.opts.BodyTimeout, fire)
-	return b
-}
-
-func (b *bodyWatch) progress() { b.stall.Reset(b.every) }
-
-// stop ends the watch and, if it did not fire, returns the connection's read
-// deadline to none: it outlives this request, and the next one would meet it.
-func (b *bodyWatch) stop() {
-	b.stall.Stop()
-	b.total.Stop()
-	if !b.fired.Load() {
-		b.rc.SetReadDeadline(time.Time{})
+	b.mu.Unlock()
+	b.g, b.x, b.r, b.set = nil, nil, nil, nil
+	if quiet {
+		guards.Put(b)
 	}
+	return fired
 }
