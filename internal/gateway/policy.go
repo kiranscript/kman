@@ -63,7 +63,15 @@ func (g *Gateway) guarded(x *exchange) *refusal {
 	return ref
 }
 
-// retryAfterSeconds is a Retry-After value: whole seconds, rounded up.
-func retryAfterSeconds(d time.Duration) string {
-	return strconv.FormatInt(int64((d+time.Second-1)/time.Second), 10)
+// retryAfterMinute is the Retry-After of a throttled address, shared so that
+// refusing a flood allocates nothing for it. A response's header slices are
+// never changed after they are set.
+var retryAfterMinute = []string{"60"}
+
+// retryAfter is a Retry-After value: whole seconds, rounded up.
+func retryAfter(d time.Duration) []string {
+	if d == time.Minute {
+		return retryAfterMinute
+	}
+	return []string{strconv.FormatInt(int64((d+time.Second-1)/time.Second), 10)}
 }

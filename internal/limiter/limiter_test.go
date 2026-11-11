@@ -107,8 +107,10 @@ func TestARefusedRequestDoesNotCountAgainstTheKey(t *testing.T) {
 		allowed(l, "k", 2) // refused
 	}
 	c.advance(2 * time.Minute)
-	if !allowed(l, "k", 2) || !allowed(l, "k", 2) {
-		t.Error("refused requests were counted, so the key stayed locked out")
+	for i := 0; i < 2; i++ {
+		if !allowed(l, "k", 2) {
+			t.Fatalf("request %d: refused requests were counted, so the key stayed locked out", i+1)
+		}
 	}
 }
 

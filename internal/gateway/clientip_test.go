@@ -71,3 +71,16 @@ func TestAConnectionWithNoAddressHasNoClientAddress(t *testing.T) {
 		}
 	}
 }
+
+// The client address is worked out for every request, so for the usual one, a
+// connection with no proxy, it allocates nothing.
+func TestTheClientAddressOfAConnectionAllocatesNothing(t *testing.T) {
+	r := &http.Request{RemoteAddr: "203.0.113.5:4000", Header: http.Header{}}
+	if allocs := testing.AllocsPerRun(100, func() { gateway.ClientIP(r, nil) }); allocs != 0 {
+		t.Errorf("ClientIP allocated %v times", allocs)
+	}
+	r.RemoteAddr = "[2001:db8::1]:4000"
+	if allocs := testing.AllocsPerRun(100, func() { gateway.ClientIP(r, nil) }); allocs != 0 {
+		t.Errorf("ClientIP allocated %v times for IPv6", allocs)
+	}
+}

@@ -118,7 +118,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if ref := run(g, &x); ref != nil {
 			if !x.abort {
 				if ref.retryAfter > 0 {
-					w.Header().Set("Retry-After", retryAfterSeconds(ref.retryAfter))
+					w.Header()["Retry-After"] = retryAfter(ref.retryAfter)
 				}
 				writeError(w, ref.code, ref.message)
 			}

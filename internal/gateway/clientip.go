@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"net"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -20,7 +19,7 @@ import (
 // proxy's own address, which is safe: it throttles all of that proxy's clients
 // as one.
 func clientIP(r *http.Request, trusted []netip.Prefix) netip.Addr {
-	peer := parseAddr(r.RemoteAddr)
+	peer := parseConn(r.RemoteAddr)
 	if !peer.IsValid() || !isTrusted(trusted, peer) {
 		return peer
 	}
@@ -53,19 +52,28 @@ func isTrusted(trusted []netip.Prefix, a netip.Addr) bool {
 	return false
 }
 
-// parseAddr reads an address with or without a port, in the forms a connection
-// and X-Forwarded-For hold one: 1.2.3.4, 1.2.3.4:80, ::1, [::1]:80.
-func parseAddr(s string) netip.Addr {
-	if a, err := netip.ParseAddr(s); err == nil {
-		return a.Unmap().WithZone("")
+// parseConn reads a connection's RemoteAddr: "ip:port", with nothing for a Unix
+// socket. It allocates nothing for a good one, which is every request's.
+func parseConn(s string) netip.Addr {
+	if s == "" {
+		return netip.Addr{}
 	}
 	if ap, err := netip.ParseAddrPort(s); err == nil {
-		return ap.Addr().Unmap().WithZone("")
+		return clean(ap.Addr())
 	}
-	if host, _, err := net.SplitHostPort(s); err == nil {
-		if a, err := netip.ParseAddr(host); err == nil {
-			return a.Unmap().WithZone("")
-		}
+	return parseAddr(s)
+}
+
+// parseAddr reads an address with or without a port, in the forms
+// X-Forwarded-For holds one: 1.2.3.4, 1.2.3.4:80, ::1, [::1]:80.
+func parseAddr(s string) netip.Addr {
+	if a, err := netip.ParseAddr(s); err == nil {
+		return clean(a)
+	}
+	if ap, err := netip.ParseAddrPort(s); err == nil {
+		return clean(ap.Addr())
 	}
 	return netip.Addr{}
 }
+
+func clean(a netip.Addr) netip.Addr { return a.Unmap().WithZone("") }

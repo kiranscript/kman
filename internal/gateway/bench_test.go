@@ -66,7 +66,8 @@ func benchGateway(b *testing.B) (*gateway.Gateway, string) {
 		}, Generation: 1}},
 		Credentials: []registry.Credential{{ID: credID, UpstreamID: upstreamID, Generation: 1}},
 		Keys: []registry.Key{{ID: string(m.ID), CredentialID: credID, Status: "active",
-			Secrets: []registry.KeySecret{{Hash: m.Hash}}, ExpiresAt: t0.Add(time.Hour), Generation: 1}},
+			Secrets: []registry.KeySecret{{Hash: m.Hash}}, ExpiresAt: t0.Add(time.Hour), Generation: 1,
+			Policy: `{}`, PolicyVersion: 1}},
 	})
 	return gateway.New(gateway.Options{
 		Routes:    reg,
@@ -83,6 +84,7 @@ func benchRequest(b *testing.B, secret string, body *bytes.Reader) *http.Request
 	if err != nil {
 		b.Fatal(err)
 	}
+	req.RemoteAddr = "127.0.0.1:50000"
 	req.Header = http.Header{
 		"Authorization": {"Bearer " + secret},
 		"Content-Type":  {"application/json"},

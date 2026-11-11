@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,7 +23,7 @@ const window = time.Minute
 
 // Options are the limiter's bounds and clock.
 type Options struct {
-	Now func() time.Time // defaults to time.Now
+	Now func() time.Time // required
 	// MaxKeys and MaxAddrs bound how many keys and addresses are remembered. Past
 	// them the least recently used is forgotten.
 	MaxKeys, MaxAddrs int
@@ -44,7 +45,7 @@ type Limiter struct {
 // New returns a Limiter.
 func New(o Options) *Limiter {
 	if o.Now == nil {
-		o.Now = time.Now
+		panic("limiter: Options.Now is required: only main reads the clock")
 	}
 	if o.MaxKeys <= 0 {
 		o.MaxKeys = DefaultMaxKeys
@@ -82,6 +83,9 @@ func (l *Limiter) Allow(key string, rpm int) (ok bool, retryAfter time.Duration)
 // is even parsed, and changes nothing. A throttled address is refused whether or
 // not its key is good, so guessing can't go on at the speed of the server.
 func (l *Limiter) AllowInvalid(addr netip.Addr) bool {
+	if l.addrs.size.Load() == 0 {
+		return true // no address has presented an invalid key: the usual case takes no lock
+	}
 	addr = addrKey(addr)
 	l.addrs.mu.RLock() // every request asks, so asking shares the lock
 	defer l.addrs.mu.RUnlock()
@@ -171,6 +175,7 @@ type table[K comparable] struct {
 	max   int
 	order *list.List // front = most recently used; holds *entry[K]
 	index map[K]*list.Element
+	size  atomic.Int64 // len(index), readable without the lock
 }
 
 type entry[K comparable] struct {
@@ -198,6 +203,7 @@ func (t *table[K]) get(k K, now time.Time) *sliding {
 	}
 	e := &entry[K]{key: k, w: sliding{start: now}}
 	t.index[k] = t.order.PushFront(e)
+	t.size.Store(int64(len(t.index)))
 	return &e.w
 }
 
