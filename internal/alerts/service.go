@@ -159,13 +159,19 @@ func (s *Service) Notify(ctx context.Context, a Alert) error {
 // that raised it commit together or not at all. The caller wakes the
 // dispatcher (Wake) once the transaction has committed.
 func (s *Service) NotifyTx(tx *store.Tx, a Alert) error {
+	_, err := s.enqueue(tx, a)
+	return err
+}
+
+// enqueue is NotifyTx that says how many channels the alert was queued for.
+func (s *Service) enqueue(tx *store.Tx, a Alert) (queued int, err error) {
 	chs, err := tx.AlertChannels()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	payload, err := json.Marshal(a)
 	if err != nil {
-		return fmt.Errorf("alerts: marshal alert: %w", err)
+		return 0, fmt.Errorf("alerts: marshal alert: %w", err)
 	}
 	for _, c := range chs {
 		if !takes(c, a) {
@@ -176,10 +182,11 @@ func (s *Service) NotifyTx(tx *store.Tx, a Alert) error {
 			PayloadJSON: string(payload), CreatedAt: s.o.Now(),
 		})
 		if err != nil {
-			return err
+			return queued, err
 		}
+		queued++
 	}
-	return nil
+	return queued, nil
 }
 
 // takes reports whether channel c is meant to get alert a: it is at or above

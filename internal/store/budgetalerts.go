@@ -2,6 +2,15 @@ package store
 
 import "time"
 
+// UnmarkBudgetAlert takes back a MarkBudgetAlert, in the same transaction, for a
+// warning that no channel received: it is still owed.
+func (tx *Tx) UnmarkBudgetAlert(keyID, period string, threshold int) error {
+	if _, err := tx.tx.ExecContext(tx.ctx, `DELETE FROM budget_alerts WHERE key_id = ? AND period = ? AND threshold = ?`, keyID, period, threshold); err != nil {
+		return typed(err, "take back warning for key "+keyID)
+	}
+	return nil
+}
+
 // MarkBudgetAlert records that the warning for (key, period, threshold) was
 // sent at time at, and says whether this is the first time it was: only the
 // first is to be sent. It is how a warning alerts once per period, and it

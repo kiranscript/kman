@@ -598,3 +598,47 @@ func TestTheInstallsDefaultsCanBeNoneAndAKeysOwnPercentsStillWarn(t *testing.T) 
 		mustContain(t, got[0], "own", "60%")
 	})
 }
+
+// A warning that no channel received was not sent: it is still owed when a
+// channel is added.
+func TestAThresholdCrossedWithNoChannelStillWarnsOnceAChannelIsAdded(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		in := newBudgetInstall(t)
+		in.keyWith("abcd1234", "my-app", `{"daily_cap_micro":10000000}`)
+		stop := in.run()
+		defer stop()
+
+		in.spent("abcd1234", "2026-11-04", 8_500_000)
+		in.check(t0) // no channel to tell
+		in.channel("ch_1", "slack", "hooks.test", "medium", true, "")
+		in.check(t0.Add(time.Minute))
+		got := in.bodies("hooks.test")
+		if len(got) != 1 {
+			t.Fatalf("%d alerts after a channel was added, want the owed one: %v", len(got), got)
+		}
+		mustContain(t, got[0], "80%")
+		in.check(t0.Add(2 * time.Minute)) // and then once, as ever
+		if n := len(in.bodies("hooks.test")); n != 1 {
+			t.Errorf("%d alerts, want it sent once", n)
+		}
+	})
+}
+
+func TestAProjectionAndAnExpiryWarningWithNoChannelAreOwedToALaterChannel(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		in := newBudgetInstall(t)
+		expires := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+		in.keyWith("abcd1234", "my-app", `{"monthly_cap_micro":100000000}`, func(k *store.VirtualKey) { k.ExpiresAt = expires })
+		stop := in.run()
+		defer stop()
+		for _, d := range []string{"2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09", "2026-11-10"} {
+			in.spent("abcd1234", d, 8_000_000) // 56 of 100 in a week, 20 days left: on course for far more
+		}
+		now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+		in.check(now)
+		in.channel("ch_1", "slack", "hooks.test", "medium", true, "")
+		in.check(now.Add(time.Minute))
+		got := strings.Join(in.bodies("hooks.test"), "\n---\n")
+		mustContain(t, got, "projected to pass", "has expired")
+	})
+}

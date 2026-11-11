@@ -178,6 +178,30 @@ func (s *Service) checkSpend(tx *store.Tx, k store.VirtualKey, lim Limits, defau
 	return s.projection(tx, k, w, days, month, monthLimit, monthWhat, now)
 }
 
+// marked is a warning recorded as sent (MarkBudgetAlert) by the producer that is
+// about to queue it.
+type marked struct {
+	keyID, period string
+	threshold     int
+}
+
+// notifyMarked queues a, and takes back its marks when no channel received it:
+// a warning is recorded as sent only once something has been sent, so that a
+// channel added afterwards still hears of what is owed (SPEC §9: never loses an
+// alert).
+func (s *Service) notifyMarked(tx *store.Tx, a Alert, marks ...marked) error {
+	n, err := s.enqueue(tx, a)
+	if err != nil || n > 0 {
+		return err
+	}
+	for _, m := range marks {
+		if err := tx.UnmarkBudgetAlert(m.keyID, m.period, m.threshold); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // crossings queues the alert for the highest threshold that spent has newly
 // reached of limit, and records every threshold it has reached, so that none of
 // them alerts again in this period.
@@ -186,6 +210,7 @@ func (s *Service) crossings(tx *store.Tx, k store.VirtualKey, period, what strin
 		return nil
 	}
 	newest := 0
+	var marks []marked
 	for _, p := range percents {
 		if !reached(spent, limit, p) {
 			continue
@@ -194,8 +219,9 @@ func (s *Service) crossings(tx *store.Tx, k store.VirtualKey, period, what strin
 		if err != nil {
 			return err
 		}
-		if first && p > newest {
-			newest = p
+		if first {
+			marks = append(marks, marked{k.ID, period, p})
+			newest = max(newest, p)
 		}
 	}
 	if newest == 0 {
@@ -215,7 +241,7 @@ func (s *Service) crossings(tx *store.Tx, k store.VirtualKey, period, what strin
 		},
 		Commands: []string{"kman key show " + k.ID},
 	}
-	return s.NotifyTx(tx, a)
+	return s.notifyMarked(tx, a, marks...)
 }
 
 // projectionThreshold is what a month's projection warning is recorded under in
@@ -243,7 +269,7 @@ func (s *Service) projection(tx *store.Tx, k store.VirtualKey, w window, days ma
 	if err != nil || !first {
 		return err
 	}
-	return s.NotifyTx(tx, Alert{
+	return s.notifyMarked(tx, Alert{
 		Kind: "budget_projection", Severity: Medium, Warning: true, KeyID: k.ID, KeyName: k.Name, Time: now,
 		Title: fmt.Sprintf("%s is projected to pass its %s", label(k), what),
 		Evidence: []Fact{
@@ -255,7 +281,7 @@ func (s *Service) projection(tx *store.Tx, k store.VirtualKey, w window, days ma
 			{"Days left", strconv.Itoa(w.daysLeft)},
 		},
 		Commands: []string{"kman key show " + k.ID},
-	})
+	}, marked{k.ID, w.month, projectionThreshold})
 }
 
 // satAdd and satMul keep a projection from wrapping around on an absurd spend.
@@ -320,6 +346,7 @@ func (s *Service) checkExpiry(tx *store.Tx, k store.VirtualKey, now time.Time) e
 	}
 	period := "expiry:" + k.ExpiresAt.UTC().Format(time.RFC3339)
 	newest, found := 0, false
+	var marks []marked
 	for _, days := range expiryWarnings {
 		at := k.ExpiresAt.Add(-time.Duration(days) * 24 * time.Hour)
 		if now.Before(at) || (days > 0 && !at.After(k.CreatedAt)) {
@@ -330,6 +357,7 @@ func (s *Service) checkExpiry(tx *store.Tx, k store.VirtualKey, now time.Time) e
 			return err
 		}
 		if first {
+			marks = append(marks, marked{k.ID, period, days})
 			newest, found = days, true // the list falls, so the last new one is the nearest
 		}
 	}
@@ -351,5 +379,5 @@ func (s *Service) checkExpiry(tx *store.Tx, k store.VirtualKey, now time.Time) e
 		a.Severity = Medium
 		a.Title = fmt.Sprintf("%s expires within %d days", label(k), newest)
 	}
-	return s.NotifyTx(tx, a)
+	return s.notifyMarked(tx, a, marks...)
 }
