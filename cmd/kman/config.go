@@ -61,6 +61,35 @@ type Config struct {
 	// that is not loopback, which is otherwise refused.
 	AllowPlainHTTP bool      `yaml:"allow_plain_http,omitempty"`
 	TLS            TLSConfig `yaml:"tls,omitempty"`
+
+	// TrustedProxies are the addresses or networks (CIDR) of reverse proxies in
+	// front of the proxy listener, whose X-Forwarded-For kman believes. With none,
+	// a request's address is its connection's.
+	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
+}
+
+// trustedProxies is TrustedProxies as networks. A bare address is a network of
+// one. check has already refused one that isn't either.
+func (c Config) trustedProxies() []netip.Prefix {
+	out := make([]netip.Prefix, 0, len(c.TrustedProxies))
+	for _, s := range c.TrustedProxies {
+		if p, err := parseProxy(s); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func parseProxy(s string) (netip.Prefix, error) {
+	if p, err := netip.ParsePrefix(s); err == nil {
+		return p.Masked(), nil
+	}
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		return netip.Prefix{}, fmt.Errorf("trusted_proxies %q: use an address or a network such as 10.0.0.0/8", s)
+	}
+	a = a.Unmap()
+	return netip.PrefixFrom(a, a.BitLen()), nil
 }
 
 // TLSConfig turns on TLS per listener.
@@ -122,6 +151,11 @@ func (c Config) check() error {
 		return errors.New("key_source is not set")
 	default:
 		return fmt.Errorf("key_source %q is not one of file, systemd-creds, passphrase, env", c.KeySource)
+	}
+	for _, s := range c.TrustedProxies {
+		if _, err := parseProxy(s); err != nil {
+			return err
+		}
 	}
 	for _, l := range []struct {
 		name string

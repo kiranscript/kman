@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -38,6 +39,8 @@ func TestLoadConfigRefuses(t *testing.T) {
 		{"a proxy on a Unix socket", strings.Replace(goodConfig, "proxy_listen: 127.0.0.1:8080", "proxy_listen: unix:/run/kman.sock", 1), "only the admin listener"},
 		{"a relative admin socket", strings.Replace(goodConfig, "admin_listen: 127.0.0.1:8081", "admin_listen: unix:kman.sock", 1), "not absolute"},
 		{"an admin address with no port", strings.Replace(goodConfig, "admin_listen: 127.0.0.1:8081", "admin_listen: 127.0.0.1", 1), "admin_listen"},
+		{"a trusted proxy that isn't an address", goodConfig + "trusted_proxies:\n  - proxy.example.com\n", "trusted_proxies"},
+		{"a trusted proxy with a bad prefix", goodConfig + "trusted_proxies:\n  - 10.0.0.0/33\n", "trusted_proxies"},
 		{"plain HTTP admin on all interfaces", strings.Replace(goodConfig, "admin_listen: 127.0.0.1:8081", "admin_listen: 0.0.0.0:8081", 1), "not a loopback address"},
 		{"plain HTTP admin on a LAN address", strings.Replace(goodConfig, "admin_listen: 127.0.0.1:8081", "admin_listen: 192.168.1.10:8081", 1), "not a loopback address"},
 	} {
@@ -60,6 +63,7 @@ func TestLoadConfigAccepts(t *testing.T) {
 			"tls:\n  admin:\n    cert_file: /c.pem\n    key_file: /k.pem\n"},
 		{"public plain admin, explicitly enabled", strings.Replace(goodConfig, "admin_listen: 127.0.0.1:8081", "admin_listen: 0.0.0.0:8081", 1) +
 			"allow_plain_http: true\n"},
+		{"trusted proxies", goodConfig + "trusted_proxies:\n  - 10.0.0.0/8\n  - 192.0.2.7\n  - \"fd00::/8\"\n"},
 		{"a public proxy", strings.Replace(goodConfig, "proxy_listen: 127.0.0.1:8080", "proxy_listen: 0.0.0.0:8080", 1)},
 		{"the env key source", strings.Replace(strings.Replace(goodConfig, "key_source: file", "key_source: env", 1), "master_key_file: /etc/kman/master.key\n", "", 1)},
 	} {
@@ -105,7 +109,25 @@ func TestInitWritesAConfigServeAccepts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadConfig of what init writes: %v\n%s", err, raw)
 	}
-	if got != c {
+	if !reflect.DeepEqual(got, c) {
 		t.Errorf("round trip = %+v, want %+v", got, c)
+	}
+}
+
+func TestTrustedProxiesAreNetworksAndBareAddressesAreNetworksOfOne(t *testing.T) {
+	c, err := loadConfig(writeConfig(t, goodConfig+"trusted_proxies:\n  - 10.1.2.3/8\n  - 192.0.2.7\n  - \"::ffff:192.0.2.9\"\n  - \"fd00::1\"\n"), noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, p := range c.trustedProxies() {
+		got = append(got, p.String())
+	}
+	want := []string{"10.0.0.0/8", "192.0.2.7/32", "192.0.2.9/32", "fd00::1/128"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("trustedProxies = %v, want %v", got, want)
+	}
+	if c, _ := loadConfig(writeConfig(t, goodConfig), noEnv); len(c.trustedProxies()) != 0 {
+		t.Error("no trusted_proxies should trust nothing")
 	}
 }
