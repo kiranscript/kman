@@ -87,3 +87,23 @@ func TestParseRejectsBadTokensWithATypedError(t *testing.T) {
 		})
 	}
 }
+
+// IsKeyShaped is how the gateway spots a virtual or child key among headers, before
+// any checksum: by the prefixes ADR 0001 fixes, and by nothing else.
+func TestIsKeyShapedIsTrueForTheKeyPrefixesAlone(t *testing.T) {
+	for s, want := range map[string]bool{
+		goldenVirtualKey:       true,
+		goldenChildKey:         true,
+		"kmn_":                 true, // no checksum here: Parse is what checks it
+		"ek_kmn_x":             true,
+		goldenAdminToken:       false, // an admin token is not a key an app may send
+		"ek_other":             false,
+		"sk-proj-abc":          false,
+		"":                     false,
+		" " + goldenVirtualKey: false,
+	} {
+		if got := token.IsKeyShaped(s); got != want {
+			t.Errorf("IsKeyShaped(%q) = %v, want %v", s, got, want)
+		}
+	}
+}
