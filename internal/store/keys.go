@@ -181,3 +181,75 @@ func timeOf(n sql.NullInt64) time.Time {
 	}
 	return fromMilli(n.Int64)
 }
+
+// RotateKeySecret gives a key a new secret, whose hash is newHash, at time at.
+// The key stays; only its secrets move. The current secret becomes the
+// previous one, which still works for grace, or, with no grace, is retired at
+// once. A key holds at most two working secrets, so a previous secret still in
+// its grace is retired now: a second rotation ends the older secret. A retired
+// secret never authenticates, and its hash is kept for forgetAfter, for
+// detection. The key's generation moves, so the change reaches the request
+// path. A missing key is ErrNotFound, and a new hash the key already holds is
+// ErrConflict; either leaves the secrets as they were once Do rolls back.
+func (tx *Tx) RotateKeySecret(id string, newHash []byte, at time.Time, grace, forgetAfter time.Duration) error {
+	gen, err := tx.Generation()
+	if err != nil {
+		return err
+	}
+	var got string
+	err = tx.tx.QueryRowContext(tx.ctx, `UPDATE virtual_keys SET generation = ? WHERE key_id = ? RETURNING key_id`, gen, id).Scan(&got)
+	if err != nil {
+		return typed(err, "rotate key "+id)
+	}
+	retire := func(state string) error {
+		_, err := tx.tx.ExecContext(tx.ctx, `UPDATE key_secrets
+			SET state = 'retired', valid_until = MIN(COALESCE(valid_until, ?), ?), forget_at = MIN(COALESCE(valid_until, ?), ?) + ?
+			WHERE key_id = ? AND state = ?`,
+			toMilli(at), toMilli(at), toMilli(at), toMilli(at), forgetAfter.Milliseconds(), id, state)
+		if err != nil {
+			return typed(err, "retire secrets of key "+id)
+		}
+		return nil
+	}
+	if err := retire(SecretPrevious); err != nil {
+		return err
+	}
+	if grace > 0 {
+		_, err = tx.tx.ExecContext(tx.ctx, `UPDATE key_secrets SET state = 'previous', valid_until = ? WHERE key_id = ? AND state = 'current'`,
+			toMilli(at.Add(grace)), id)
+		if err != nil {
+			return typed(err, "demote the secret of key "+id)
+		}
+	} else if err := retire(SecretCurrent); err != nil {
+		return err
+	}
+	_, err = tx.tx.ExecContext(tx.ctx, `INSERT INTO key_secrets (key_id, secret_hash, state, created_at) VALUES (?, ?, 'current', ?)`,
+		id, newHash, toMilli(at))
+	if err != nil {
+		return typed(err, "add the new secret of key "+id)
+	}
+	return nil
+}
+
+// SettleKeySecrets moves what time has decided, as of now: a previous secret
+// whose grace has ended becomes a retired one, forgotten forgetAfter after the
+// grace ended, and a retired secret past its forgetting is deleted. It returns
+// when the next grace ends, or the zero time when none is running. It changes
+// no key, so it takes no generation: the request path already stops a secret at
+// the end of its grace.
+func (tx *Tx) SettleKeySecrets(now time.Time, forgetAfter time.Duration) (time.Time, error) {
+	_, err := tx.tx.ExecContext(tx.ctx, `UPDATE key_secrets SET state = 'retired', forget_at = valid_until + ?
+		WHERE state = 'previous' AND valid_until <= ?`, forgetAfter.Milliseconds(), toMilli(now))
+	if err != nil {
+		return time.Time{}, typed(err, "retire secrets")
+	}
+	if _, err = tx.tx.ExecContext(tx.ctx, `DELETE FROM key_secrets WHERE state = 'retired' AND forget_at <= ?`, toMilli(now)); err != nil {
+		return time.Time{}, typed(err, "forget secrets")
+	}
+	var next sql.NullInt64
+	err = tx.tx.QueryRowContext(tx.ctx, `SELECT MIN(valid_until) FROM key_secrets WHERE state = 'previous'`).Scan(&next)
+	if err != nil {
+		return time.Time{}, typed(err, "next grace")
+	}
+	return timeOf(next), nil
+}

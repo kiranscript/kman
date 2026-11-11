@@ -24,6 +24,7 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `POST /admin/v1/credentials` | Seal a secret as a credential on an upstream; it is never shown again |
 | `DELETE /admin/v1/credentials/{ref}` | Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it |
 | `PATCH /admin/v1/credentials/{ref}` | Rename a credential or replace its secret |
+| `POST /admin/v1/credentials/{ref}/compromise` | Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once |
 | `GET /admin/v1/keys` | List every virtual key, or the one with a name, never their secrets |
 | `POST /admin/v1/keys` | Create a virtual key on an upstream; its secret is returned only this once |
 | `GET /admin/v1/keys/{id}` | Read one virtual key, by key id |
@@ -31,6 +32,7 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `POST /admin/v1/keys/{id}/disable` | Stop a virtual key from the next request until it is enabled again |
 | `POST /admin/v1/keys/{id}/enable` | Let a disabled virtual key work again; a revoked key cannot be enabled |
 | `POST /admin/v1/keys/{id}/revoke` | End a virtual key for good, from the next request; it cannot be undone |
+| `POST /admin/v1/keys/{id}/rotate` | Replace a virtual key's secret and keep the key; the new secret is returned only this once |
 | `GET /admin/v1/openapi.json` | This document. It needs no admin token. |
 | `DELETE /admin/v1/price-overrides` | Remove a price override |
 | `PUT /admin/v1/price-overrides` | Set a price override, install-wide or on one upstream; it wins over the built-in entries until removed |
@@ -124,6 +126,18 @@ Request body: [CredentialUpdate](#credentialupdate).
 
 Response 200: [Credential](#credential).
 
+### `POST /admin/v1/credentials/{ref}/compromise`
+
+Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once. Operation id `compromiseCredential`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `ref` | path | string | yes | The credential's name or id. |
+
+Request body: [CompromiseCredentialRequest](#compromisecredentialrequest).
+
+Response 200: [CompromisedCredential](#compromisedcredential).
+
 ### `GET /admin/v1/keys`
 
 List every virtual key, or the one with a name, never their secrets. Operation id `listKeys`.
@@ -193,6 +207,18 @@ End a virtual key for good, from the next request; it cannot be undone. Operatio
 | `id` | path | string | yes | The key id. |
 
 Response 200: [Key](#key).
+
+### `POST /admin/v1/keys/{id}/rotate`
+
+Replace a virtual key's secret and keep the key; the new secret is returned only this once. Operation id `rotateKey`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | The key id. |
+
+Request body: [RotateKeyRequest](#rotatekeyrequest).
+
+Response 200: [RotatedKey](#rotatedkey).
 
 ### `GET /admin/v1/openapi.json`
 
@@ -407,6 +433,19 @@ Response 200: [Whoami](#whoami).
 | `basic_username` | string | no | For the basic style, the username. When absent, a credential's secret is the whole user:password. |
 | `header` | string | no | For the header style, the template: Name: value {key}. |
 | `style` | string | yes | header or basic. |
+
+### `CompromiseCredentialRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `secret` | string | yes | The new real secret, made at the provider after the leaked one was revoked there. kman seals it and never shows it again. |
+
+### `CompromisedCredential`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `credential` | [Credential](#credential) | yes |  |
+| `rotated_keys` | list of [RotatedKey](#rotatedkey) | yes | Every virtual key on the credential that was not revoked, oldest first, with its new secret, shown only this once. Each is an app that needs its new key. |
 
 ### `CreateAdminTokenRequest`
 
@@ -628,6 +667,21 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `micro` | integer | yes |  |
 | `tool` | string | yes |  |
+
+### `RotateKeyRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `grace_seconds` | integer | no | How long the old secret keeps working beside the new one, at most 30 days. Absent or 0 ends it at once, on the next request. |
+
+### `RotatedKey`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `key` | [Key](#key) | yes | The same key, with the same id, spend, policy and history: only its secret is new. |
+| `previous_valid_until` | string | no | When the old secret stops working. Absent when it stopped at once. |
+| `sdk_env` | string | no | The variable an SDK for its upstream reads the key from. |
+| `secret` | string | yes | The new virtual key (kmn_...). kman keeps only its hash, so it is shown only this once. |
 
 ### `Settings`
 
