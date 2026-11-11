@@ -7,6 +7,10 @@ All notable changes to kman are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-11
+
+The first release: put real API keys behind kman and kill a leak. kman is a key manager and proxy for LLM API keys. You keep the real keys in kman, hand apps virtual keys that cap spend and expire, and turn one off the moment it leaks.
+
 ### Added
 
 - `kman init` sets up an install without asking anything: `kman.yaml` and a `0600` master key in the config directory, the data directory, and the `owner` admin token, printed once and saved to a `0600` credentials file. `--data-dir`, `--key-source file|systemd-creds|passphrase|env` and `--no-save-token`. In a container it needs a key from outside and never saves the token.
@@ -47,6 +51,7 @@ All notable changes to kman are recorded here. The format follows
 - A key with a cap or a model allowlist refuses a request kman can't meter, with `unmetered_request` (no top-level `model`, a body that isn't JSON, or a generic upstream) or `unknown_model_price`, which names the model, the upstream and the `kman price set` command. That includes `GET /v1/models`. Other keys forward such requests and show them as unmetered, never as $0.
 - `kman key show` prints each key's spend today and this month beside its caps, and `key show --json`, `key list --json` and `GET /admin/v1/keys` carry the same `spend`.
 - Documentation: a README and a [quickstart](docs/quickstart.md) that CI runs line for line on Linux and macOS; an [operator guide](docs/operator-guide/README.md) (install per platform, with macOS quarantine and the Windows SmartScreen warning, key sources, systemd, Docker and Compose, TLS behind a reverse proxy, upgrade, the `kman.db.pre-<NNNN>` copies and what to do about old copies after a rekey); [keys, policy and spend](docs/policy.md); [SDK snippets](docs/sdks.md) that CI runs through the real kman with the pinned official SDKs, and a table of each preset's key variable and base URL; [what v0.1.0 leaves out](docs/v0.1.0-scope.md) and what to do meanwhile; [THREAT-MODEL.md](THREAT-MODEL.md) and [SECURITY.md](SECURITY.md).
+- Every release archive carries `NOTICE-price-data`, the licences of the datasets the embedded price table is generated from. Which test checks each of M1's done criteria is in [docs/v0.1.0-done.md](docs/v0.1.0-done.md).
 - A [CLI reference](docs/cli.md), generated from each command's help, and an [admin API reference](docs/admin-api/README.md), generated from the OpenAPI document. CI fails if either is stale, if a doc names a command or a flag kman does not have, or if a link in the docs does not resolve.
 
 ### Security

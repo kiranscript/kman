@@ -156,3 +156,11 @@ func TestTheTagRulesetsLockReleaseTags(t *testing.T) {
 		}
 	}
 }
+
+// SECURITY.md promises private vulnerability reporting, which is a repository
+// setting, so the script the maintainer runs before the tag turns it on.
+func TestTheSettingsScriptTurnsOnPrivateVulnerabilityReporting(t *testing.T) {
+	if !strings.Contains(string(read(t, "scripts/apply-repo-settings.sh")), `repos/$repo/private-vulnerability-reporting`) {
+		t.Error("apply-repo-settings.sh does not enable private vulnerability reporting, which SECURITY.md relies on")
+	}
+}

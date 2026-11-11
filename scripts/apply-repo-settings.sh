@@ -16,6 +16,7 @@
 #      Pro, so on the free plan this step works only once the repo is public.
 #   4. Let Actions open pull requests, for the weekly price-data job. Workflow
 #      tokens stay read-only by default; that job asks for write itself.
+#   5. Private vulnerability reporting, which SECURITY.md sends reporters to.
 set -eu
 
 repo=${KMAN_REPO:-kirank55/kman}
@@ -54,6 +55,12 @@ echo "== $repo: Actions may open pull requests"
 echo "now: can_approve_pull_request_reviews=$(gh api "repos/$repo/actions/permissions/workflow" --jq .can_approve_pull_request_reviews)"
 run gh api -X PUT "repos/$repo/actions/permissions/workflow" --silent \
 	-f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
+
+echo "== $repo: private vulnerability reporting"
+now=$(gh api "repos/$repo/private-vulnerability-reporting" --jq .enabled 2>/dev/null) || now=unknown
+case $now in true | false) ;; *) now=unknown ;; esac
+echo "now: $now"
+run gh api -X PUT "repos/$repo/private-vulnerability-reporting" --silent
 
 for file in .github/rulesets/release-tags-create.json .github/rulesets/release-tags-locked.json; do
 	name=$(sed -n 's/^  "name": "\(.*\)",$/\1/p' "$file")

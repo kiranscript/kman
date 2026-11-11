@@ -48,6 +48,13 @@ archives:
           owner: root
           group: root
           mtime: "{{ .CommitDate }}"
+      # The licences of the datasets the embedded price table is generated from.
+      - src: internal/pricing/NOTICE
+        dst: NOTICE-price-data
+        info:
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
       - src: README*
         info:
           owner: root
@@ -159,10 +166,9 @@ docker_signs:
 # Every GitHub release starts as a draft while assets upload. kman's stays a
 # draft until release.yml has attached the attestation bundle, then
 # release.yml publishes it. With immutable releases on, nothing changes after.
+# The repository is the one the release runs in (GoReleaser reads it from the
+# origin remote), so its owner and name are not written here.
 release:
-  github:
-    owner: kirank55
-    name: kman
   draft: true
   replace_existing_draft: true
   prerelease: auto

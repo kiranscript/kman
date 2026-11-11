@@ -31,6 +31,7 @@ type goreleaser struct {
 		BuildsInfo   fileInfo `yaml:"builds_info"`
 		Files        []struct {
 			Src  string
+			Dst  string
 			Info fileInfo
 		}
 	}
@@ -163,6 +164,28 @@ func TestTheBuildIsReproducible(t *testing.T) {
 				t.Errorf("archive file %s info = %+v, want %+v", f.Src, f.Info, reproducible)
 			}
 		}
+	}
+}
+
+// The binary embeds the price table, which comes from MIT-licensed datasets
+// whose notices must travel with it (internal/pricing/NOTICE). Every archive
+// carries the file, so does the source archive by being the tree.
+func TestEveryArchiveShipsThePriceDataNotice(t *testing.T) {
+	g := loadGoreleaser(t)
+	if len(g.Archives) != 1 {
+		t.Fatalf("got %d archive configs, want one", len(g.Archives))
+	}
+	found := false
+	for _, f := range g.Archives[0].Files {
+		if f.Src == "internal/pricing/NOTICE" {
+			found = true
+			if f.Dst != "NOTICE-price-data" {
+				t.Errorf("the price data notice is shipped as %q, want NOTICE-price-data", f.Dst)
+			}
+		}
+	}
+	if !found {
+		t.Error("the archives do not ship internal/pricing/NOTICE")
 	}
 }
 

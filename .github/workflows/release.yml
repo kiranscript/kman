@@ -60,6 +60,10 @@ jobs:
           case "$version" in *-*) prerelease=true ;; *) prerelease=false ;; esac
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+      - name: The tag has its store fixture
+        env:
+          TAG: ${{ github.ref_name }}
+        run: sh scripts/check-fixture.sh "$TAG"
       - name: Release notes from CHANGELOG.md
         env:
           TAG: ${{ github.ref_name }}
