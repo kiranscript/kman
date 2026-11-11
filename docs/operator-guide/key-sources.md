@@ -38,11 +38,12 @@ asks for a passphrase twice and writes `master.key.sealed` to the config directo
 ## env
 
 ```sh
-KMAN_MASTER_KEY="$(kman keygen)" kman init --key-source env
-KMAN_MASTER_KEY="$(kman keygen)" kman serve    # the same key as at init, of course
+export KMAN_MASTER_KEY="$(kman keygen)"     # make it once, and keep a copy somewhere safe
+kman init --key-source env
+kman serve                                  # every start needs the same variable
 ```
 
-reads the key from `KMAN_MASTER_KEY`, one line of base64 as `kman keygen` prints it. The key is in the environment of whatever starts kman, so anything that can see it there can read it: a shell history that holds the command, `docker inspect` on a container, an orchestrator's configuration. kman warns each time it reads it.
+reads the key from `KMAN_MASTER_KEY`, one line of base64 as `kman keygen` prints it. The key is in the environment of whatever starts kman, so anything that can see it there can read it: `docker inspect` on a container, an orchestrator's configuration, any program you start from that shell. kman warns each time it reads it, and child processes inherit it.
 
 ## In a container
 
