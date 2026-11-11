@@ -128,10 +128,26 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	defer stopMeter()
 	meterDone := make(chan struct{})
 	go func() { spend.Run(meterCtx); close(meterDone) }()
-	proxy := gateway.New(gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, Meter: spend, TrustedProxies: cfg.trustedProxies()})
-	ls, err := listen(cfg, log, proxy, adminHandler(svc, log))
+	pipe := startEvents(ctx, st, log)
+	defer pipe.stop() // a second time is harmless: the first stop is below
+	metrics := pipe.handler(s.now, priceDataGenerated())
+	proxy := gateway.New(gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, Meter: spend, Events: pipe.bus, TrustedProxies: cfg.trustedProxies()})
+	ls, err := listen(cfg, log, proxy, adminHandler(svc, log, metrics))
 	if err != nil {
 		return err
+	}
+	if cfg.MetricsListen != "" {
+		ml, err := newListener("metrics", cfg.MetricsListen, ListenerTLS{}, metricsOnly(metrics), log)
+		if err != nil {
+			for _, l := range ls {
+				l.l.Close()
+			}
+			return err
+		}
+		if host, _ := tcpAddr("metrics_listen", cfg.MetricsListen); !isLoopback(host) {
+			log.Warn("metrics_listen is not a loopback address, and it serves metrics with no authentication", "addr", cfg.MetricsListen)
+		}
+		ls = append(ls, ml)
 	}
 	errs := make(chan error, len(ls))
 	for _, l := range ls {
@@ -155,7 +171,9 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 			log.Error("shutdown", "listener", l.name, "err", serr)
 		}
 	}
-	// What the requests that just ended spent reaches the store before it closes.
+	// What the requests that just ended did reaches the store before it closes: their
+	// events, and their spend.
+	pipe.stop()
 	stopMeter()
 	<-meterDone
 	if ferr := spend.Flush(shutdownCtx, s.now()); ferr != nil {
@@ -199,11 +217,12 @@ func listen(cfg Config, log *slog.Logger, proxyH, adminH http.Handler) ([]*liste
 	return []*listener{proxy, adm}, nil
 }
 
-// adminHandler serves the admin listener: the admin API under /admin/v1,
-// and nothing else until the dashboard (M3) and /metrics (#46).
-func adminHandler(svc *admin.Service, log *slog.Logger) http.Handler {
+// adminHandler serves the admin listener: the admin API under /admin/v1, and
+// /metrics behind an admin token. The dashboard (M3) is not served yet.
+func adminHandler(svc *admin.Service, log *slog.Logger, metrics http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(adminapi.Prefix+"/", adminapi.Handler(svc, log))
+	mux.Handle("GET /metrics", requireAdminToken(svc, log, metrics))
 	mux.Handle("/", notYet("the admin listener"))
 	return mux
 }

@@ -62,6 +62,11 @@ type Config struct {
 	AllowPlainHTTP bool      `yaml:"allow_plain_http,omitempty"`
 	TLS            TLSConfig `yaml:"tls,omitempty"`
 
+	// MetricsListen, when set, is a host:port that serves /metrics with no
+	// authentication, for a scraper that cannot send an admin token. It is off by
+	// default: the admin listener serves /metrics behind the admin token.
+	MetricsListen string `yaml:"metrics_listen,omitempty"`
+
 	// TrustedProxies are the addresses or networks (CIDR) of reverse proxies in
 	// front of the proxy listener, whose X-Forwarded-For kman believes. With none,
 	// a request's address is its connection's.
@@ -163,6 +168,14 @@ func (c Config) check() error {
 	}{{"proxy", c.TLS.Proxy}, {"admin", c.TLS.Admin}} {
 		if l.tls.enabled() && (l.tls.CertFile == "" || l.tls.KeyFile == "") {
 			return fmt.Errorf("tls.%s needs both cert_file and key_file", l.name)
+		}
+	}
+	if c.MetricsListen != "" {
+		if strings.HasPrefix(c.MetricsListen, unixPrefix) {
+			return errors.New("metrics_listen must be host:port")
+		}
+		if _, err := tcpAddr("metrics_listen", c.MetricsListen); err != nil {
+			return err
 		}
 	}
 	if strings.HasPrefix(c.ProxyListen, unixPrefix) {
