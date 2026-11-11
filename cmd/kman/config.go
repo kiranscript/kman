@@ -71,6 +71,9 @@ type Config struct {
 	// front of the proxy listener, whose X-Forwarded-For kman believes. With none,
 	// a request's address is its connection's.
 	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
+
+	// GeoIP names the GeoIP databases kman reads, if any (see GeoIPConfig).
+	GeoIP GeoIPConfig `yaml:"geoip,omitempty"`
 }
 
 // trustedProxies is TrustedProxies as networks. A bare address is a network of
@@ -161,6 +164,9 @@ func (c Config) check() error {
 		if _, err := parseProxy(s); err != nil {
 			return err
 		}
+	}
+	if err := c.GeoIP.check(); err != nil {
+		return err
 	}
 	for _, l := range []struct {
 		name string

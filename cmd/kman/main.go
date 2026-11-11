@@ -50,7 +50,7 @@ func main() {
 // offline lists the commands main runs itself; every other command is one
 // of the CLI's online commands. A new offline command adds its case to run
 // and its name here.
-var offline = []string{"init", "serve", "keygen", "rekey", "version"}
+var offline = []string{"init", "serve", "keygen", "rekey", "version", "geoip"}
 
 // usageLine lists the commands.
 var usageLine = "usage: kman <" + strings.Join(append(slices.Clone(offline), cli.Commands()...), "|") + ">"
@@ -73,6 +73,8 @@ func run(ctx context.Context, args []string, s *sys) int {
 		return cmdKeygen(rest, s.stdout, s.stderr)
 	case "rekey":
 		return cmdRekey(ctx, rest, s)
+	case "geoip":
+		return cmdGeoIP(ctx, rest, s)
 	}
 	if slices.Contains(cli.Commands(), args[0]) {
 		return cli.Run(ctx, args, cliEnv(s))

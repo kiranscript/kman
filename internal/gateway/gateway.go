@@ -13,6 +13,7 @@ import (
 	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/limiter"
 	"github.com/kirank55/kman/internal/meter"
+	"github.com/kirank55/kman/internal/policy/geoip"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/vault"
@@ -45,6 +46,9 @@ type Options struct {
 	// (kman.yaml's trusted_proxies). With none, the client address is the
 	// connection's.
 	TrustedProxies []netip.Prefix
+	// Geo places a client address by country and ASN. It is nil with no GeoIP
+	// database (geoip in kman.yaml), and then a key locked to countries is refused.
+	Geo Geo
 	// Limiter holds the RPM windows and the invalid-key counts. It defaults to one
 	// with the default bounds, on Now.
 	Limiter *limiter.Limiter
@@ -64,6 +68,9 @@ type Options struct {
 	// OnUsage is told what each response it could read reported, once it has ended.
 	// It is a seam for tests that look at what was read, apart from what it cost.
 	OnUsage func(registry.Route, profiles.Usage)
+
+	// observe is told each request's address and place as it is emitted. It is for tests.
+	observe func(netip.Addr, geoip.Info)
 }
 
 // Gateway is the proxy listener's http.Handler.
@@ -107,6 +114,9 @@ type exchange struct {
 	body  []byte
 	// ip is where the request came from, by the connection or a trusted proxy.
 	ip netip.Addr
+	// geo is where the address is, when a GeoIP database says. It is what the
+	// request's event carries as its country and ASN.
+	geo geoip.Info
 	// usage reads usage from the response as it passes. It is nil before there's a
 	// response, and for one that can't be read or isn't metered. What it holds
 	// stands after a broken response too, when abort is also set.
@@ -156,6 +166,7 @@ type stage func(*Gateway, *exchange) *refusal
 // policy, which reads the model from it.
 var pipeline = [...]stage{
 	(*Gateway).guarded,
+	(*Gateway).address,
 	(*Gateway).buffer,
 	(*Gateway).policy,
 	(*Gateway).limit,
@@ -215,6 +226,9 @@ const maxOperationPath = 256
 // never waits: Emit drops the event when the queue is full. The event holds what
 // happened, never what was said.
 func (g *Gateway) emit(x *exchange) {
+	if g.opts.observe != nil {
+		g.opts.observe(x.ip, x.geo)
+	}
 	if g.opts.Events == nil {
 		return
 	}
@@ -250,5 +264,6 @@ func (g *Gateway) emit(x *exchange) {
 	if e.Kind != events.KindBlocked && x.res != nil && !x.charge.Unknown {
 		e.CostKnown, e.CostMicro, e.CostEstimated = true, x.charge.Micro, x.charge.Estimated
 	}
+	e.Country, e.ASN = x.geo.Country, int64(x.geo.ASN)
 	g.opts.Events.Emit(e)
 }

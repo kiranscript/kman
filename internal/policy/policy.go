@@ -24,6 +24,11 @@ type Policy struct {
 	AllowedPaths []string `json:"allowed_paths,omitempty"`
 	// AllowedModels are exact model ids, or an id ending in * for a prefix.
 	AllowedModels []string `json:"allowed_models,omitempty"`
+	// AllowedCIDRs and AllowedCountries lock the key to where it may be used from:
+	// networks in CIDR form, and ISO 3166-1 country codes (GeoIP). With both, an
+	// address must satisfy both. A country lock needs a GeoIP database.
+	AllowedCIDRs     []string `json:"allowed_cidrs,omitempty"`
+	AllowedCountries []string `json:"allowed_countries,omitempty"`
 	// RPMLimit is the most requests a key may make in a minute; 0 is no limit.
 	RPMLimit int `json:"rpm_limit,omitempty"`
 	// DailyCapMicro and MonthlyCapMicro are the key's spend caps in
@@ -101,11 +106,13 @@ func checkModelRule(m string) error {
 // wire is a policy as written: a cap is a pointer, so that a cap of zero can be
 // told from none and refused.
 type wire struct {
-	AllowedPaths    []string `json:"allowed_paths"`
-	AllowedModels   []string `json:"allowed_models"`
-	RPMLimit        int      `json:"rpm_limit"`
-	DailyCapMicro   *int64   `json:"daily_cap_micro"`
-	MonthlyCapMicro *int64   `json:"monthly_cap_micro"`
+	AllowedPaths     []string `json:"allowed_paths"`
+	AllowedModels    []string `json:"allowed_models"`
+	AllowedCIDRs     []string `json:"allowed_cidrs"`
+	AllowedCountries []string `json:"allowed_countries"`
+	RPMLimit         int      `json:"rpm_limit"`
+	DailyCapMicro    *int64   `json:"daily_cap_micro"`
+	MonthlyCapMicro  *int64   `json:"monthly_cap_micro"`
 }
 
 // decode reads a policy, refusing a field kman does not know, since a mistyped
@@ -124,6 +131,10 @@ func decode(raw []byte) (Policy, error) {
 		return Policy{}, errors.New("the policy holds more than one JSON value")
 	}
 	p := Policy{AllowedPaths: w.AllowedPaths, AllowedModels: w.AllowedModels, RPMLimit: w.RPMLimit}
+	var err error
+	if p.AllowedCIDRs, p.AllowedCountries, err = normalizeLocks(w.AllowedCIDRs, w.AllowedCountries); err != nil {
+		return Policy{}, fmt.Errorf("the policy: %w", err)
+	}
 	for _, c := range []struct {
 		name string
 		in   *int64

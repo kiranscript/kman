@@ -12,6 +12,7 @@ Every command that talks to a running kman takes `--config-dir`, the directory h
 | [`kman keygen`](#kman-keygen) | print a new master key and store nothing |
 | [`kman rekey`](#kman-rekey) | replace the master key and the data key, with the server stopped |
 | [`kman version`](#kman-version) | print the version, the commit and the build date |
+| [`kman geoip`](#kman-geoip) | download the DB-IP Lite GeoIP databases that country locks and events read (the one command that reaches DB-IP) |
 | [`kman login`](#kman-login) | save an admin URL and token for the commands on this machine |
 | [`kman logout`](#kman-logout) | remove the saved admin URL and token |
 | [`kman admin-token`](#kman-admin-token) | create, list, rotate or revoke admin tokens |
@@ -88,6 +89,20 @@ Print the version, the commit and the build date.
 
 ```
 usage: kman version
+```
+
+## `kman geoip`
+
+Download the DB-IP Lite GeoIP databases that country locks and events read (the one command that reaches DB-IP).
+
+### `kman geoip update`
+
+```
+usage: kman geoip update [--config-dir dir] [--source url]
+  -config-dir string
+    	the config directory holding kman.yaml (default ~/.config/kman, or %APPDATA%\kman on Windows)
+  -source string
+    	the address to download DB-IP Lite from, which serves dbip-country-lite-YYYY-MM.mmdb.gz and dbip-asn-lite-YYYY-MM.mmdb.gz: a mirror, for a network that cannot reach DB-IP (default "https://download.db-ip.com/free")
 ```
 
 ## `kman login`
