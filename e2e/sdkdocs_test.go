@@ -47,6 +47,7 @@ func TestTheSDKDocIsCurrent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		code = []byte(strings.ReplaceAll(string(code), "\r\n", "\n")) // a Windows checkout may have CRLF
 		got = regenerate(t, got, "<!-- snippet:"+s.name+" -->", "<!-- /snippet -->",
 			"```"+s.lang+"\n"+strings.TrimRight(string(code), "\n")+"\n```")
 	}

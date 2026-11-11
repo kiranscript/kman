@@ -29,7 +29,22 @@ docker compose up -d
 
 <!-- compose:end -->
 
-`kman init` prints the `owner` admin token to your terminal once. In a container kman never saves it, and it is not in `docker compose logs`. Keep it, and pass it to the CLI as `KMAN_ADMIN_TOKEN`.
+`kman init` prints the `owner` admin token to your terminal once. In a container kman never saves it, and it is not in `docker compose logs`. Keep it somewhere safe.
+
+## Run kman commands against the container
+
+The admin API is published on host `127.0.0.1:8081`, so a `kman` installed on the host (see [Install](install.md)) manages the container. Tell it where the API is and which token to use:
+
+```sh
+export KMAN_ADMIN_URL=http://127.0.0.1:8081
+export KMAN_ADMIN_TOKEN=kma_…          # the token init printed
+kman upstream add openai --preset openai
+kman key create my-app --upstream openai
+```
+
+**Plain `kman` with no arguments can mislead you here.** Its status summary looks for an install in the *host's* config directory, and the config of a container lives in the volume. Without a token or URL in the environment it says `kman is not initialised: there is no install in ~/.config/kman` and suggests `kman init`, which is not what you want. With `KMAN_ADMIN_URL` and `KMAN_ADMIN_TOKEN` set, as above, it asks the running server and gives the right answer. (Don't run `kman init` on the host to "fix" it: that makes a second, separate install.) The same goes for a [systemd](systemd.md) install.
+
+The proxy is published on `http://127.0.0.1:8080`, so an app on the host uses `OPENAI_BASE_URL=http://127.0.0.1:8080/v1`. CI runs the commands in the Set up block above against the image and the example; it does not run the sections after it.
 
 **Back up `master.key` apart from the volume.** The volume holds only ciphertext, and without the key nothing in it can be decrypted. On a shared host, make the key readable by the container's user only: `sudo chown 65532:65532 master.key && sudo chmod 0400 master.key`.
 
@@ -51,7 +66,7 @@ mv master.key.next master.key
 docker compose up -d
 ```
 
-The new key must be readable by the container's user. Backups made before the rekey open only with the old key, so keep that key for as long as you keep them, and if it leaked, destroy them both.
+The new key must be readable by the container's user. Copies of the volume made before the rekey open only with the old key, so keep that key for as long as you keep them, and if it leaked, destroy them both and replace the real credentials at their providers: see [Upgrade, rekey and old copies](upgrade.md#replace-the-master-key).
 
 ## Upgrade
 
@@ -62,4 +77,4 @@ docker compose pull
 docker compose up -d
 ```
 
-kman copies the database to `kman.db.pre-<version>` before it migrates.
+When the new version has to migrate the database, kman first copies it to `kman.db.pre-<NNNN>` in the volume (`NNNN` is the schema version it migrates to, and the last two copies are kept). See [Upgrade](upgrade.md#what-a-new-version-does-at-startup). To **back up**, stop the container (`docker compose stop kman`) and copy the volume's contents, keeping `master.key` somewhere else.

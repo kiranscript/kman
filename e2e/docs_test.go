@@ -11,6 +11,9 @@ import (
 
 // The README shows the quickstart's lines, and they must stay the same lines.
 func TestTheREADMEQuickstartIsTheQuickstart(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("doc-steps.sh needs a Unix shell")
+	}
 	want := docSteps(t, "docs/quickstart.md", "quickstart")
 	if got := docSteps(t, "README.md", "quickstart"); !slices.Equal(got, want) {
 		t.Errorf("README.md's quickstart lines differ from docs/quickstart.md's:\n%q\n%q", got, want)

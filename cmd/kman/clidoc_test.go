@@ -137,6 +137,7 @@ func helpFor(t *testing.T, args ...string) string {
 	if out.Len() == 0 {
 		t.Fatalf("kman %s -h printed nothing", strings.Join(args, " "))
 	}
+	text := strings.ReplaceAll(out.String(), `$HOME\.config\kman`, "$HOME/.config/kman") // Windows joins with a backslash
 	// The flag package heads its own flag sets "Usage of init:".
-	return strings.Replace(out.String(), "Usage of "+args[0]+":", "usage: kman "+args[0]+" [flags]", 1)
+	return strings.Replace(text, "Usage of "+args[0]+":", "usage: kman "+args[0]+" [flags]", 1)
 }
