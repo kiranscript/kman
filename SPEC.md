@@ -70,7 +70,7 @@ Fifteen modules, one Go package each under `internal/`, plus the `token` leaf pa
 | `adminapi`, `dashboard`, `cli` | transports over `admin` | Typed DTOs and OpenAPI, templ pages, the one typed client. |
 | `token` | `Kind`, `KeyID`, and the token formats | A leaf: the token types shared by every module, and minting and parsing per ADR 0001. It imports no internal package. |
 
-Import rule: transports import only `admin`. `admin` imports `store`, `registry`, `vault`, `events`, `sessions`. `gateway` imports `registry`, `policy`, `limiter`, `meter`, `vault`, `profiles`, `events`, `sessions`, and never `admin`. Nothing imports a transport. `token` is a leaf that imports no internal package, and any module may import it. `detect` decides; `admin` executes its decisions as actor `system:detect`.
+Import rule: transports import only `admin`. `admin` imports `store`, `registry`, `vault`, `events`, `sessions`. `gateway` imports `registry`, `policy`, `limiter`, `meter`, `vault`, `profiles`, `events`, `sessions`, and never `admin`. `alerts` imports `store` and `events`, and gets what `admin` hands it (the audit entries, in their transaction) through an interface that `admin` defines. Nothing imports a transport. `token` is a leaf that imports no internal package, and any module may import it. `detect` decides; `admin` executes its decisions as actor `system:detect`.
 
 ## 3. Install, first run, and configuration
 
