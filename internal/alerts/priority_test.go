@@ -136,6 +136,7 @@ func TestAPriorityAlertNeverCarriesTheRequestPath(t *testing.T) {
 		bus.Emit(e)
 		c := disabledUse("cafe0001", "203.0.113.8")
 		c.Path, c.BlockedCode, c.Canary = hostile, "invalid_key", true
+		c.Method = "EVIL*FAKESECRET*" // a method is a token the caller picks too
 		bus.Emit(c)
 		synctest.Wait()
 		got := in.net.received("hooks.test")
@@ -148,9 +149,9 @@ func TestAPriorityAlertNeverCarriesTheRequestPath(t *testing.T) {
 					t.Errorf("the alert carries the caller's path (%q):\n%s", bad, a.Body)
 				}
 			}
-			if !strings.Contains(a.Body, "POST") {
-				t.Errorf("the alert lacks the method:\n%s", a.Body)
-			}
+		}
+		if !strings.Contains(got[0].Body, "POST") && !strings.Contains(got[1].Body, "POST") {
+			t.Errorf("no alert names the method:\n%v", got)
 		}
 	})
 }

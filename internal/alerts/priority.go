@@ -86,7 +86,7 @@ func usedKeyAlert(e events.Event, canary bool, held int) Alert {
 	if e.ClientIP.IsValid() {
 		a.Evidence = append(a.Evidence, Fact{"From", e.ClientIP.String()})
 	}
-	if e.Method != "" {
+	if knownMethods[e.Method] { // a method is a token the caller picks, so only the standard ones are named
 		a.Evidence = append(a.Evidence, Fact{"Method", e.Method})
 	}
 	if held > 0 {
@@ -94,6 +94,10 @@ func usedKeyAlert(e events.Event, canary bool, held int) Alert {
 	}
 	a.Commands = []string{"kman key show " + e.KeyID}
 	return a
+}
+
+var knownMethods = map[string]bool{
+	"GET": true, "HEAD": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true, "OPTIONS": true,
 }
 
 // nameKey fills in the name of the key an alert is about, when it has one.
