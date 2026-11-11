@@ -225,7 +225,7 @@ func TestKeyDisableEnableAndRevokeTakeANameOrAKeyId(t *testing.T) {
 	if shown.Status != "revoked" || shown.ID != k.Key.ID {
 		t.Errorf("revoke --json = %+v", shown)
 	}
-	if r := in.run(t, nil, "", "key", "list"); !regexp.MustCompile(k.Key.ID+`\s+my-app\s+openai\s+revoked`).MatchString(r.stdout) {
+	if r := in.run(t, nil, "", "key", "list"); !regexp.MustCompile(k.Key.ID + `\s+my-app\s+openai\s+revoked`).MatchString(r.stdout) {
 		t.Errorf("key list:\n%s", r.stdout)
 	}
 }
