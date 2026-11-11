@@ -21,6 +21,7 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `POST /admin/v1/admin-tokens/{name}/revoke` | Revoke an admin token; the install's last live token cannot be revoked |
 | `POST /admin/v1/admin-tokens/{name}/rotate` | Give an admin token a new secret; the old one stops working at once |
 | `GET /admin/v1/audit` | Read a page of the audit log, oldest entry first |
+| `POST /admin/v1/backup` | Download a consistent copy of the database, made while kman runs; it holds ciphertext only, so it opens only with the master key |
 | `GET /admin/v1/channels` | List the alert channels, with what each one's outbox holds, never their addresses |
 | `POST /admin/v1/channels` | Add a Slack or signed-webhook alert channel; a webhook's signing secret is returned only this once |
 | `DELETE /admin/v1/channels/{ref}` | Remove an alert channel and give up the alerts still waiting for it |
@@ -44,8 +45,10 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `POST /admin/v1/price-overrides/import` | Set many price overrides, all or none |
 | `GET /admin/v1/prices` | List the built-in price table, how old it is, and the price overrides |
 | `GET /admin/v1/prices/status` | Say how old the built-in price table is, and whether to upgrade |
+| `POST /admin/v1/prune` | Delete events, hourly usage and delivered alerts older than a date, and with audit_log the audit log's entries too; the prune is audited |
 | `GET /admin/v1/settings` | Read the install's settings |
 | `PATCH /admin/v1/settings` | Change some settings; each change is audited |
+| `GET /admin/v1/update` | Say whether a newer kman release is known; only an install with update_check on ever asks |
 | `GET /admin/v1/upstreams` | List every upstream with its credentials, never their secrets |
 | `POST /admin/v1/upstreams` | Add an upstream, copying a preset or built from the settings |
 | `DELETE /admin/v1/upstreams/{ref}` | Delete an upstream, its credentials and its price overrides; refused while a virtual key that is not revoked depends on one |
@@ -100,6 +103,12 @@ Read a page of the audit log, oldest entry first. Operation id `listAudit`.
 | `latest` | query | boolean | no | Return the newest entries instead. after must then be 0. |
 
 Response 200: [AuditPage](#auditpage).
+
+### `POST /admin/v1/backup`
+
+Download a consistent copy of the database, made while kman runs; it holds ciphertext only, so it opens only with the master key. Operation id `createBackup`.
+
+Response 200: a file (application/octet-stream).
 
 ### `GET /admin/v1/channels`
 
@@ -317,6 +326,14 @@ Say how old the built-in price table is, and whether to upgrade. Operation id `g
 
 Response 200: [PriceDataStatus](#pricedatastatus).
 
+### `POST /admin/v1/prune`
+
+Delete events, hourly usage and delivered alerts older than a date, and with audit_log the audit log's entries too; the prune is audited. Operation id `pruneData`.
+
+Request body: [PruneRequest](#prunerequest).
+
+Response 200: [PruneResult](#pruneresult).
+
 ### `GET /admin/v1/settings`
 
 Read the install's settings. Operation id `getSettings`.
@@ -330,6 +347,12 @@ Change some settings; each change is audited. Operation id `updateSettings`.
 Request body: [SettingsUpdate](#settingsupdate).
 
 Response 200: [Settings](#settings).
+
+### `GET /admin/v1/update`
+
+Say whether a newer kman release is known; only an install with update_check on ever asks. Operation id `getUpdateStatus`.
+
+Response 200: [UpdateStatus](#updatestatus).
 
 ### `GET /admin/v1/upstreams`
 
@@ -778,6 +801,23 @@ Response 200: [Whoami](#whoami).
 | `micro` | integer | yes |  |
 | `tool` | string | yes |  |
 
+### `PruneRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `audit_log` | boolean | no | Also delete the audit log's entries older than before. The one thing that ever deletes from the audit log. The prune is recorded in the log, and that record stays. |
+| `before` | string | yes | Delete what is older than this: events, hourly usage, and alerts delivered before it. Not in the future. |
+
+### `PruneResult`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `audit_entries` | integer | yes | Audit log entries deleted. 0 unless audit_log was set. |
+| `before` | string | yes |  |
+| `delivered_alerts` | integer | yes | Alerts deleted that were delivered before the date. Pending and failed alerts are kept. |
+| `events` | integer | yes | Events deleted. |
+| `hourly_usage` | integer | yes | Hourly usage rows deleted: those whose hour ended before the date. |
+
 ### `RotateKeyRequest`
 
 | Field | Type | Required | Description |
@@ -822,6 +862,18 @@ Response 200: [Whoami](#whoami).
 | `requests` | integer | yes | Requests charged. |
 | `reserved_micro` | integer | yes | Held for requests in flight. A cap counts it as it counts cost_micro. |
 | `unmetered_requests` | integer | yes | Requests forwarded that could not be metered, whose cost is unknown and so is not in cost_micro. |
+
+### `UpdateStatus`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `available` | boolean | yes | Whether Latest is newer than Current. |
+| `checked_at` | string | no | When the last check ran, successful or not. |
+| `current` | string | no | This binary's version, such as v0.1.0, or empty for a build that is not a release. |
+| `enabled` | boolean | yes | Whether update_check is on in kman.yaml. kman asks the GitHub releases API once a day only when it is. |
+| `error` | string | no | Why the last check failed, if it did. Latest is still what an earlier check found. |
+| `latest` | string | no | The newest release the last successful check found. |
+| `url` | string | no | The page of the latest release. |
 
 ### `Upstream`
 

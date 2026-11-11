@@ -61,6 +61,11 @@ type API interface {
 
 	Exposure(ctx context.Context) (Exposure, error)
 
+	Backup(ctx context.Context) (Download, error)
+	Prune(ctx context.Context, req PruneRequest) (PruneResult, error)
+
+	UpdateStatus(ctx context.Context) (UpdateStatus, error)
+
 	AddChannel(ctx context.Context, req AddChannelRequest) (CreatedChannel, error)
 	ListChannels(ctx context.Context) (ChannelList, error)
 	TestChannel(ctx context.Context, req ChannelRef) (ChannelTestResult, error)
@@ -109,6 +114,9 @@ type Options struct {
 	// composition root passes the alerts module, which admin may not import.
 	// Nil queues no alerts, for init and tools that run no alerts.
 	Alerts Alerter
+	// Update reports what the opt-in update check has learned. The composition
+	// root passes it only when update_check is on; nil says the check is off.
+	Update func() UpdateStatus
 }
 
 // Service runs the admin commands.
@@ -124,6 +132,7 @@ type Service struct {
 	publish func([]PriceOverride) error
 	spend   func(keyID, policy string) KeySpend
 	alerts  Alerter
+	update  func() UpdateStatus
 
 	// publishing holds a command from its transaction to its publish, so
 	// memory sees commands in the order they committed. The request path
@@ -136,7 +145,7 @@ type Service struct {
 
 // New returns the admin service over opts.Store.
 func New(opts Options) *Service {
-	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices, spend: opts.Spend, alerts: opts.Alerts}
+	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices, spend: opts.Spend, alerts: opts.Alerts, update: opts.Update}
 	s.settle = make(chan struct{}, 1)
 	if s.rand == nil {
 		s.rand = rand.Reader

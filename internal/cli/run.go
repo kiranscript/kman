@@ -59,6 +59,8 @@ var commands = []command{
 	{"upstream", "add, list, show, update, remove or sync upstreams", cmdUpstream},
 	{"credential", "add, update or remove credentials", cmdCredential},
 	{"key", "create, list, show, update, disable, enable or revoke virtual keys", cmdKey},
+	{"backup", "write a consistent copy of the database, while kman runs", backupFile},
+	{"prune", "delete events, hourly usage and delivered alerts older than a date, and the audit log's entries too if asked", pruneData},
 	{"exposure", "list the keys that would be easy to abuse if they leaked, each with the command that fixes it", cmdExposure},
 	{"channel", "add, list, test or remove alert channels", cmdChannel},
 }

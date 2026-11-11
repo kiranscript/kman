@@ -29,6 +29,8 @@ var auditActions = map[string]auditAction{
 	"key.rotate":            {Medium, "Key rotated"},
 	"key.create":            {Low, "Key created"},
 	"key.update":            {Low, "Key changed"},
+	"data.prune":            {Medium, "Data pruned"},
+	"backup.create":         {Medium, "Backup taken"},
 	"alert_channel.create":  {Medium, "Alert channel added"},
 	"alert_channel.delete":  {Medium, "Alert channel removed"},
 	"upstream.create":       {Low, "Upstream added"},

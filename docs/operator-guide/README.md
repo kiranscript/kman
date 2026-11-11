@@ -11,7 +11,8 @@ For the person who runs kman. New here? Start with the [quickstart](../quickstar
 - [Alerts](alerts.md): Slack and signed-webhook channels, what raises an alert, retries, and what a channel that hangs does.
 - [Address locks and GeoIP](geoip.md): lock a key to networks or countries, and `kman geoip update`.
 - [Finding leaked and exposed keys](scan.md): `kman scan` searches files for kman keys, offline; `kman exposure` lists keys that are easy to abuse, with the fix.
-- [Upgrade, rekey and old copies](upgrade.md): upgrades, the `kman.db.pre-<NNNN>` copies, backing up, replacing the master key.
+- [Backup, restore, retention and updates](backup.md): `kman backup`, `kman restore`, what kman prunes by itself, `kman prune`, and the opt-in update check.
+- [Upgrade, rekey and old copies](upgrade.md): upgrades, the `kman.db.pre-<NNNN>` copies, replacing the master key.
 - [Rotating keys and replacing a leaked credential](rotation.md): `kman key rotate`, the grace period, retired secrets, `kman credential compromise`.
 
 And elsewhere:

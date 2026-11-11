@@ -103,7 +103,7 @@ The review checked each of SPEC §1's eight invariants against the code and by r
 
 - **Alerts are at least once.** A receiver may see a delivery twice and must drop a repeated `X-Kman-Delivery`.
 - **An alert is not authentication.** Slack and the receiver of an unsigned address take what arrives: only a webhook is signed, and a receiver has to check the signature and the timestamp.
-- **A key's name and id travel to the channel.** They are labels, not secrets, but a Slack workspace will hold them. The outbox holds delivered alerts, with the same content, until retention ships.
+- **A key's name and id travel to the channel.** They are labels, not secrets, but a Slack workspace will hold them. The outbox holds delivered alerts, with the same content, for the retention period (30 days).
 - **A failing alert pipeline is silent to the app** and visible only in `kman channel list` and the log. Watch for a channel with alerts pending.
 - **A request kman never saw cannot alert.** Alerts follow the audit log and the priority lane; the detection rules and soft budgets are not in this release.
 

@@ -27,6 +27,9 @@ type route struct {
 	req, resp    reflect.Type
 	// call runs the operation with the bound request, a pointer to a req.
 	call func(ctx context.Context, svc Service, req any) (any, error)
+	// download, instead of call, is set for a route that answers with a file
+	// rather than JSON: a backup.
+	download func(ctx context.Context, svc Service) (admin.Download, error)
 }
 
 // op is a route whose command takes a request.
@@ -47,6 +50,14 @@ func op0[Resp any](method, path, id, summary string, fn func(Service, context.Co
 	}
 }
 
+// opDownload is a route that takes no request and answers with a file.
+func opDownload(method, path, id, summary string, fn func(Service, context.Context) (admin.Download, error)) route {
+	return route{
+		method: method, path: path, id: id, summary: summary, status: http.StatusOK,
+		download: func(ctx context.Context, svc Service) (admin.Download, error) { return fn(svc, ctx) },
+	}
+}
+
 // routes is the whole API. A new admin command adds its route here, and
 // then regenerates the committed OpenAPI document.
 var routes = []route{
@@ -60,6 +71,9 @@ var routes = []route{
 	op0("GET", "/settings", "getSettings", "Read the install's settings", Service.Settings),
 	op("PATCH", "/settings", "updateSettings", "Change some settings; each change is audited", http.StatusOK, Service.UpdateSettings),
 
+	opDownload("POST", "/backup", "createBackup", "Download a consistent copy of the database, made while kman runs; it holds ciphertext only, so it opens only with the master key", Service.Backup),
+	op("POST", "/prune", "pruneData", "Delete events, hourly usage and delivered alerts older than a date, and with audit_log the audit log's entries too; the prune is audited", http.StatusOK, Service.Prune),
+	op0("GET", "/update", "getUpdateStatus", "Say whether a newer kman release is known; only an install with update_check on ever asks", Service.UpdateStatus),
 	op("GET", "/audit", "listAudit", "Read a page of the audit log, oldest entry first", http.StatusOK, Service.Audit),
 
 	op("GET", "/prices", "listPrices", "List the built-in price table, how old it is, and the price overrides", http.StatusOK, Service.ListPrices),

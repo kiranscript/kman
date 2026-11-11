@@ -39,7 +39,7 @@ kman channel rm ops        # remove it, wipe its address, give up what still wai
 The audit log is a producer, so the change and its alert commit in one transaction: an alert is never lost with a change that went through. The severity of an audit entry follows its action:
 
 - **high:** `admin_token.create|rotate|revoke`, `credential.compromise`, `key.revoke`
-- **medium:** `key.disable`, `key.enable`, `key.rotate`, `credential.create|update|delete`, `alert_channel.create|delete`
+- **medium:** `key.disable`, `key.enable`, `key.rotate`, `credential.create|update|delete`, `alert_channel.create|delete`, `backup.create`, `data.prune`
 - **low:** `key.create`, `key.update`, `upstream.*`, `settings.set`, `price_override.*`, and any action this kman does not know
 
 With the default `--min-severity medium`, a channel hears about the first two groups. A key that is used again and again alerts once per 10 minutes, and the next alert says how many uses it held back.
@@ -120,4 +120,4 @@ Every alert is written to a persisted outbox, once for each channel that takes i
 
 Alerts are delivered at least once: a webhook can see the same `X-Kman-Delivery` twice, for instance when kman stops after the receiver answered and before it recorded that.
 
-Delivered alerts stay in the outbox until retention ships. v0.1.0 does not prune them.
+Delivered alerts are kept 30 days, and [retention](backup.md#retention) then prunes them; alerts given up on stay until you prune them yourself.

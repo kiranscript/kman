@@ -88,7 +88,7 @@ func TestAuditActionsAreAlertedByHowMuchTheyMatter(t *testing.T) {
 		in.channel("ch_crit", "slack", "crit.test", "critical", true, "")
 		stop := in.run()
 		defer stop()
-		for _, action := range []string{"settings.set", "key.create", "key.disable", "admin_token.create", "credential.compromise", "something.new"} {
+		for _, action := range []string{"settings.set", "key.create", "key.disable", "admin_token.create", "credential.compromise", "data.prune", "backup.create", "something.new"} {
 			in.audited(store.AuditEntry{Actor: "owner", Action: action, TargetKind: "x", TargetID: "y"})
 		}
 		synctest.Wait()
@@ -100,7 +100,7 @@ func TestAuditActionsAreAlertedByHowMuchTheyMatter(t *testing.T) {
 			return b.String()
 		}
 		med := titles("med.test")
-		for _, want := range []string{"key.disable", "admin_token.create", "credential.compromise"} {
+		for _, want := range []string{"key.disable", "admin_token.create", "credential.compromise", "data.prune", "backup.create"} {
 			if !strings.Contains(med, want) {
 				t.Errorf("a medium channel missed %s", want)
 			}

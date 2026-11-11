@@ -1,11 +1,14 @@
 package adminapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/kirank55/kman/internal/admin"
@@ -69,6 +72,10 @@ func authenticated(svc Service, log *slog.Logger, rt route) http.Handler {
 				return
 			}
 		}
+		if rt.download != nil {
+			serveDownload(w, log, rt, svc, ctx)
+			return
+		}
 		resp, err := rt.call(ctx, svc, req)
 		if err != nil {
 			var ae *admin.Error
@@ -81,6 +88,29 @@ func authenticated(svc Service, log *slog.Logger, rt route) http.Handler {
 		}
 		writeJSON(w, rt.status, resp)
 	})
+}
+
+// serveDownload answers with the file rt makes, as it is, and removes the
+// server's copy of it when it is sent or the client goes away.
+func serveDownload(w http.ResponseWriter, log *slog.Logger, rt route, svc Service, ctx context.Context) {
+	d, err := rt.download(ctx, svc)
+	if err != nil {
+		var ae *admin.Error
+		if !errors.As(err, &ae) {
+			internalError(w, log, err)
+			return
+		}
+		writeError(w, statusOf(ae.Code), ae)
+		return
+	}
+	defer d.Body.Close()
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+d.Name+`"`)
+	w.Header().Set("Content-Length", strconv.FormatInt(d.Size, 10))
+	w.WriteHeader(rt.status)
+	if _, err := io.Copy(w, d.Body); err != nil {
+		log.Warn("admin API: a download was cut short", "route", rt.id, "err", err)
+	}
 }
 
 // statusOf is the HTTP status of an admin error code.

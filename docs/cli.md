@@ -11,7 +11,8 @@ Every command that talks to a running kman takes `--config-dir`, the directory h
 | [`kman serve`](#kman-serve) | run the proxy and the admin API |
 | [`kman keygen`](#kman-keygen) | print a new master key and store nothing |
 | [`kman rekey`](#kman-rekey) | replace the master key and the data key, with the server stopped |
-| [`kman version`](#kman-version) | print the version, the commit and the build date |
+| [`kman restore`](#kman-restore) | replace the database with a backup, with the server stopped |
+| [`kman version`](#kman-version) | print the version, the commit and the build date; --check asks GitHub for a newer release |
 | [`kman geoip`](#kman-geoip) | download the DB-IP Lite GeoIP databases that country locks and events read (the one command that reaches DB-IP) |
 | [`kman scan`](#kman-scan) | find kman keys in files, offline, and say which key each is |
 | [`kman login`](#kman-login) | save an admin URL and token for the commands on this machine |
@@ -23,6 +24,8 @@ Every command that talks to a running kman takes `--config-dir`, the directory h
 | [`kman upstream`](#kman-upstream) | add, list, show, update, remove or sync upstreams |
 | [`kman credential`](#kman-credential) | add, update or remove credentials |
 | [`kman key`](#kman-key) | create, list, show, update, disable, enable or revoke virtual keys |
+| [`kman backup`](#kman-backup) | write a consistent copy of the database, while kman runs |
+| [`kman prune`](#kman-prune) | delete events, hourly usage and delivered alerts older than a date, and the audit log's entries too if asked |
 | [`kman exposure`](#kman-exposure) | list the keys that would be easy to abuse if they leaked, each with the command that fixes it |
 | [`kman channel`](#kman-channel) | add, list, test or remove alert channels |
 
@@ -86,12 +89,34 @@ usage: kman rekey [flags]
     	where the new master key will come from: file, systemd-creds, passphrase or env (default the current source)
 ```
 
-## `kman version`
+## `kman restore`
 
-Print the version, the commit and the build date.
+Replace the database with a backup, with the server stopped.
+
+### `kman restore file`
 
 ```
-usage: kman version
+usage: kman restore <file> [--config-dir dir] [--allow-debug]
+
+Replaces the database with a backup made by kman backup. The server must be stopped, and the master key must be the one the backup was made under: it holds ciphertext only. The database it replaces is kept as kman.db.before-restore. What was written after the backup is gone.
+  -allow-debug
+    	skip the process hardening that keeps the master key out of core dumps and debuggers
+  -config-dir string
+    	the config directory holding kman.yaml (default ~/.config/kman, or %APPDATA%\kman on Windows)
+```
+
+## `kman version`
+
+Print the version, the commit and the build date; --check asks GitHub for a newer release.
+
+```
+usage: kman version [--check] [--json]
+
+Prints the version, the commit and the build date. With --check it also asks the GitHub releases API for the latest release, once: the only time this command uses the network. kman never checks by itself unless update_check: true is set in kman.yaml.
+  -check
+    	ask GitHub whether a newer release exists
+  -json
+    	print JSON
 ```
 
 ## `kman geoip`
@@ -645,6 +670,38 @@ Replaces the key's secret and keeps the key: its id, spend, policy and history s
     	the config directory holding the credentials file (default "$HOME/.config/kman")
   -grace string
     	how long the old secret keeps working, such as 24h; 0 ends it at once (default "0")
+  -json
+    	print the admin API's JSON response
+```
+
+## `kman backup`
+
+Write a consistent copy of the database, while kman runs.
+
+### `kman backup file`
+
+```
+usage: kman backup <file>
+
+Writes a consistent copy of the database while kman runs. The copy holds ciphertext only: it opens only with the master key, which is not in it, so back the master key up separately and keep it apart from the copy. The file is made here, owner-only, and must not exist. Restore it with kman restore, with the server stopped.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+```
+
+## `kman prune`
+
+Delete events, hourly usage and delivered alerts older than a date, and the audit log's entries too if asked.
+
+```
+usage: kman prune --before <date> [--audit-log] [--json]
+
+Deletes the events, the hourly usage and the alerts delivered before the date. Daily spend and incidents are kept forever. With --audit-log it also deletes the audit log's entries before the date, the one thing that ever deletes from the log; the prune itself is recorded in the log, and that record stays. Retention does the same for events, hourly usage and alerts by itself (see retention in kman.yaml); this is for a date you choose.
+  -audit-log
+    	also delete the audit log's entries before the date
+  -before string
+    	delete what is older than this date: 2026-01-01 (midnight UTC) or 2026-01-01T15:04:05Z
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
   -json
     	print the admin API's JSON response
 ```

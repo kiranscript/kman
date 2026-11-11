@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/kirank55/kman/internal/admin"
 )
 
 // Key-source names, the values of key_source and --key-source.
@@ -73,6 +75,14 @@ type Config struct {
 	// a request's address is its connection's.
 	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
 
+	// Retention is "default" (or absent): events 30 days, hourly usage 400 days,
+	// delivered alerts 30 days after delivery, as SPEC §14 says. "keep_everything"
+	// turns pruning off; kman prune --before still works.
+	Retention string `yaml:"retention,omitempty"`
+	// UpdateCheck, when true, makes kman ask the GitHub releases API once a day
+	// whether a newer release exists. It is off by default and is the only way kman
+	// reaches the network by itself (ADR 0008).
+	UpdateCheck bool `yaml:"update_check,omitempty"`
 	// GeoIP names the GeoIP databases kman reads, if any (see GeoIPConfig).
 	GeoIP GeoIPConfig `yaml:"geoip,omitempty"`
 
@@ -85,6 +95,17 @@ type DashboardConfig struct {
 	// https://kman.example.com. Only when it is set do alerts carry a link to
 	// their incident's page.
 	URL string `yaml:"url,omitempty"`
+}
+
+// Retention settings.
+const (
+	retentionDefault        = "default"
+	retentionKeepEverything = "keep_everything"
+)
+
+// retention is the windows kman prunes to, and whether it prunes at all.
+func (c Config) retention() (r admin.Retention, prune bool) {
+	return admin.DefaultRetention, c.Retention != retentionKeepEverything
 }
 
 // trustedProxies is TrustedProxies as networks. A bare address is a network of
@@ -175,6 +196,11 @@ func (c Config) check() error {
 		if _, err := parseProxy(s); err != nil {
 			return err
 		}
+	}
+	switch c.Retention {
+	case "", retentionDefault, retentionKeepEverything:
+	default:
+		return fmt.Errorf("retention %q is not %s or %s: kman prunes to its defaults, or never", c.Retention, retentionDefault, retentionKeepEverything)
 	}
 	if err := c.GeoIP.check(); err != nil {
 		return err
