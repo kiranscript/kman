@@ -8,11 +8,12 @@ For the person who runs kman. New here? Start with the [quickstart](../quickstar
 - [Docker and Compose](docker.md): the image and the Compose example.
 - [TLS and reverse proxies](tls.md): getting an app on another machine to kman safely.
 - [Upgrade, rekey and old copies](upgrade.md): upgrades, the `kman.db.pre-<NNNN>` copies, backing up, replacing the master key.
+- [Rotating keys and replacing a leaked credential](rotation.md): `kman key rotate`, the grace period, retired secrets, `kman credential compromise`.
 
 And elsewhere:
 
 - [Keys, policy and spend](../policy.md): caps, allowlists, rate limits, what is charged, the errors an app sees.
 - [Using kman from your code](../sdks.md).
-- [What v0.1.0 leaves out](../v0.1.0-scope.md), and what to do meanwhile: a leaked key, a leaked credential, no alerts.
+- [What v0.1.0 leaves out](../v0.1.0-scope.md), and what to do meanwhile: a leaked key (`kman key rotate`), a leaked credential (`kman credential compromise`), no alerts.
 - [Price data](../price-data.md), [CLI reference](../cli.md), [admin API reference](../admin-api/README.md).
 - [Threat model](../../THREAT-MODEL.md), [security policy](../../SECURITY.md), [verify a release](../verify.md).

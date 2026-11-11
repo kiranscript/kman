@@ -119,7 +119,7 @@ kman is only as safe as these hold:
 
 ## What v0.1.0 does not do
 
-Detection, alerts, key rotation, address locks, soft budgets, events and metrics, the dashboard, leak scanning, backup and restore commands, and realtime: [the list, and what to do meanwhile](docs/v0.1.0-scope.md). The review did not cover Windows or macOS behaviour, whether the systemd and Docker guides run end to end (no CI job runs `rekey` in them), or what a live provider really sends: the test transcripts are written from the SDKs' types, not captured.
+Detection, alerts, address locks, soft budgets, events and metrics, the dashboard, leak scanning, backup and restore commands, and realtime: [the list, and what to do meanwhile](docs/v0.1.0-scope.md). The review did not cover Windows or macOS behaviour, whether the systemd and Docker guides run end to end (no CI job runs `rekey` in them), or what a live provider really sends: the test transcripts are written from the SDKs' types, not captured.
 
 ## How this was checked, and what to rerun
 

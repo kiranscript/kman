@@ -7,6 +7,11 @@ All notable changes to kman are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `kman key rotate <key> [--grace <duration>]` replaces a key's secret and keeps the key: its id, spend, policy and audit history stay (ADR 0002). The new secret is printed once. During a grace (up to 30 days) both secrets work; a second rotation inside a grace ends the older secret at once, so a key holds at most two. When the grace ends, the old secret becomes a retired secret: its hash is kept 30 days and never authenticates. A rotation that fails leaves the key as it was. The admin API has `POST /admin/v1/keys/{id}/rotate`.
+- `kman credential compromise <credential>` replaces a leaked credential's secret and rotates every virtual key on it that is not revoked, with no grace, in one transaction, then lists the apps that need new keys with their new secrets. The admin API has `POST /admin/v1/credentials/{ref}/compromise`.
+
 ## [0.1.0] - 2026-11-11
 
 The first release: put real API keys behind kman and kill a leak. kman is a key manager and proxy for LLM API keys. You keep the real keys in kman, hand apps virtual keys that cap spend and expire, and turn one off the moment it leaks.
