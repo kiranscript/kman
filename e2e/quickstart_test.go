@@ -44,7 +44,7 @@ func TestTheQuickstartRunsAsWritten(t *testing.T) {
 		}
 	}
 
-	lines := docSteps(t, "quickstart.md", "quickstart")
+	lines := docSteps(t, "docs/quickstart.md", "quickstart")
 	serveAt := indexOf(lines, "kman serve")
 	if serveAt < 0 {
 		t.Fatalf("the quickstart has no `kman serve` line: %q", lines)
@@ -112,7 +112,7 @@ func TestTheQuickstartRunsAsWritten(t *testing.T) {
 	wantError(t, resp, body, 403, "path_not_allowed")
 
 	// The next lines of the quickstart: cap the key, look at it, kill it.
-	next := runScript(t, h, "", docSteps(t, "quickstart.md", "quickstart-next"))
+	next := runScript(t, h, "", docSteps(t, "docs/quickstart.md", "quickstart-next"))
 	for _, want := range []string{"spend today:  $0 of $5 cap", "Revoked key my-app"} {
 		if !strings.Contains(next.stdout, want) {
 			t.Errorf("the quickstart's last lines did not print %q:\n%s", want, next.stdout)
@@ -150,7 +150,7 @@ func TestTheQuickstartRunsAsWritten(t *testing.T) {
 	}
 }
 
-// docSteps is the sh lines between a doc's <!-- name:begin --> and
+// docSteps is the sh lines of the doc at doc (from the repository root) between its <!-- name:begin --> and
 // <!-- name:end --> markers, as scripts/doc-steps.sh prints them (CI's
 // release-snapshot job reads the Docker and systemd guides the same way).
 func docSteps(t *testing.T, doc, name string) []string {
@@ -159,7 +159,7 @@ func docSteps(t *testing.T, doc, name string) []string {
 	if err != nil {
 		t.Skip("sh is not installed")
 	}
-	out, err := exec.Command(sh, filepath.Join("..", "scripts", "doc-steps.sh"), filepath.Join("..", "docs", doc), name).Output()
+	out, err := exec.Command(sh, filepath.Join("..", "scripts", "doc-steps.sh"), filepath.Join("..", doc), name).Output()
 	if err != nil {
 		t.Fatalf("doc-steps %s %s: %v", doc, name, err)
 	}
