@@ -58,6 +58,8 @@ type API interface {
 	SetPriceOverride(ctx context.Context, req PriceOverrideSet) (PriceOverride, error)
 	RemovePriceOverride(ctx context.Context, req PriceOverrideRef) (PriceOverride, error)
 	ImportPriceOverrides(ctx context.Context, req PriceOverrideImport) (PriceOverrideImportResult, error)
+
+	Exposure(ctx context.Context) (Exposure, error)
 }
 
 var _ API = (*Service)(nil)

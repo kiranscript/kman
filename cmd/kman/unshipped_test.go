@@ -15,7 +15,7 @@ import (
 // they do not have. SPEC "Deferred past v0.1.0" lists them. When one ships, take
 // it off this list.
 var unshipped = []string{
-	"backup", "restore", "prune", "scan", "exposure", "dashboard", "demo", "canary",
+	"backup", "restore", "prune", "dashboard", "demo", "canary",
 	"channel", "incident", "incidents", "detection", "detections", "known-source", "metrics",
 }
 

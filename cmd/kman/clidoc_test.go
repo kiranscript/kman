@@ -28,6 +28,7 @@ var offlineSummaries = map[string]string{
 	"rekey":   "replace the master key and the data key, with the server stopped",
 	"version": "print the version, the commit and the build date",
 	"geoip":   "download the DB-IP Lite GeoIP databases that country locks and events read (the one command that reaches DB-IP)",
+	"scan":    "find kman keys in files, offline, and say which key each is",
 }
 
 // staticUsage is the usage of the commands that take no flags.
@@ -91,7 +92,7 @@ func cliReference(t *testing.T) string {
 		"`go test ./cmd/kman -run CLIReferenceIsCurrent -update`. CI fails when it is stale.\n\n")
 	b.WriteString("Every command that talks to a running kman takes `--config-dir`, the directory holding the credentials file `kman init` wrote, " +
 		"and every read command takes `--json`, which prints the admin API's response. `KMAN_ADMIN_URL` and `KMAN_ADMIN_TOKEN` override the credentials file. " +
-		"Exit codes: 0 success, 1 an error (usage errors included), 3 findings (not used by any v0.1.0 command).\n\n")
+		"Exit codes: 0 success, 1 an error (usage errors included), 3 findings: `kman scan` found a key, or `kman exposure --strict` found a key to fix.\n\n")
 	b.WriteString("| Command | What it does |\n|---|---|\n")
 	names := append(slices.Clone(offline), cli.Commands()...)
 	summary := func(name string) string {
