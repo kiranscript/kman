@@ -17,6 +17,7 @@ var allowed = map[string][]string{
 	"cli":       {"admin"},
 	"admin":     {"store", "registry", "vault", "events", "sessions"},
 	"gateway":   {"registry", "policy", "limiter", "meter", "vault", "profiles", "events", "sessions"},
+	"alerts":    {"store", "events"},
 }
 
 // module returns the module under internal/ that a module-relative package

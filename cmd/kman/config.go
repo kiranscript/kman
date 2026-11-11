@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +72,16 @@ type Config struct {
 	// front of the proxy listener, whose X-Forwarded-For kman believes. With none,
 	// a request's address is its connection's.
 	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
+
+	Dashboard DashboardConfig `yaml:"dashboard,omitempty"`
+}
+
+// DashboardConfig is where the dashboard is reachable from outside.
+type DashboardConfig struct {
+	// URL is the address operators use for the dashboard, such as
+	// https://kman.example.com. Only when it is set do alerts carry a link to
+	// their incident's page.
+	URL string `yaml:"url,omitempty"`
 }
 
 // trustedProxies is TrustedProxies as networks. A bare address is a network of
@@ -168,6 +179,12 @@ func (c Config) check() error {
 	}{{"proxy", c.TLS.Proxy}, {"admin", c.TLS.Admin}} {
 		if l.tls.enabled() && (l.tls.CertFile == "" || l.tls.KeyFile == "") {
 			return fmt.Errorf("tls.%s needs both cert_file and key_file", l.name)
+		}
+	}
+	if c.Dashboard.URL != "" {
+		u, err := url.Parse(c.Dashboard.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+			return errors.New("dashboard.url must be an http or https address with a host and no login, such as https://kman.example.com")
 		}
 	}
 	if c.MetricsListen != "" {

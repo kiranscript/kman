@@ -16,6 +16,7 @@ import (
 
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
+	"github.com/kirank55/kman/internal/alerts"
 	"github.com/kirank55/kman/internal/gateway"
 	"github.com/kirank55/kman/internal/meter"
 	"github.com/kirank55/kman/internal/policy"
@@ -110,7 +111,10 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	reg := registry.New()
 	prices := pricing.NewPrices(pricing.Builtin())
 	var spend *meter.Meter // made once the settings are read, which the service reads
-	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices,
+	// Alerts reach the network only through the channels the operator added
+	// (ADR 0008). The vault holds each channel's address once admin has loaded it.
+	alert := alerts.New(alerts.Options{Store: st, Secret: v.Credential, Now: s.now, DashboardURL: cfg.Dashboard.URL, Log: log})
+	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices, Alerts: alert,
 		ApplyPrices: publishOverrides(prices), NormalizePolicy: policy.Normalize,
 		Spend: func(keyID, policyJSON string) admin.KeySpend { return keySpend(spend, s.now(), keyID, policyJSON) }})
 	if err := svc.Load(ctx); err != nil {
@@ -128,8 +132,12 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	defer stopMeter()
 	meterDone := make(chan struct{})
 	go func() { spend.Run(meterCtx); close(meterDone) }()
-	pipe := startEvents(ctx, st, log)
+	pipe := startEvents(ctx, st, log, alert)
 	defer pipe.stop() // a second time is harmless: the first stop is below
+	alertCtx, stopAlerts := context.WithCancel(context.WithoutCancel(ctx))
+	alertsDone := make(chan struct{})
+	go func() { alert.Run(alertCtx); close(alertsDone) }()
+	defer func() { stopAlerts(); <-alertsDone }() // what is undelivered waits in the outbox for the next run
 	metrics := pipe.handler(s.now, priceDataGenerated())
 	proxy := gateway.New(gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, Meter: spend, Events: pipe.bus, TrustedProxies: cfg.trustedProxies()})
 	ls, err := listen(cfg, log, proxy, adminHandler(svc, log, metrics))

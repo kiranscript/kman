@@ -10,14 +10,15 @@ import (
 	"time"
 
 	"github.com/kirank55/kman/internal/admin"
+	"github.com/kirank55/kman/internal/alerts"
 	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/pricing"
 	"github.com/kirank55/kman/internal/store"
 )
 
 // eventPipeline is the event bus and what listens to it: the store writer
-// (events and usage_hourly) and the Prometheus metrics. detect and the alert
-// outbox join as more subscribers.
+// (events and usage_hourly), the Prometheus metrics, and the alerts' priority
+// lane. detect joins as one more subscriber.
 type eventPipeline struct {
 	bus     *events.Bus
 	metrics *events.Metrics
@@ -27,7 +28,7 @@ type eventPipeline struct {
 }
 
 // startEvents runs the bus and its subscribers until stop.
-func startEvents(ctx context.Context, st *store.Store, log *slog.Logger) *eventPipeline {
+func startEvents(ctx context.Context, st *store.Store, log *slog.Logger, alert *alerts.Service) *eventPipeline {
 	p := &eventPipeline{
 		bus:     events.New(events.Options{}),
 		metrics: events.NewMetrics(),
@@ -37,10 +38,14 @@ func startEvents(ctx context.Context, st *store.Store, log *slog.Logger) *eventP
 	// counts what it then drops, and metrics show it.
 	storeSub := p.bus.Subscribe("store", events.SubOptions{Buffer: 4 * events.DefaultCapacity})
 	metricsSub := p.bus.Subscribe("metrics", events.SubOptions{Buffer: events.DefaultCapacity})
+	// The priority lane goes to the alert outbox on its own subscription, so
+	// neither the store writer nor a hung channel stands in its way.
+	alertSub := p.bus.Subscribe("alerts", events.SubOptions{PriorityOnly: true, Buffer: events.DefaultPriorityCapacity})
 	ctx, p.cancel = context.WithCancel(context.WithoutCancel(ctx))
 	p.done.Go(func() { p.bus.Run(ctx) })
 	p.done.Go(func() { p.writer.Run(storeSub) })
 	p.done.Go(func() { p.metrics.Run(metricsSub) })
+	p.done.Go(func() { alert.RunPriority(alertSub) })
 	return p
 }
 
