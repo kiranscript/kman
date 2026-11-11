@@ -2,6 +2,7 @@ package releasecheck_test
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -67,6 +68,24 @@ func TestEveryJobStartsWithHardenRunnerInAuditMode(t *testing.T) {
 			if first.With["egress-policy"] != "audit" {
 				t.Errorf("%s: harden-runner egress-policy = %q, want audit", where, first.With["egress-policy"])
 			}
+		}
+	}
+}
+
+// Interpreter caches are build output: a committed .pyc is a binary nobody
+// reviewed that Python trusts, and it changes with the interpreter. The
+// SDK e2e snippets run under Python, which writes them next to the snippets.
+func TestNoInterpreterCacheIsCommitted(t *testing.T) {
+	if !strings.Contains(string(read(t, ".gitignore")), "__pycache__/") {
+		t.Error(".gitignore has no __pycache__/ rule")
+	}
+	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
+	if err != nil {
+		t.Skipf("not a git checkout: %v", err)
+	}
+	for _, f := range strings.Split(string(out), "\x00") {
+		if strings.Contains(f, "__pycache__/") || strings.HasSuffix(f, ".pyc") {
+			t.Errorf("%s is committed; remove it (git rm) and keep it ignored", f)
 		}
 	}
 }

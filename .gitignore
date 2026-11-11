@@ -4,3 +4,5 @@
 *.out
 /e2e/testdata/sdk/node/node_modules/
 /e2e/testdata/sdk/python/.venv/
+__pycache__/
+*.pyc
