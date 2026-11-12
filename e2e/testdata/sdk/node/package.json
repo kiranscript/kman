@@ -4,7 +4,7 @@
   "type": "module",
   "description": "The official SDKs at the versions kman's e2e tests pin. See e2e/sdk_test.go.",
   "dependencies": {
-    "@anthropic-ai/sdk": "1.1.0",
+    "@anthropic-ai/sdk": "1.4.0",
     "openai": "7.43.0"
   }
 }
