@@ -162,9 +162,9 @@ jiter==0.18.0 \
     # via
     #   anthropic
     #   openai
-openai==3.37.0 \
-    --hash=sha256:670bd6f699000d43a2073bcf94374a55bb133bfe5de0d084d47eb9bb9f6a8e5d \
-    --hash=sha256:d9f5b000f52397a7f9f946012744c5bc4c962eed3c100385252464c273a63e57
+openai==3.45.0 \
+    --hash=sha256:6cff2b5c7b463123fcb94d1bb7e4920e5fab9bb3ed4f837faa0d0bf1d6d6ea3b \
+    --hash=sha256:b63aa90e3b7b57b501f2bba231a17976618aa133f457562ad84a5c6431fd0425
     # via -r requirements.in
 opentelemetry-api==1.45.1 \
     --hash=sha256:aa38ed19bcc084ba42782a73255b3582283eced7ad6dddbd6695189e69adfb75 \
