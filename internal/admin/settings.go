@@ -16,7 +16,7 @@ type Settings struct {
 	MaxKeyLifetimeSeconds int64  `json:"max_key_lifetime_seconds" doc:"The longest any virtual key may stay valid. No key is created or extended past it. Default 365 days."`
 	DefaultKeyTTLSeconds  int64  `json:"default_key_ttl_seconds" doc:"How long a new virtual key stays valid unless told otherwise. At most the maximum key lifetime. Default 90 days."`
 	SpendTimezone         string `json:"spend_timezone" doc:"The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC. A change takes effect when kman restarts."`
-	SoftBudgetPercents    []int  `json:"soft_budget_defaults" doc:"The percentages of each spend cap that warn when crossed, rising, for keys that set none. Default 50, 80, 100."`
+	SoftBudgetPercents    []int  `json:"soft_budget_defaults" doc:"The percentages of each spend cap or soft budget that raise a warning when crossed, rising, for keys whose policy sets none (soft_budget_percents). Each warns once per day or month. Default 50, 80, 100; an empty list warns for no key that sets none. A change takes effect at the next check, within a minute."`
 }
 
 // SettingsUpdate changes the settings it sets and leaves the rest. The

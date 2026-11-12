@@ -27,6 +27,9 @@ type route struct {
 	req, resp    reflect.Type
 	// call runs the operation with the bound request, a pointer to a req.
 	call func(ctx context.Context, svc Service, req any) (any, error)
+	// download, instead of call, is set for a route that answers with a file
+	// rather than JSON: a backup.
+	download func(ctx context.Context, svc Service) (admin.Download, error)
 }
 
 // op is a route whose command takes a request.
@@ -47,6 +50,14 @@ func op0[Resp any](method, path, id, summary string, fn func(Service, context.Co
 	}
 }
 
+// opDownload is a route that takes no request and answers with a file.
+func opDownload(method, path, id, summary string, fn func(Service, context.Context) (admin.Download, error)) route {
+	return route{
+		method: method, path: path, id: id, summary: summary, status: http.StatusOK,
+		download: func(ctx context.Context, svc Service) (admin.Download, error) { return fn(svc, ctx) },
+	}
+}
+
 // routes is the whole API. A new admin command adds its route here, and
 // then regenerates the committed OpenAPI document.
 var routes = []route{
@@ -60,6 +71,9 @@ var routes = []route{
 	op0("GET", "/settings", "getSettings", "Read the install's settings", Service.Settings),
 	op("PATCH", "/settings", "updateSettings", "Change some settings; each change is audited", http.StatusOK, Service.UpdateSettings),
 
+	opDownload("POST", "/backup", "createBackup", "Download a consistent copy of the database, made while kman runs; it holds ciphertext only, so it opens only with the master key", Service.Backup),
+	op("POST", "/prune", "pruneData", "Delete events, hourly usage and delivered alerts older than a date, and with audit_log the audit log's entries too; the prune is audited", http.StatusOK, Service.Prune),
+	op0("GET", "/update", "getUpdateStatus", "Say whether a newer kman release is known; only an install with update_check on ever asks", Service.UpdateStatus),
 	op("GET", "/audit", "listAudit", "Read a page of the audit log, oldest entry first", http.StatusOK, Service.Audit),
 
 	op("GET", "/prices", "listPrices", "List the built-in price table, how old it is, and the price overrides", http.StatusOK, Service.ListPrices),
@@ -79,6 +93,12 @@ var routes = []route{
 	op("POST", "/credentials", "addCredential", "Seal a secret as a credential on an upstream; it is never shown again", http.StatusCreated, Service.AddCredential),
 	op("PATCH", "/credentials/{ref}", "updateCredential", "Rename a credential or replace its secret", http.StatusOK, Service.UpdateCredential),
 	op("DELETE", "/credentials/{ref}", "removeCredential", "Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it", http.StatusOK, Service.RemoveCredential),
+	op("POST", "/credentials/{ref}/compromise", "compromiseCredential", "Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once", http.StatusOK, Service.CompromiseCredential),
+
+	op0("GET", "/channels", "listChannels", "List the alert channels, with what each one's outbox holds, never their addresses", Service.ListChannels),
+	op("POST", "/channels", "addChannel", "Add a Slack or signed-webhook alert channel; a webhook's signing secret is returned only this once", http.StatusCreated, Service.AddChannel),
+	op("POST", "/channels/{ref}/test", "testChannel", "Send a test alert to a channel now and say whether it arrived", http.StatusOK, Service.TestChannel),
+	op("DELETE", "/channels/{ref}", "removeChannel", "Remove an alert channel and give up the alerts still waiting for it", http.StatusOK, Service.RemoveChannel),
 
 	op("GET", "/keys", "listKeys", "List every virtual key, or the one with a name, never their secrets", http.StatusOK, Service.ListKeys),
 	op("POST", "/keys", "createKey", "Create a virtual key on an upstream; its secret is returned only this once", http.StatusCreated, Service.CreateKey),
@@ -87,6 +107,9 @@ var routes = []route{
 	op("POST", "/keys/{id}/disable", "disableKey", "Stop a virtual key from the next request until it is enabled again", http.StatusOK, Service.DisableKey),
 	op("POST", "/keys/{id}/enable", "enableKey", "Let a disabled virtual key work again; a revoked key cannot be enabled", http.StatusOK, Service.EnableKey),
 	op("POST", "/keys/{id}/revoke", "revokeKey", "End a virtual key for good, from the next request; it cannot be undone", http.StatusOK, Service.RevokeKey),
+	op("POST", "/keys/{id}/rotate", "rotateKey", "Replace a virtual key's secret and keep the key; the new secret is returned only this once", http.StatusOK, Service.RotateKey),
+
+	op0("GET", "/exposure", "getExposure", "List the keys that work now and would be easy to abuse: open to every address, never expiring, or unused for 30 days, each with the command that fixes it", Service.Exposure),
 }
 
 // docPath serves the OpenAPI document. It needs no token.

@@ -117,44 +117,50 @@ func TestTheOpenAPIDocumentDescribesTheTypes(t *testing.T) {
 		}
 	}
 	for want, id := range map[string]string{
-		"get /admin/v1/whoami":                      "whoami",
-		"get /admin/v1/admin-tokens":                "listAdminTokens",
-		"post /admin/v1/admin-tokens":               "createAdminToken",
-		"post /admin/v1/admin-tokens/{name}/rotate": "rotateAdminToken",
-		"post /admin/v1/admin-tokens/{name}/revoke": "revokeAdminToken",
-		"get /admin/v1/settings":                    "getSettings",
-		"patch /admin/v1/settings":                  "updateSettings",
-		"get /admin/v1/audit":                       "listAudit",
-		"get /admin/v1/prices":                      "listPrices",
-		"get /admin/v1/prices/status":               "getPriceDataStatus",
-		"get /admin/v1/openapi.json":                "openapi",
-		"get /admin/v1/upstreams":                   "listUpstreams",
-		"post /admin/v1/upstreams":                  "addUpstream",
-		"get /admin/v1/upstreams/{ref}":             "getUpstream",
-		"patch /admin/v1/upstreams/{ref}":           "updateUpstream",
-		"delete /admin/v1/upstreams/{ref}":          "removeUpstream",
-		"get /admin/v1/upstreams/{ref}/sync":        "planUpstreamSync",
-		"post /admin/v1/upstreams/{ref}/sync":       "syncUpstream",
-		"post /admin/v1/credentials":                "addCredential",
-		"patch /admin/v1/credentials/{ref}":         "updateCredential",
-		"delete /admin/v1/credentials/{ref}":        "removeCredential",
-		"get /admin/v1/keys":                        "listKeys",
-		"post /admin/v1/keys":                       "createKey",
-		"get /admin/v1/keys/{id}":                   "getKey",
-		"patch /admin/v1/keys/{id}":                 "updateKey",
-		"post /admin/v1/keys/{id}/disable":          "disableKey",
-		"post /admin/v1/keys/{id}/enable":           "enableKey",
-		"post /admin/v1/keys/{id}/revoke":           "revokeKey",
-		"put /admin/v1/price-overrides":             "setPriceOverride",
-		"delete /admin/v1/price-overrides":          "removePriceOverride",
-		"post /admin/v1/price-overrides/import":     "importPriceOverrides",
+		"get /admin/v1/whoami":                        "whoami",
+		"get /admin/v1/admin-tokens":                  "listAdminTokens",
+		"post /admin/v1/admin-tokens":                 "createAdminToken",
+		"post /admin/v1/admin-tokens/{name}/rotate":   "rotateAdminToken",
+		"post /admin/v1/admin-tokens/{name}/revoke":   "revokeAdminToken",
+		"get /admin/v1/settings":                      "getSettings",
+		"patch /admin/v1/settings":                    "updateSettings",
+		"get /admin/v1/audit":                         "listAudit",
+		"get /admin/v1/prices":                        "listPrices",
+		"get /admin/v1/prices/status":                 "getPriceDataStatus",
+		"get /admin/v1/openapi.json":                  "openapi",
+		"get /admin/v1/upstreams":                     "listUpstreams",
+		"post /admin/v1/upstreams":                    "addUpstream",
+		"get /admin/v1/upstreams/{ref}":               "getUpstream",
+		"patch /admin/v1/upstreams/{ref}":             "updateUpstream",
+		"delete /admin/v1/upstreams/{ref}":            "removeUpstream",
+		"get /admin/v1/upstreams/{ref}/sync":          "planUpstreamSync",
+		"post /admin/v1/upstreams/{ref}/sync":         "syncUpstream",
+		"post /admin/v1/credentials":                  "addCredential",
+		"patch /admin/v1/credentials/{ref}":           "updateCredential",
+		"delete /admin/v1/credentials/{ref}":          "removeCredential",
+		"get /admin/v1/keys":                          "listKeys",
+		"post /admin/v1/keys":                         "createKey",
+		"get /admin/v1/keys/{id}":                     "getKey",
+		"patch /admin/v1/keys/{id}":                   "updateKey",
+		"post /admin/v1/keys/{id}/disable":            "disableKey",
+		"post /admin/v1/keys/{id}/enable":             "enableKey",
+		"post /admin/v1/keys/{id}/revoke":             "revokeKey",
+		"put /admin/v1/price-overrides":               "setPriceOverride",
+		"delete /admin/v1/price-overrides":            "removePriceOverride",
+		"post /admin/v1/price-overrides/import":       "importPriceOverrides",
+		"post /admin/v1/keys/{id}/rotate":             "rotateKey",
+		"post /admin/v1/credentials/{ref}/compromise": "compromiseCredential",
+		"post /admin/v1/backup":                       "createBackup",
+		"post /admin/v1/prune":                        "pruneData",
+		"get /admin/v1/update":                        "getUpdateStatus",
+		"get /admin/v1/exposure":                      "getExposure",
 	} {
 		if ops[want] != id {
 			t.Errorf("%s has operationId %q, want %q", want, ops[want], id)
 		}
 	}
-	if len(ops) != 31 {
-		t.Errorf("the document has %d operations, want 31: %v", len(ops), ops)
+	if len(ops) != 41 {
+		t.Errorf("the document has %d operations, want 41: %v", len(ops), ops)
 	}
 
 	// The settings an upstream takes reach the document, embedded as they are.

@@ -24,14 +24,15 @@ Stop kman with Ctrl-C or SIGTERM: it stops listening, waits up to 10 seconds for
 - **Existing upstreams don't change.** A preset is copied once, recording its version, and a newer kman never edits an upstream you already have. `kman upstream list` marks one whose preset has a newer version, and `kman upstream sync <name>` shows the difference and applies it after you confirm. A sync copies the preset whole, undoing any edit the plan shows, and keeps the upstream's id, name, credentials and price multiplier.
 - **Prices change with the binary.** The price table is embedded, and kman never fetches price data. An upgrade is how you get new prices; `kman price list` and plain `kman` say how old the table is (past 60 days they say to upgrade), and plain `kman` also says when your binary was built. Your price overrides stay and win over the table.
 - **kman.yaml is read at startup only.** Edit it, then restart.
+- **Retention starts pruning.** A kman with [retention](backup.md#retention) deletes events older than 30 days, hourly usage older than 400, and delivered alerts older than 30 days after delivery, at startup and daily. `retention: keep_everything` turns that off.
 
 ### Downgrade
 
-Migrations are forward-only. To go back to an older kman after a migration, stop kman, put the old binary back, and restore the copy: move `kman.db` aside, rename `kman.db.pre-<NNNN>` to `kman.db`, and delete any `kman.db-wal` and `kman.db-shm` beside it. You lose every change made since the copy (keys, spend, audit entries), and the copy opens **only with the master key that was current when it was made**: see below.
+Migrations are forward-only. To go back to an older kman after a migration, stop kman, put the old binary back, and restore the copy: `kman restore <data-dir>/kman.db.pre-<NNNN>` (a kman without that command: move `kman.db` aside, rename `kman.db.pre-<NNNN>` to `kman.db`, and delete any `kman.db-wal` and `kman.db-shm` beside it). You lose every change made since the copy (keys, spend, audit entries), and the copy opens **only with the master key that was current when it was made**: see below.
 
 ## Back up the data
 
-v0.1.0 has no backup command, and a running kman holds its database open. To back up the install: **stop kman, then copy the whole data directory** (`kman.db` and its `-wal` and `-shm` files, if any), and keep the master key and `kman.yaml` somewhere else. The data directory is ciphertext; **the master key is what makes it readable**, so a backup of the data directory without it is useless, and one stored with it defeats the point. Put them in different places. Restoring is stopping kman, putting the files back, and starting it with the same master key.
+`kman backup <file>` takes a consistent copy while kman runs, and `kman restore <file>` puts one back with the server stopped: see [Backup, restore, retention and updates](backup.md). A backup is ciphertext, and **the master key is what makes it readable**, so back the master key and `kman.yaml` up somewhere else. A backup stored beside the master key defeats the point.
 
 The `kman.db.pre-<NNNN>` copies are not a backup plan: they are made only at a migration, and they sit in the data directory they are meant to protect.
 

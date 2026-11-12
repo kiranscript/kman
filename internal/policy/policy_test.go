@@ -80,3 +80,50 @@ func TestAMonthlyCapBelowTheDailyOneIsRefused(t *testing.T) {
 		t.Errorf("Normalize = %s, want an error: a month holds a day", got)
 	}
 }
+
+func TestSoftBudgetsAreKeptAndReadBack(t *testing.T) {
+	version, got, err := policy.Normalize([]byte(`{"soft_budget_percents":[25,90],"monthly_budget_micro":40000000,"daily_budget_micro":2000000,"monthly_cap_micro":50000000}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"monthly_cap_micro":50000000,"daily_budget_micro":2000000,"monthly_budget_micro":40000000,"soft_budget_percents":[25,90]}`
+	if string(got) != want || version != 1 {
+		t.Errorf("Normalize = %d, %s; want 1, %s", version, got, want)
+	}
+	p, err := policy.Parse(string(got))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.DailyBudgetMicro != 2_000_000 || p.MonthlyBudgetMicro != 40_000_000 || len(p.SoftBudgetPercents) != 2 || p.SoftBudgetPercents[1] != 90 {
+		t.Errorf("Parse = %+v", p)
+	}
+}
+
+// A soft budget warns and never refuses, so it does not make a key meter every
+// request the way a cap does (SPEC §7).
+func TestASoftBudgetWithoutACapDoesNotRequireMetering(t *testing.T) {
+	p, err := policy.Parse(`{"monthly_budget_micro":40000000}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.RequiresMetering() {
+		t.Error("a soft budget alone must not refuse unmetered requests")
+	}
+}
+
+func TestNormalizeRefusesSoftBudgetsThatMakeNoSense(t *testing.T) {
+	for _, raw := range []string{
+		`{"daily_budget_micro":0}`, `{"monthly_budget_micro":-5}`,
+		`{"daily_budget_micro":3000000,"daily_cap_micro":2000000}`,     // a budget above its cap warns after the refusals
+		`{"monthly_budget_micro":3000000,"monthly_cap_micro":2000000}`, // likewise
+		`{"daily_budget_micro":3000000,"monthly_budget_micro":2000000}`,
+		`{"soft_budget_percents":[]}`,
+		`{"soft_budget_percents":[80,50]}`, `{"soft_budget_percents":[50,50]}`,
+		`{"soft_budget_percents":[0]}`, `{"soft_budget_percents":[1001]}`,
+		`{"soft_budget_percents":[1,2,3,4,5,6,7,8,9,10,11]}`,
+	} {
+		if _, got, err := policy.Normalize([]byte(raw)); err == nil {
+			t.Errorf("Normalize(%s) = %s, want an error", raw, got)
+		}
+	}
+}

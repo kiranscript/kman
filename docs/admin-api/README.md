@@ -21,9 +21,16 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `POST /admin/v1/admin-tokens/{name}/revoke` | Revoke an admin token; the install's last live token cannot be revoked |
 | `POST /admin/v1/admin-tokens/{name}/rotate` | Give an admin token a new secret; the old one stops working at once |
 | `GET /admin/v1/audit` | Read a page of the audit log, oldest entry first |
+| `POST /admin/v1/backup` | Download a consistent copy of the database, made while kman runs; it holds ciphertext only, so it opens only with the master key |
+| `GET /admin/v1/channels` | List the alert channels, with what each one's outbox holds, never their addresses |
+| `POST /admin/v1/channels` | Add a Slack or signed-webhook alert channel; a webhook's signing secret is returned only this once |
+| `DELETE /admin/v1/channels/{ref}` | Remove an alert channel and give up the alerts still waiting for it |
+| `POST /admin/v1/channels/{ref}/test` | Send a test alert to a channel now and say whether it arrived |
 | `POST /admin/v1/credentials` | Seal a secret as a credential on an upstream; it is never shown again |
 | `DELETE /admin/v1/credentials/{ref}` | Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it |
 | `PATCH /admin/v1/credentials/{ref}` | Rename a credential or replace its secret |
+| `POST /admin/v1/credentials/{ref}/compromise` | Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once |
+| `GET /admin/v1/exposure` | List the keys that work now and would be easy to abuse: open to every address, never expiring, or unused for 30 days, each with the command that fixes it |
 | `GET /admin/v1/keys` | List every virtual key, or the one with a name, never their secrets |
 | `POST /admin/v1/keys` | Create a virtual key on an upstream; its secret is returned only this once |
 | `GET /admin/v1/keys/{id}` | Read one virtual key, by key id |
@@ -31,14 +38,17 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `POST /admin/v1/keys/{id}/disable` | Stop a virtual key from the next request until it is enabled again |
 | `POST /admin/v1/keys/{id}/enable` | Let a disabled virtual key work again; a revoked key cannot be enabled |
 | `POST /admin/v1/keys/{id}/revoke` | End a virtual key for good, from the next request; it cannot be undone |
+| `POST /admin/v1/keys/{id}/rotate` | Replace a virtual key's secret and keep the key; the new secret is returned only this once |
 | `GET /admin/v1/openapi.json` | This document. It needs no admin token. |
 | `DELETE /admin/v1/price-overrides` | Remove a price override |
 | `PUT /admin/v1/price-overrides` | Set a price override, install-wide or on one upstream; it wins over the built-in entries until removed |
 | `POST /admin/v1/price-overrides/import` | Set many price overrides, all or none |
 | `GET /admin/v1/prices` | List the built-in price table, how old it is, and the price overrides |
 | `GET /admin/v1/prices/status` | Say how old the built-in price table is, and whether to upgrade |
+| `POST /admin/v1/prune` | Delete events, hourly usage and delivered alerts older than a date, and with audit_log the audit log's entries too; the prune is audited |
 | `GET /admin/v1/settings` | Read the install's settings |
 | `PATCH /admin/v1/settings` | Change some settings; each change is audited |
+| `GET /admin/v1/update` | Say whether a newer kman release is known; only an install with update_check on ever asks |
 | `GET /admin/v1/upstreams` | List every upstream with its credentials, never their secrets |
 | `POST /admin/v1/upstreams` | Add an upstream, copying a preset or built from the settings |
 | `DELETE /admin/v1/upstreams/{ref}` | Delete an upstream, its credentials and its price overrides; refused while a virtual key that is not revoked depends on one |
@@ -94,6 +104,46 @@ Read a page of the audit log, oldest entry first. Operation id `listAudit`.
 
 Response 200: [AuditPage](#auditpage).
 
+### `POST /admin/v1/backup`
+
+Download a consistent copy of the database, made while kman runs; it holds ciphertext only, so it opens only with the master key. Operation id `createBackup`.
+
+Response 200: a file (application/octet-stream).
+
+### `GET /admin/v1/channels`
+
+List the alert channels, with what each one's outbox holds, never their addresses. Operation id `listChannels`.
+
+Response 200: [ChannelList](#channellist).
+
+### `POST /admin/v1/channels`
+
+Add a Slack or signed-webhook alert channel; a webhook's signing secret is returned only this once. Operation id `addChannel`.
+
+Request body: [AddChannelRequest](#addchannelrequest).
+
+Response 201: [CreatedChannel](#createdchannel).
+
+### `DELETE /admin/v1/channels/{ref}`
+
+Remove an alert channel and give up the alerts still waiting for it. Operation id `removeChannel`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `ref` | path | string | yes | The channel's name or id. |
+
+Response 200: [Channel](#channel).
+
+### `POST /admin/v1/channels/{ref}/test`
+
+Send a test alert to a channel now and say whether it arrived. Operation id `testChannel`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `ref` | path | string | yes | The channel's name or id. |
+
+Response 200: [ChannelTestResult](#channeltestresult).
+
 ### `POST /admin/v1/credentials`
 
 Seal a secret as a credential on an upstream; it is never shown again. Operation id `addCredential`.
@@ -123,6 +173,24 @@ Rename a credential or replace its secret. Operation id `updateCredential`.
 Request body: [CredentialUpdate](#credentialupdate).
 
 Response 200: [Credential](#credential).
+
+### `POST /admin/v1/credentials/{ref}/compromise`
+
+Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once. Operation id `compromiseCredential`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `ref` | path | string | yes | The credential's name or id. |
+
+Request body: [CompromiseCredentialRequest](#compromisecredentialrequest).
+
+Response 200: [CompromisedCredential](#compromisedcredential).
+
+### `GET /admin/v1/exposure`
+
+List the keys that work now and would be easy to abuse: open to every address, never expiring, or unused for 30 days, each with the command that fixes it. Operation id `getExposure`.
+
+Response 200: [Exposure](#exposure).
 
 ### `GET /admin/v1/keys`
 
@@ -194,6 +262,18 @@ End a virtual key for good, from the next request; it cannot be undone. Operatio
 
 Response 200: [Key](#key).
 
+### `POST /admin/v1/keys/{id}/rotate`
+
+Replace a virtual key's secret and keep the key; the new secret is returned only this once. Operation id `rotateKey`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | The key id. |
+
+Request body: [RotateKeyRequest](#rotatekeyrequest).
+
+Response 200: [RotatedKey](#rotatedkey).
+
 ### `GET /admin/v1/openapi.json`
 
 This document. It needs no admin token. Operation id `openapi`.
@@ -246,6 +326,14 @@ Say how old the built-in price table is, and whether to upgrade. Operation id `g
 
 Response 200: [PriceDataStatus](#pricedatastatus).
 
+### `POST /admin/v1/prune`
+
+Delete events, hourly usage and delivered alerts older than a date, and with audit_log the audit log's entries too; the prune is audited. Operation id `pruneData`.
+
+Request body: [PruneRequest](#prunerequest).
+
+Response 200: [PruneResult](#pruneresult).
+
 ### `GET /admin/v1/settings`
 
 Read the install's settings. Operation id `getSettings`.
@@ -259,6 +347,12 @@ Change some settings; each change is audited. Operation id `updateSettings`.
 Request body: [SettingsUpdate](#settingsupdate).
 
 Response 200: [Settings](#settings).
+
+### `GET /admin/v1/update`
+
+Say whether a newer kman release is known; only an install with update_check on ever asks. Operation id `getUpdateStatus`.
+
+Response 200: [UpdateStatus](#updatestatus).
 
 ### `GET /admin/v1/upstreams`
 
@@ -336,6 +430,16 @@ Response 200: [Whoami](#whoami).
 
 ## Schemas
 
+### `AddChannelRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `kind` | string | yes | slack or webhook. |
+| `lifecycle_alerts` | boolean | no | Whether the channel also takes spend and lifecycle warnings. Default true. |
+| `min_severity` | string | no | The lowest severity the channel takes: low, medium, high or critical. Default medium. |
+| `name` | string | yes | 1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit, unique among channels not removed. |
+| `url` | string | yes | Where alerts go: a Slack incoming-webhook address, or the webhook's. It is https, or http to this machine. kman seals it and never shows it again. |
+
 ### `AddCredentialRequest`
 
 | Field | Type | Required | Description |
@@ -408,6 +512,49 @@ Response 200: [Whoami](#whoami).
 | `header` | string | no | For the header style, the template: Name: value {key}. |
 | `style` | string | yes | header or basic. |
 
+### `Channel`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `created_at` | string | yes |  |
+| `delivered` | integer | no | How many alerts it has been sent, until they are pruned. |
+| `failed` | integer | no | How many alerts were given up on. |
+| `host` | string | yes | The host of its address, which is all of the address that is shown. |
+| `id` | string | yes |  |
+| `kind` | string | yes | slack or webhook. |
+| `last_error` | string | no | Why the latest failed attempt failed. Never the address. |
+| `lifecycle_alerts` | boolean | yes | Whether it also takes spend and lifecycle warnings. |
+| `min_severity` | string | yes | The lowest severity it takes: low, medium, high or critical. |
+| `name` | string | yes |  |
+| `pending` | integer | no | How many alerts wait in the outbox for it. |
+
+### `ChannelList`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `channels` | list of [Channel](#channel) | yes |  |
+
+### `ChannelTestResult`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `channel` | string | yes | The channel's name. |
+| `error` | string | no | Why the test alert did not arrive. Never the address. |
+| `ok` | boolean | yes |  |
+
+### `CompromiseCredentialRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `secret` | string | yes | The new real secret, made at the provider after the leaked one was revoked there. kman seals it and never shows it again. |
+
+### `CompromisedCredential`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `credential` | [Credential](#credential) | yes |  |
+| `rotated_keys` | list of [RotatedKey](#rotatedkey) | yes | Every virtual key on the credential that was not revoked, oldest first, with its new secret, shown only this once. Each is an app that needs its new key. |
+
 ### `CreateAdminTokenRequest`
 
 | Field | Type | Required | Description |
@@ -432,6 +579,13 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `secret` | string | yes | The token itself (kma_...). kman keeps only its hash, so it is shown only this once. |
 | `token` | [AdminToken](#admintoken) | yes |  |
+
+### `CreatedChannel`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `channel` | [Channel](#channel) | yes |  |
+| `signing_secret` | string | no | For a webhook, the secret that signs each request (kmwhsec_...), shown only this once. A receiver recomputes the signature with it. |
 
 ### `CreatedKey`
 
@@ -473,6 +627,24 @@ Response 200: [Whoami](#whoami).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `error` | [Error](#error) | yes |  |
+
+### `Exposure`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `findings` | list of [ExposureFinding](#exposurefinding) | yes |  |
+| `keys_checked` | integer | yes | How many keys were looked at: the keys that work now. A disabled, revoked or expired key cannot be abused, and a canary is meant to be left alone. |
+
+### `ExposureFinding`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `fix` | string | yes | The kman command that fixes it, ready to run. An open key's has a placeholder to replace with the network the key is used from. |
+| `key_id` | string | yes |  |
+| `last_used_at` | string | no | For unused: the start of the last hour in which the key forwarded a request. Absent if it never has. |
+| `message` | string | yes |  |
+| `name` | string | no |  |
+| `rule` | string | yes | open_to_every_address, never_expires or unused. |
 
 ### `Key`
 
@@ -629,13 +801,45 @@ Response 200: [Whoami](#whoami).
 | `micro` | integer | yes |  |
 | `tool` | string | yes |  |
 
+### `PruneRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `audit_log` | boolean | no | Also delete the audit log's entries older than before. The one thing that ever deletes from the audit log. The prune is recorded in the log, and that record stays. |
+| `before` | string | yes | Delete what is older than this: events, hourly usage, and alerts delivered before it. Not in the future. |
+
+### `PruneResult`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `audit_entries` | integer | yes | Audit log entries deleted. 0 unless audit_log was set. |
+| `before` | string | yes |  |
+| `delivered_alerts` | integer | yes | Alerts deleted that were delivered before the date. Pending and failed alerts are kept. |
+| `events` | integer | yes | Events deleted. |
+| `hourly_usage` | integer | yes | Hourly usage rows deleted: those whose hour ended before the date. |
+
+### `RotateKeyRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `grace_seconds` | integer | no | How long the old secret keeps working beside the new one, at most 30 days. Absent or 0 ends it at once, on the next request. |
+
+### `RotatedKey`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `key` | [Key](#key) | yes | The same key, with the same id, spend, policy and history: only its secret is new. |
+| `previous_valid_until` | string | no | When the old secret stops working. Absent when it stopped at once. |
+| `sdk_env` | string | no | The variable an SDK for its upstream reads the key from. |
+| `secret` | string | yes | The new virtual key (kmn_...). kman keeps only its hash, so it is shown only this once. |
+
 ### `Settings`
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `default_key_ttl_seconds` | integer | yes | How long a new virtual key stays valid unless told otherwise. At most the maximum key lifetime. Default 90 days. |
 | `max_key_lifetime_seconds` | integer | yes | The longest any virtual key may stay valid. No key is created or extended past it. Default 365 days. |
-| `soft_budget_defaults` | list of integer | yes | The percentages of each spend cap that warn when crossed, rising, for keys that set none. Default 50, 80, 100. |
+| `soft_budget_defaults` | list of integer | yes | The percentages of each spend cap or soft budget that raise a warning when crossed, rising, for keys whose policy sets none (soft_budget_percents). Each warns once per day or month. Default 50, 80, 100; an empty list warns for no key that sets none. A change takes effect at the next check, within a minute. |
 | `spend_timezone` | string | yes | The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC. A change takes effect when kman restarts. |
 
 ### `SettingsUpdate`
@@ -658,6 +862,18 @@ Response 200: [Whoami](#whoami).
 | `requests` | integer | yes | Requests charged. |
 | `reserved_micro` | integer | yes | Held for requests in flight. A cap counts it as it counts cost_micro. |
 | `unmetered_requests` | integer | yes | Requests forwarded that could not be metered, whose cost is unknown and so is not in cost_micro. |
+
+### `UpdateStatus`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `available` | boolean | yes | Whether Latest is newer than Current. |
+| `checked_at` | string | no | When the last check ran, successful or not. |
+| `current` | string | no | This binary's version, such as v0.1.0, or empty for a build that is not a release. |
+| `enabled` | boolean | yes | Whether update_check is on in kman.yaml. kman asks the GitHub releases API once a day only when it is. |
+| `error` | string | no | Why the last check failed, if it did. Latest is still what an earlier check found. |
+| `latest` | string | no | The newest release the last successful check found. |
+| `url` | string | no | The page of the latest release. |
 
 ### `Upstream`
 

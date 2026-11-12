@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"net/http"
 	"time"
 )
 
@@ -24,4 +25,8 @@ type sys struct {
 	// stopSignals restores the default handling of SIGINT and SIGTERM, so
 	// a second signal during a graceful shutdown ends the process.
 	stopSignals func()
+	// http is the client for the two commands that may reach GitHub, version
+	// --check and the opt-in update check. Nil is a default client; tests give
+	// one that reaches a local server, so nothing in a test leaves the machine.
+	http *http.Client
 }

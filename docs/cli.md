@@ -3,7 +3,7 @@
 Generated from the help each command prints; do not edit by hand. Regenerate it with
 `go test ./cmd/kman -run CLIReferenceIsCurrent -update`. CI fails when it is stale.
 
-Every command that talks to a running kman takes `--config-dir`, the directory holding the credentials file `kman init` wrote, and every read command takes `--json`, which prints the admin API's response. `KMAN_ADMIN_URL` and `KMAN_ADMIN_TOKEN` override the credentials file. Exit codes: 0 success, 1 an error (usage errors included), 3 findings (not used by any v0.1.0 command).
+Every command that talks to a running kman takes `--config-dir`, the directory holding the credentials file `kman init` wrote, and every read command takes `--json`, which prints the admin API's response. `KMAN_ADMIN_URL` and `KMAN_ADMIN_TOKEN` override the credentials file. Exit codes: 0 success, 1 an error (usage errors included), 3 findings: `kman scan` found a key, or `kman exposure --strict` found a key to fix.
 
 | Command | What it does |
 |---|---|
@@ -11,7 +11,10 @@ Every command that talks to a running kman takes `--config-dir`, the directory h
 | [`kman serve`](#kman-serve) | run the proxy and the admin API |
 | [`kman keygen`](#kman-keygen) | print a new master key and store nothing |
 | [`kman rekey`](#kman-rekey) | replace the master key and the data key, with the server stopped |
-| [`kman version`](#kman-version) | print the version, the commit and the build date |
+| [`kman restore`](#kman-restore) | replace the database with a backup, with the server stopped |
+| [`kman version`](#kman-version) | print the version, the commit and the build date; --check asks GitHub for a newer release |
+| [`kman geoip`](#kman-geoip) | download the DB-IP Lite GeoIP databases that country locks and events read (the one command that reaches DB-IP) |
+| [`kman scan`](#kman-scan) | find kman keys in files, offline, and say which key each is |
 | [`kman login`](#kman-login) | save an admin URL and token for the commands on this machine |
 | [`kman logout`](#kman-logout) | remove the saved admin URL and token |
 | [`kman admin-token`](#kman-admin-token) | create, list, rotate or revoke admin tokens |
@@ -21,6 +24,10 @@ Every command that talks to a running kman takes `--config-dir`, the directory h
 | [`kman upstream`](#kman-upstream) | add, list, show, update, remove or sync upstreams |
 | [`kman credential`](#kman-credential) | add, update or remove credentials |
 | [`kman key`](#kman-key) | create, list, show, update, disable, enable or revoke virtual keys |
+| [`kman backup`](#kman-backup) | write a consistent copy of the database, while kman runs |
+| [`kman prune`](#kman-prune) | delete events, hourly usage and delivered alerts older than a date, and the audit log's entries too if asked |
+| [`kman exposure`](#kman-exposure) | list the keys that would be easy to abuse if they leaked, each with the command that fixes it |
+| [`kman channel`](#kman-channel) | add, list, test or remove alert channels |
 
 ## `kman init`
 
@@ -82,12 +89,64 @@ usage: kman rekey [flags]
     	where the new master key will come from: file, systemd-creds, passphrase or env (default the current source)
 ```
 
-## `kman version`
+## `kman restore`
 
-Print the version, the commit and the build date.
+Replace the database with a backup, with the server stopped.
+
+### `kman restore file`
 
 ```
-usage: kman version
+usage: kman restore <file> [--config-dir dir] [--allow-debug]
+
+Replaces the database with a backup made by kman backup. The server must be stopped, and the master key must be the one the backup was made under: it holds ciphertext only. The database it replaces is kept as kman.db.before-restore. What was written after the backup is gone.
+  -allow-debug
+    	skip the process hardening that keeps the master key out of core dumps and debuggers
+  -config-dir string
+    	the config directory holding kman.yaml (default ~/.config/kman, or %APPDATA%\kman on Windows)
+```
+
+## `kman version`
+
+Print the version, the commit and the build date; --check asks GitHub for a newer release.
+
+```
+usage: kman version [--check] [--json]
+
+Prints the version, the commit and the build date. With --check it also asks the GitHub releases API for the latest release, once: the only time this command uses the network. kman never checks by itself unless update_check: true is set in kman.yaml.
+  -check
+    	ask GitHub whether a newer release exists
+  -json
+    	print JSON
+```
+
+## `kman geoip`
+
+Download the DB-IP Lite GeoIP databases that country locks and events read (the one command that reaches DB-IP).
+
+### `kman geoip update`
+
+```
+usage: kman geoip update [--config-dir dir] [--source url]
+  -config-dir string
+    	the config directory holding kman.yaml (default ~/.config/kman, or %APPDATA%\kman on Windows)
+  -source string
+    	the address to download DB-IP Lite from, which serves dbip-country-lite-YYYY-MM.mmdb.gz and dbip-asn-lite-YYYY-MM.mmdb.gz: a mirror, for a network that cannot reach DB-IP (default "https://download.db-ip.com/free")
+```
+
+## `kman scan`
+
+Find kman keys in files, offline, and say which key each is.
+
+```
+usage: kman scan [--json] <path>...
+
+Looks for kman keys in files, and in a directory's files and subdirectories. A path of - reads standard input,
+so `git log -p | kman scan -` searches history. It works offline, with no server and no login.
+
+A match is confirmed by its checksum, and a secret is never printed: a finding is the file, the line and the key id.
+Exit codes: 0 nothing found, 3 a key was found, 1 an error or a file it could not read.
+  -json
+    	print the findings as JSON
 ```
 
 ## `kman login`
@@ -487,6 +546,22 @@ usage: kman credential rm <name> [--json]
     	print the admin API's JSON response
 ```
 
+### `kman credential compromise`
+
+```
+usage: kman credential compromise <name> [--credential-env VAR] [--json]
+
+For a real credential that leaked. First revoke it at the provider and make a new one there: that is what stops the damage. Then this replaces the credential's secret and rotates every virtual key on it at once, with no grace, and lists the apps that need new keys. The credential keeps its id; the keys keep theirs, with their spend, policy and history.
+
+The secret is asked for without echo, or read as one line of stdin when piped, or from the variable --credential-env names. It is never an argument, which would end up in shell history and process lists.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -credential-env string
+    	read the secret from this environment variable
+  -json
+    	print the admin API's JSON response
+```
+
 ## `kman key`
 
 Create, list, show, update, disable, enable or revoke virtual keys.
@@ -579,6 +654,124 @@ usage: kman key enable <name or key id> [--json]
 
 ```
 usage: kman key revoke <name or key id> [--json]
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+### `kman key rotate`
+
+```
+usage: kman key rotate <name or key id> [--grace <duration>] [--json]
+
+Replaces the key's secret and keeps the key: its id, spend, policy and history stay. The new secret is printed once. With --grace the old secret keeps working that long, at most 30 days, so an app can be moved over without a gap; with none, the old secret stops at the next request. A second rotation inside a grace ends the older secret at once.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -grace string
+    	how long the old secret keeps working, such as 24h; 0 ends it at once (default "0")
+  -json
+    	print the admin API's JSON response
+```
+
+## `kman backup`
+
+Write a consistent copy of the database, while kman runs.
+
+### `kman backup file`
+
+```
+usage: kman backup <file>
+
+Writes a consistent copy of the database while kman runs. The copy holds ciphertext only: it opens only with the master key, which is not in it, so back the master key up separately and keep it apart from the copy. The file is made here, owner-only, and must not exist. Restore it with kman restore, with the server stopped.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+```
+
+## `kman prune`
+
+Delete events, hourly usage and delivered alerts older than a date, and the audit log's entries too if asked.
+
+```
+usage: kman prune --before <date> [--audit-log] [--json]
+
+Deletes the events, the hourly usage and the alerts delivered before the date. Daily spend and incidents are kept forever. With --audit-log it also deletes the audit log's entries before the date, the one thing that ever deletes from the log; the prune itself is recorded in the log, and that record stays. Retention does the same for events, hourly usage and alerts by itself (see retention in kman.yaml); this is for a date you choose.
+  -audit-log
+    	also delete the audit log's entries before the date
+  -before string
+    	delete what is older than this date: 2026-01-01 (midnight UTC) or 2026-01-01T15:04:05Z
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+## `kman exposure`
+
+List the keys that would be easy to abuse if they leaked, each with the command that fixes it.
+
+```
+usage: kman exposure [--strict] [--json]
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+  -strict
+    	exit 3 when there are findings
+```
+
+## `kman channel`
+
+Add, list, test or remove alert channels.
+
+### `kman channel add`
+
+```
+usage: kman channel add <name> --kind slack|webhook [--url-env VAR] [--min-severity medium] [--lifecycle-alerts=false] [--json]
+
+The address is asked for without echo, or read as one line of stdin when piped, or from the variable --url-env names. It is never an argument, which would end up in shell history and process lists, and a Slack address is itself a secret. kman seals it and never shows it again. A webhook also gets a signing secret, printed once.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+  -kind string
+    	slack, or webhook for a signed webhook
+  -lifecycle-alerts
+    	also take spend and lifecycle warnings (default true)
+  -min-severity string
+    	the lowest severity the channel takes: low, medium (the default), high or critical
+  -url-env string
+    	read the address from this environment variable
+```
+
+### `kman channel list`
+
+```
+usage: kman channel list [--json]
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+### `kman channel test`
+
+```
+usage: kman channel test <name> [--json]
+
+Sends one test alert to the channel now, whatever its minimum severity.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+### `kman channel rm`
+
+```
+usage: kman channel rm <name> [--json]
+
+Removes the channel, wipes its address, and gives up the alerts still waiting for it.
   -config-dir string
     	the config directory holding the credentials file (default "$HOME/.config/kman")
   -json

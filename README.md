@@ -38,7 +38,7 @@ Then paste the `export OPENAI_API_KEY=kmn_…` line `kman key create` printed, a
 
 ## What v0.1.0 is, and is not
 
-v0.1.0 is **Contain**: virtual keys, spend caps, allowlists, rate limits, and a kill switch, in front of sealed credentials. It is a command-line tool and an admin API. It has **no dashboard, no alerts, no leak detection, no key rotation, no address locks, no backup or restore commands, and no realtime support.** [What v0.1.0 leaves out](docs/v0.1.0-scope.md) lists each, and says what to do in its place (for example, replacing a leaked key by creating a new one and revoking the old one).
+v0.1.0 is **Contain**: virtual keys, spend caps, allowlists, rate limits, and a kill switch, in front of sealed credentials. It is a command-line tool and an admin API. It has **no dashboard, no alerts, no leak detection, no address locks, and no realtime support.** Alerts with soft-budget and expiry warnings, address locks, `kman scan`, backup and restore have landed since: see the [changelog](CHANGELOG.md). [What v0.1.0 leaves out](docs/v0.1.0-scope.md) lists each, and says what to do in its place (for example, `kman key rotate` for a leaked key, and `kman credential compromise` for a leaked real credential).
 
 kman is for people who run their own apps against LLM providers: a solo developer, a small team. It is **not** a hosted service, a multi-user system, or a defence against someone who already controls the machine it runs on. [The threat model](THREAT-MODEL.md) is explicit about what it protects and what it doesn't, and it draws on [a security review](docs/security-review-v0.1.0.md) of this release.
 

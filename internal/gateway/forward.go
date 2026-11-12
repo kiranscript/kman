@@ -101,6 +101,7 @@ func (g *Gateway) respond(x *exchange, resp *http.Response) {
 	for {
 		n, err := resp.Body.Read(buf[:])
 		if n > 0 {
+			x.respBytes += int64(n)
 			if x.usage != nil {
 				x.usage.Feed(buf[:n])
 			}

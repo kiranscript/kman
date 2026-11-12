@@ -17,7 +17,7 @@ func TestAnUnknownCommandIsAUsageErrorNamingEveryCommand(t *testing.T) {
 	if code := run(t.Context(), []string{"nonsense"}, s); code != 1 {
 		t.Errorf("kman nonsense exited %d, want 1 (SPEC §12: usage errors are errors)", code)
 	}
-	for _, name := range []string{"init", "serve", "keygen", "rekey", "version", "login", "logout", "admin-token", "settings", "audit", "price"} {
+	for _, name := range []string{"init", "serve", "keygen", "rekey", "version", "login", "logout", "admin-token", "settings", "audit", "price", "scan", "exposure"} {
 		if !strings.Contains(stderr.String(), name) {
 			t.Errorf("the usage line lacks %s: %s", name, stderr)
 		}

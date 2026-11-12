@@ -50,7 +50,7 @@ func main() {
 // offline lists the commands main runs itself; every other command is one
 // of the CLI's online commands. A new offline command adds its case to run
 // and its name here.
-var offline = []string{"init", "serve", "keygen", "rekey", "version"}
+var offline = []string{"init", "serve", "keygen", "rekey", "restore", "version", "geoip", "scan"}
 
 // usageLine lists the commands.
 var usageLine = "usage: kman <" + strings.Join(append(slices.Clone(offline), cli.Commands()...), "|") + ">"
@@ -68,11 +68,17 @@ func run(ctx context.Context, args []string, s *sys) int {
 	case "serve":
 		return cmdServe(ctx, rest, s)
 	case "version":
-		return cmdVersion(rest, s.stdout, s.stderr)
+		return cmdVersion(ctx, rest, s)
 	case "keygen":
 		return cmdKeygen(rest, s.stdout, s.stderr)
 	case "rekey":
 		return cmdRekey(ctx, rest, s)
+	case "geoip":
+		return cmdGeoIP(ctx, rest, s)
+	case "scan":
+		return cmdScan(rest, s)
+	case "restore":
+		return cmdRestore(ctx, rest, s)
 	}
 	if slices.Contains(cli.Commands(), args[0]) {
 		return cli.Run(ctx, args, cliEnv(s))
@@ -101,14 +107,6 @@ func cliEnv(s *sys) cli.Env {
 func usage(stderr io.Writer) int {
 	fmt.Fprintln(stderr, usageLine)
 	return 1
-}
-
-func cmdVersion(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 0 {
-		return usage(stderr)
-	}
-	printVersion(stdout)
-	return 0
 }
 
 // cmdKeygen prints a fresh master key and stores nothing. It works offline,

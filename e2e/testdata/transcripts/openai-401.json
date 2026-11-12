@@ -1,0 +1,42 @@
+{
+  "note": "Written by hand, not captured from the live API (no credentials were to hand): the shape follows the types in the pinned SDKs under e2e/testdata/sdk. An upstream that refuses the credential kman presents with 401 and reports no usage, twice.",
+  "profile": "openai",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "chunks": [
+          "{\"error\":{\"message\":\"Incorrect API key provided\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_api_key\"}}"
+        ]
+      },
+      "usage": {}
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "chunks": [
+          "{\"error\":{\"message\":\"Incorrect API key provided\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_api_key\"}}"
+        ]
+      },
+      "usage": {}
+    }
+  ]
+}

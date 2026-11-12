@@ -15,8 +15,8 @@ import (
 // they do not have. SPEC "Deferred past v0.1.0" lists them. When one ships, take
 // it off this list.
 var unshipped = []string{
-	"backup", "restore", "prune", "scan", "exposure", "dashboard", "demo", "canary", "geoip",
-	"channel", "incident", "incidents", "detection", "detections", "known-source", "metrics",
+	"dashboard", "demo", "canary",
+	"incident", "incidents", "detection", "detections", "known-source", "metrics",
 }
 
 var namesUnshipped = regexp.MustCompile("`?\\bkman (" + strings.Join(unshipped, "|") + ")\\b")

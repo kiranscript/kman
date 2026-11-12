@@ -1,5 +1,6 @@
 // Package meter owns all spend: reservations, settlement, counters, spend periods,
-// increment flushes, failing closed, and soft-budget crossings.
+// increment flushes, and failing closed. Soft-budget warnings count from what it
+// has flushed, and are raised by alerts.
 //
 // Every key on a metered upstream has spend for the day and the month, capped or
 // not, so that a cap added late counts what was spent before it. The counters

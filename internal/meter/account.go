@@ -4,6 +4,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/kirank55/kman/internal/store"
 )
 
 // bucket is a key's spend in one day or one month. Everything in it is changed
@@ -99,10 +101,7 @@ type account struct {
 }
 
 // labels are the day's and the month's label at t in loc.
-func labels(t time.Time, loc *time.Location) (day, month string) {
-	day = t.In(loc).Format(time.DateOnly)
-	return day, day[:len("2006-01")]
-}
+func labels(t time.Time, loc *time.Location) (day, month string) { return store.SpendLabels(t, loc) }
 
 // window returns the window holding now. It rolls over to a new one when the day
 // has changed, which takes the lock once a day for each key.

@@ -11,7 +11,7 @@ import (
 )
 
 func cmdCredential(ctx context.Context, c *call) error {
-	sub, err := c.sub("<add|update|rm> ...", "add", "update", "rm")
+	sub, err := c.sub("<add|update|rm|compromise> ...", "add", "update", "rm", "compromise")
 	if err != nil {
 		return err
 	}
@@ -20,6 +20,8 @@ func cmdCredential(ctx context.Context, c *call) error {
 		return credentialAdd(ctx, c)
 	case "update":
 		return credentialUpdate(ctx, c)
+	case "compromise":
+		return credentialCompromise(ctx, c)
 	}
 	return credentialRm(ctx, c)
 }

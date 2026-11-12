@@ -78,7 +78,7 @@ func (h rekeyHome) withService(t *testing.T, src vault.KeySource, fn func(contex
 	defer st.Close()
 	defer v.Close()
 	s, _, _ := testSys(t, nil)
-	fn(ctx, admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: registry.New().Apply}))
+	fn(ctx, admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: registry.New().Apply, NormalizePolicy: normalizePolicy(nil)}))
 }
 
 // unlock opens the store and unwraps its current data key with src, as serve does.

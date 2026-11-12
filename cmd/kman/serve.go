@@ -16,9 +16,10 @@ import (
 
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
+	"github.com/kirank55/kman/internal/alerts"
+	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/gateway"
 	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/pricing"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
@@ -89,6 +90,12 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 		return err
 	}
 
+	geo, err := openGeoIP(cfg)
+	if err != nil {
+		return err
+	}
+	defer geo.Close()
+
 	st, err := store.Open(ctx, store.Options{Dir: cfg.DataDir, Now: s.now(), Logger: log})
 	if err != nil {
 		return err
@@ -110,12 +117,51 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	reg := registry.New()
 	prices := pricing.NewPrices(pricing.Builtin())
 	var spend *meter.Meter // made once the settings are read, which the service reads
-	svc := admin.New(admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices,
-		ApplyPrices: publishOverrides(prices), NormalizePolicy: policy.Normalize,
-		Spend: func(keyID, policyJSON string) admin.KeySpend { return keySpend(spend, s.now(), keyID, policyJSON) }})
+	// Alerts reach the network only through the channels the operator added
+	// (ADR 0008). The vault holds each channel's address once admin has loaded it.
+	var svc *admin.Service // made below, after alerts, which it calls; the warnings read its settings
+	alert := alerts.New(alerts.Options{Store: st, Secret: v.Credential, Now: s.now, DashboardURL: cfg.Dashboard.URL, Log: log,
+		Limits: alertLimits, Settings: alertSettings(func() *admin.Service { return svc })})
+	// The update check is the one thing kman asks the network by itself, and only
+	// when the operator turned it on (ADR 0008).
+	var updates *updateChecker
+	adminOpts := admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices, Alerts: alert,
+		ApplyPrices: publishOverrides(prices), NormalizePolicy: normalizePolicy(geo),
+		Spend: func(keyID, policyJSON string) admin.KeySpend { return keySpend(spend, s.now(), keyID, policyJSON) }}
+	if cfg.UpdateCheck {
+		current, _, _, _ := stamp()
+		hc := releaseClient(s)
+		updates = newUpdateChecker(current, s.now, func(ctx context.Context) (release, error) { return fetchLatest(ctx, hc, current) })
+		adminOpts.Update = updates.Status
+	}
+	svc = admin.New(adminOpts)
 	if err := svc.Load(ctx); err != nil {
 		return err
 	}
+	if err := checkCountryLocks(reg.Snapshot(), geo); err != nil {
+		return err
+	}
+	settleCtx, stopSettling := context.WithCancel(ctx)
+	settleDone := make(chan struct{})
+	go func() { svc.RunSettling(settleCtx); close(settleDone) }() // a grace that has ended turns its secret into a retired one
+	defer func() { stopSettling(); <-settleDone }()
+	// Retention prunes at startup and then daily, unless the operator keeps everything.
+	retainCtx, stopRetaining := context.WithCancel(ctx)
+	retainDone := make(chan struct{})
+	if windows, prune := cfg.retention(); prune {
+		go func() { svc.RunRetention(retainCtx, windows, retentionReport(log)); close(retainDone) }()
+	} else {
+		close(retainDone)
+	}
+	defer func() { stopRetaining(); <-retainDone }()
+	updateCtx, stopUpdates := context.WithCancel(ctx)
+	updateDone := make(chan struct{})
+	if updates != nil {
+		go func() { updates.Run(updateCtx); close(updateDone) }()
+	} else {
+		close(updateDone)
+	}
+	defer func() { stopUpdates(); <-updateDone }()
 	spend, err = startMeter(ctx, s, log, svc, st, prices)
 	if err != nil {
 		return err
@@ -124,10 +170,43 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	defer stopMeter()
 	meterDone := make(chan struct{})
 	go func() { spend.Run(meterCtx); close(meterDone) }()
-	proxy := gateway.New(gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, Meter: spend, TrustedProxies: cfg.trustedProxies()})
-	ls, err := listen(cfg, log, proxy, adminHandler(svc, log))
+	pipe := startEvents(ctx, st, log, alert)
+	defer pipe.stop() // a second time is harmless: the first stop is below
+	alertCtx, stopAlerts := context.WithCancel(context.WithoutCancel(ctx))
+	alertsDone := make(chan struct{})
+	go func() { alert.Run(alertCtx); close(alertsDone) }()
+	defer func() { stopAlerts(); <-alertsDone }() // what is undelivered waits in the outbox for the next run
+	// Spend and key expiry warnings are checked at start and then every minute.
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	watchDone := make(chan struct{})
+	go func() { alert.RunWatch(watchCtx); close(watchDone) }()
+	defer func() { stopWatch(); <-watchDone }()
+	var more []events.Metric
+	if updates != nil {
+		more = append(more, updateMetric(updates))
+	}
+	metrics := pipe.handler(s.now, priceDataGenerated(), more...)
+	gwOpts := gateway.Options{Routes: reg, Vault: v, Now: s.now, Log: log, Meter: spend, Events: pipe.bus, TrustedProxies: cfg.trustedProxies()}
+	if geo != nil { // a nil *geoip.DB in the interface would be a database that knows nothing
+		gwOpts.Geo = geo
+	}
+	proxy := gateway.New(gwOpts)
+	ls, err := listen(cfg, log, proxy, adminHandler(svc, log, metrics))
 	if err != nil {
 		return err
+	}
+	if cfg.MetricsListen != "" {
+		ml, err := newListener("metrics", cfg.MetricsListen, ListenerTLS{}, metricsOnly(metrics), log)
+		if err != nil {
+			for _, l := range ls {
+				l.l.Close()
+			}
+			return err
+		}
+		if host, _ := tcpAddr("metrics_listen", cfg.MetricsListen); !isLoopback(host) {
+			log.Warn("metrics_listen is not a loopback address, and it serves metrics with no authentication", "addr", cfg.MetricsListen)
+		}
+		ls = append(ls, ml)
 	}
 	errs := make(chan error, len(ls))
 	for _, l := range ls {
@@ -151,13 +230,27 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 			log.Error("shutdown", "listener", l.name, "err", serr)
 		}
 	}
-	// What the requests that just ended spent reaches the store before it closes.
+	// What the requests that just ended did reaches the store before it closes: their
+	// events, and their spend.
+	pipe.stop()
 	stopMeter()
 	<-meterDone
 	if ferr := spend.Flush(shutdownCtx, s.now()); ferr != nil {
 		log.Error("the last spend could not be saved", "err", ferr)
 	}
 	return err
+}
+
+// retentionReport logs what each retention pass deleted, or why it failed.
+func retentionReport(log *slog.Logger) func(admin.PruneResult, error) {
+	return func(r admin.PruneResult, err error) {
+		switch {
+		case err != nil:
+			log.Error("retention could not prune; it tries again in an hour", "err", err)
+		case r.Events+r.HourlyUsage+r.DeliveredAlerts > 0:
+			log.Info("retention pruned", "events", r.Events, "hourly_usage", r.HourlyUsage, "delivered_alerts", r.DeliveredAlerts)
+		}
+	}
 }
 
 // listener is one bound listener and the server for it.
@@ -195,11 +288,12 @@ func listen(cfg Config, log *slog.Logger, proxyH, adminH http.Handler) ([]*liste
 	return []*listener{proxy, adm}, nil
 }
 
-// adminHandler serves the admin listener: the admin API under /admin/v1,
-// and nothing else until the dashboard (M3) and /metrics (#46).
-func adminHandler(svc *admin.Service, log *slog.Logger) http.Handler {
+// adminHandler serves the admin listener: the admin API under /admin/v1, and
+// /metrics behind an admin token. The dashboard (M3) is not served yet.
+func adminHandler(svc *admin.Service, log *slog.Logger, metrics http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(adminapi.Prefix+"/", adminapi.Handler(svc, log))
+	mux.Handle("GET /metrics", requireAdminToken(svc, log, metrics))
 	mux.Handle("/", notYet("the admin listener"))
 	return mux
 }

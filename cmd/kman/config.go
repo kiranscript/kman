@@ -7,11 +7,14 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/kirank55/kman/internal/admin"
 )
 
 // Key-source names, the values of key_source and --key-source.
@@ -62,10 +65,47 @@ type Config struct {
 	AllowPlainHTTP bool      `yaml:"allow_plain_http,omitempty"`
 	TLS            TLSConfig `yaml:"tls,omitempty"`
 
+	// MetricsListen, when set, is a host:port that serves /metrics with no
+	// authentication, for a scraper that cannot send an admin token. It is off by
+	// default: the admin listener serves /metrics behind the admin token.
+	MetricsListen string `yaml:"metrics_listen,omitempty"`
+
 	// TrustedProxies are the addresses or networks (CIDR) of reverse proxies in
 	// front of the proxy listener, whose X-Forwarded-For kman believes. With none,
 	// a request's address is its connection's.
 	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
+
+	// Retention is "default" (or absent): events 30 days, hourly usage 400 days,
+	// delivered alerts 30 days after delivery, as SPEC §14 says. "keep_everything"
+	// turns pruning off; kman prune --before still works.
+	Retention string `yaml:"retention,omitempty"`
+	// UpdateCheck, when true, makes kman ask the GitHub releases API once a day
+	// whether a newer release exists. It is off by default and is the only way kman
+	// reaches the network by itself (ADR 0008).
+	UpdateCheck bool `yaml:"update_check,omitempty"`
+	// GeoIP names the GeoIP databases kman reads, if any (see GeoIPConfig).
+	GeoIP GeoIPConfig `yaml:"geoip,omitempty"`
+
+	Dashboard DashboardConfig `yaml:"dashboard,omitempty"`
+}
+
+// DashboardConfig is where the dashboard is reachable from outside.
+type DashboardConfig struct {
+	// URL is the address operators use for the dashboard, such as
+	// https://kman.example.com. Only when it is set do alerts carry a link to
+	// their incident's page.
+	URL string `yaml:"url,omitempty"`
+}
+
+// Retention settings.
+const (
+	retentionDefault        = "default"
+	retentionKeepEverything = "keep_everything"
+)
+
+// retention is the windows kman prunes to, and whether it prunes at all.
+func (c Config) retention() (r admin.Retention, prune bool) {
+	return admin.DefaultRetention, c.Retention != retentionKeepEverything
 }
 
 // trustedProxies is TrustedProxies as networks. A bare address is a network of
@@ -157,12 +197,34 @@ func (c Config) check() error {
 			return err
 		}
 	}
+	switch c.Retention {
+	case "", retentionDefault, retentionKeepEverything:
+	default:
+		return fmt.Errorf("retention %q is not %s or %s: kman prunes to its defaults, or never", c.Retention, retentionDefault, retentionKeepEverything)
+	}
+	if err := c.GeoIP.check(); err != nil {
+		return err
+	}
 	for _, l := range []struct {
 		name string
 		tls  ListenerTLS
 	}{{"proxy", c.TLS.Proxy}, {"admin", c.TLS.Admin}} {
 		if l.tls.enabled() && (l.tls.CertFile == "" || l.tls.KeyFile == "") {
 			return fmt.Errorf("tls.%s needs both cert_file and key_file", l.name)
+		}
+	}
+	if c.Dashboard.URL != "" {
+		u, err := url.Parse(c.Dashboard.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+			return errors.New("dashboard.url must be an http or https address with a host and no login, such as https://kman.example.com")
+		}
+	}
+	if c.MetricsListen != "" {
+		if strings.HasPrefix(c.MetricsListen, unixPrefix) {
+			return errors.New("metrics_listen must be host:port")
+		}
+		if _, err := tcpAddr("metrics_listen", c.MetricsListen); err != nil {
+			return err
 		}
 	}
 	if strings.HasPrefix(c.ProxyListen, unixPrefix) {
