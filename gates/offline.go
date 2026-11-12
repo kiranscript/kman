@@ -3,6 +3,7 @@ package gates
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -13,10 +14,13 @@ import (
 var networked = []string{"net", "net/http", "crypto/tls", "os/exec"}
 
 // Deps returns everything pattern's package depends on, itself included,
-// without its tests.
+// without its tests. It lists for linux whatever the host: on Windows the
+// operating-system shim golang.org/x/sys/windows imports net, which says
+// nothing about whether the package itself can reach the network.
 func Deps(dir, pattern string) ([]string, error) {
 	cmd := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", pattern)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOOS=linux")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
