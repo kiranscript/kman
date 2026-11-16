@@ -44,6 +44,7 @@ func (m dashboard) load() tea.Cmd {
 			var v admin.KeyList
 			v, r.err = cl.ListKeys(ctx, admin.KeyQuery{})
 			r.keys = v.Keys
+
 		case 1:
 			var v admin.Exposure
 			v, r.err = cl.Exposure(ctx)
@@ -60,7 +61,26 @@ func (m dashboard) load() tea.Cmd {
 		return r
 	}
 }
-func (m dashboard) Init() tea.Cmd { return m.load() }
+
+type dashboardBanner struct {
+	generation int
+	findings   []admin.ExposureFinding
+}
+
+func (m dashboard) loadView() tea.Cmd {
+	if m.tab != 0 {
+		return m.load()
+	}
+	cl, ctx, generation := m.client, m.ctx, m.generation
+	return tea.Batch(m.load(), func() tea.Msg {
+		exp, err := cl.Exposure(ctx)
+		if err != nil {
+			return dashboardBanner{generation: generation}
+		}
+		return dashboardBanner{generation: generation, findings: exp.Findings}
+	})
+}
+func (m dashboard) Init() tea.Cmd { return m.loadView() }
 func (m dashboard) count() int {
 	switch m.tab {
 	case 0:
@@ -77,6 +97,10 @@ func (m dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = v.Width, v.Height
+	case dashboardBanner:
+		if m.tab == 0 && v.generation == m.generation {
+			m.findings = v.findings
+		}
 	case dashboardResult:
 		if v.generation != m.generation || v.tab != m.tab {
 			break
@@ -145,7 +169,10 @@ func (m dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.generation++
 		m.loading = true
 		m.err = nil
-		return m, m.load()
+		if m.tab == 0 {
+			m.findings = nil
+		}
+		return m, m.loadView()
 	}
 	return m, nil
 }
@@ -163,17 +190,30 @@ func cleanDashboard(s string) string {
 }
 func (m dashboard) View() string {
 	var b strings.Builder
-	b.WriteString(dashboardAccent.Render("kman"))
-	b.WriteString("    ")
+	left := lipgloss.NewStyle().Bold(true).Render("kman")
+	if m.client != nil {
+		left += dashboardDim.Render(" · " + cleanDashboard(m.client.shown))
+	}
+	var tabs []string
 	for i, t := range []string{"1 keys", "2 exposure", "3 audit", "4 setup"} {
 		if i == m.tab {
-			b.WriteString(dashboardAccent.Underline(true).Render(t))
+			tabs = append(tabs, dashboardAccent.Render(t))
 		} else {
-			b.WriteString(dashboardDim.Render(t))
+			tabs = append(tabs, dashboardDim.Render(t))
 		}
-		b.WriteString("    ")
 	}
-	b.WriteString("\n\n")
+	right := strings.Join(tabs, "  ")
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 2 {
+		left = ""
+		gap = 0
+	}
+	b.WriteString(left + strings.Repeat(" ", gap) + right + "\n")
+	banner := ""
+	if m.tab == 0 && !m.loading && m.err == nil && len(m.findings) > 0 {
+		banner = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "172", Dark: "214"}).Render(fmt.Sprintf("! %d exposure findings · press 2 to inspect", len(m.findings)))
+	}
+	b.WriteString(banner + "\n")
 	var lines []string
 	if m.loading {
 		lines = []string{"Loading…"}
@@ -187,9 +227,17 @@ func (m dashboard) View() string {
 	} else {
 		switch m.tab {
 		case 0:
-			lines = append(lines, "  NAME                 UPSTREAM           STATUS     EXPIRES")
-			for _, k := range m.keys {
-				lines = append(lines, fmt.Sprintf("  %-20s %-18s %-10s %s", cleanDashboard(orDash(k.Name)), cleanDashboard(orDash(k.Upstream)), keyState(k), when(&k.ExpiresAt)))
+			lines = append(lines, dashboardDim.Render("  name                 status      upstream             expires"))
+			for i, k := range m.keys {
+				state := fmt.Sprintf("%-11s", keyState(k))
+				if i != m.cursor {
+					color := lipgloss.AdaptiveColor{Light: "172", Dark: "214"}
+					if keyState(k) == "active" {
+						color = lipgloss.AdaptiveColor{Light: "28", Dark: "42"}
+					}
+					state = lipgloss.NewStyle().Foreground(color).Render(state)
+				}
+				lines = append(lines, fmt.Sprintf("  %-20s %s %-20s %s", cleanDashboard(orDash(k.Name)), state, cleanDashboard(orDash(k.Upstream)), when(&k.ExpiresAt)))
 			}
 		case 1:
 			lines = append(lines, "  KEY                  FINDING")
@@ -209,7 +257,11 @@ func (m dashboard) View() string {
 			}
 		}
 		if m.cursor+1 < len(lines) {
-			lines[m.cursor+1] = "›" + strings.TrimPrefix(lines[m.cursor+1], " ")
+			row := "›" + strings.TrimPrefix(lines[m.cursor+1], " ")
+			if m.width > lipgloss.Width(row) {
+				row += strings.Repeat(" ", m.width-lipgloss.Width(row))
+			}
+			lines[m.cursor+1] = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "254", Dark: "237"}).Bold(true).Render(row)
 		}
 		// Keep the selection visible in short terminals.
 		available := max(1, m.height-6)
@@ -230,7 +282,9 @@ func (m dashboard) View() string {
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
-	b.WriteString("\n")
+	for n := min(len(lines), available); n < available; n++ {
+		b.WriteByte('\n')
+	}
 	if m.detail {
 		b.WriteString(dashboardDim.Render("↑/↓ scroll · esc back · q quit"))
 	} else {
