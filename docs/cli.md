@@ -15,6 +15,7 @@ Every command that talks to a running kman takes `--config-dir`, the directory h
 | [`kman version`](#kman-version) | print the version, the commit and the build date; --check asks GitHub for a newer release |
 | [`kman geoip`](#kman-geoip) | download the DB-IP Lite GeoIP databases that country locks and events read (the one command that reaches DB-IP) |
 | [`kman scan`](#kman-scan) | find kman keys in files, offline, and say which key each is |
+| [`kman tui`](#kman-tui) | browse keys, exposure, audit and upstreams in a terminal |
 | [`kman login`](#kman-login) | save an admin URL and token for the commands on this machine |
 | [`kman logout`](#kman-logout) | remove the saved admin URL and token |
 | [`kman admin-token`](#kman-admin-token) | create, list, rotate or revoke admin tokens |
@@ -147,6 +148,16 @@ A match is confirmed by its checksum, and a secret is never printed: a finding i
 Exit codes: 0 nothing found, 3 a key was found, 1 an error or a file it could not read.
   -json
     	print the findings as JSON
+```
+
+## `kman tui`
+
+Browse keys, exposure, audit and upstreams in a terminal.
+
+```
+usage: kman tui [--config-dir <dir>]
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
 ```
 
 ## `kman login`

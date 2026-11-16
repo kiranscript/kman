@@ -50,6 +50,7 @@ type command struct {
 }
 
 var commands = []command{
+	{"tui", "browse keys, exposure, audit and upstreams in a terminal", cmdDashboard},
 	{"login", "save an admin URL and token for the commands on this machine", cmdLogin},
 	{"logout", "remove the saved admin URL and token", cmdLogout},
 	{"admin-token", "create, list, rotate or revoke admin tokens", cmdAdminToken},
