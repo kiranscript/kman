@@ -96,6 +96,7 @@ func cliEnv(s *sys) cli.Env {
 		ConfigDir: configDir, ReadSecret: s.readSecret,
 		LocalPriceData: func() admin.PriceDataStatus { return builtinPrices().Status(s.now()) },
 		BinaryAge:      func() (time.Time, int, bool) { return binaryAge(s.now()) },
+		Now:            s.now,
 		Initialised: func() bool {
 			_, err := os.Stat(filepath.Join(configDir, configFile))
 			return configDir != "" && err == nil

@@ -40,6 +40,9 @@ type Env struct {
 	// Initialised reports whether kman init has set up this machine, for the
 	// status summary. Nil means it has not.
 	Initialised func() bool
+	// Now is the time, for the sample data of kman tui --demo. Nil means the
+	// zero time.
+	Now func() time.Time
 }
 
 // command is one online command.
@@ -50,6 +53,7 @@ type command struct {
 }
 
 var commands = []command{
+	{"tui", "browse keys, exposure, audit and upstreams in a terminal", cmdDashboard},
 	{"login", "save an admin URL and token for the commands on this machine", cmdLogin},
 	{"logout", "remove the saved admin URL and token", cmdLogout},
 	{"admin-token", "create, list, rotate or revoke admin tokens", cmdAdminToken},
