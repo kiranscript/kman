@@ -56,7 +56,11 @@ _Avoid_: User, admin (too vague)
 
 **Dashboard**:
 The web interface, served by kman itself, for watching keys and responding to leaks.
-_Avoid_: Web UI, console, TUI (the TUI no longer exists)
+_Avoid_: Web UI, console, TUI (the TUI is a separate client; see below)
+
+**TUI**:
+The terminal client in `tui/`: a thin client of the admin API that watches a running kman and can disable, enable, revoke and create virtual keys. It does not run the server and is not part of the kman binary.
+_Avoid_: Dashboard (the dashboard is the web interface served by kman)
 
 ### Upstreams and credentials
 

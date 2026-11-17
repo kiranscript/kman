@@ -7,6 +7,10 @@ All notable changes to kman are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `tui/`: a terminal client for a running kman, built with React and Ink. It shows an overview of what needs attention, virtual keys with their spend against caps, upstreams, and the audit log, and can disable, enable, revoke and create keys. It is a thin client of the admin API ([ADR 0009](docs/adr/0009-the-tui-is-a-separate-thin-client.md)), reads the CLI's credentials, needs Node 22 or later, and is not part of the kman binary.
+
 ## [0.1.0] - 2026-11-11
 
 The first release: put real API keys behind kman and kill a leak. kman is a key manager and proxy for LLM API keys. You keep the real keys in kman, hand apps virtual keys that cap spend and expire, and turn one off the moment it leaks.

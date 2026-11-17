@@ -1,0 +1,31 @@
+{
+  "name": "kman-tui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A terminal client for a running kman: a thin client of the admin API (ADR 0009).",
+  "type": "module",
+  "bin": {
+    "kman-tui": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.tsx",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ink": "8.0.0",
+    "react": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "ink-testing-library": "4.0.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  }
+}

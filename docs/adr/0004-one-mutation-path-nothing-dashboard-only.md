@@ -6,7 +6,7 @@ keman's beta also had a TUI, the default command, which ran the server inside th
 
 ## Considered options
 
-- **Keep a slimmed-down TUI as well as the dashboard.** Rejected for v1. In keman, two rich UIs were the biggest maintenance cost (about 3.8K lines). Running the server inside the TUI also meant the proxy stopped whenever the terminal closed. A TUI can come back later as a thin client of the admin API.
+- **Keep a slimmed-down TUI as well as the dashboard.** Rejected for v1. In keman, two rich UIs were the biggest maintenance cost (about 3.8K lines). Running the server inside the TUI also meant the proxy stopped whenever the terminal closed. A TUI can come back later as a thin client of the admin API (it did: ADR 0009).
 - **Let the dashboard call the admin API over HTTP.** Rejected. It would add a loopback hop and a second auth path for no gain, because the service layer is the actual contract.
 
 ## Consequences
