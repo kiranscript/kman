@@ -155,9 +155,11 @@ Exit codes: 0 nothing found, 3 a key was found, 1 an error or a file it could no
 Browse keys, exposure, audit and upstreams in a terminal.
 
 ```
-usage: kman tui [--config-dir <dir>]
+usage: kman tui [--demo] [--config-dir <dir>]
   -config-dir string
     	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -demo
+    	browse built-in sample data instead of a server's; needs no install or server, and changes nothing
 ```
 
 ## `kman login`

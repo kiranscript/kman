@@ -40,6 +40,9 @@ type Env struct {
 	// Initialised reports whether kman init has set up this machine, for the
 	// status summary. Nil means it has not.
 	Initialised func() bool
+	// Now is the time, for the sample data of kman tui --demo. Nil means the
+	// zero time.
+	Now func() time.Time
 }
 
 // command is one online command.
