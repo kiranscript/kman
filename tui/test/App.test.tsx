@@ -457,8 +457,12 @@ describe('App', () => {
   });
 
   it('keeps a failure on screen until the next key press, while a success fades', async () => {
+    // Long enough that press() finishes before a success fades, and the test can
+    // still see it: press() waits for the frame to settle, and at 60 ms a success
+    // could come and go between its samples.
+    const noticeMs = 600;
     const client = fakeClient();
-    const m = mount(client, SIZE, undefined, 60);
+    const m = mount(client, SIZE, undefined, noticeMs);
     await loaded(m);
     await m.press('2');
     await m.press('d');
@@ -474,7 +478,7 @@ describe('App', () => {
     await m.press('d');
     await m.press('y');
     await until(() => m.screen().includes('Could not disable'), 'the failure notice');
-    await tick(400); // well past the 60 ms a success would last
+    await tick(noticeMs + 200); // well past the time a success would last
     expect(m.screen()).toContain('Could not disable');
     await m.press('j');
     await until(() => !m.screen().includes('Could not disable'), 'the failure to clear on a key press');

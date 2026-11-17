@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -281,10 +282,11 @@ func TestAFullEventQueueNeverBlocksTheRequestPathAndTheDropsAreVisible(t *testin
 	s, _ := behind(t, answering("application/json", `{}`), func(g *gateway.Options) { g.Events = b })
 	k, sec := newKey(t)
 	s.publish(specOfRoute(t, s), k)
+	const requests = 20
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for range 20 {
+		for range requests {
 			resp, _ := s.send("GET", "/v1/models", "", withBearer(sec))
 			if resp.StatusCode != 200 {
 				t.Errorf("status %d, want the request served though the queue is full", resp.StatusCode)
@@ -298,7 +300,18 @@ func TestAFullEventQueueNeverBlocksTheRequestPathAndTheDropsAreVisible(t *testin
 	case <-ctx.Done():
 		t.Fatal("requests blocked on a full event queue")
 	}
-	if st := b.Stats(); st.Queued != 2 || st.Dropped != 18 {
+	// The gateway emits an event in a deferred call, after the handler has written
+	// the response, so the client can have the last response before its event is
+	// counted. Wait for every event rather than read Stats too early.
+	var st events.Stats
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		st = b.Stats()
+		if int64(st.Queued)+st.Dropped+st.DroppedPriority >= requests || time.Now().After(deadline) {
+			break
+		}
+		runtime.Gosched()
+	}
+	if st.Queued != 2 || st.Dropped != 18 {
 		t.Errorf("stats %+v, want 2 queued and 18 dropped", st)
 	}
 }
