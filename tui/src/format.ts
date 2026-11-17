@@ -1,0 +1,130 @@
+// Pure formatting: money, time, text widths and bars. No Ink, so it is cheap to
+// test and every view formats the same way.
+
+const MICRO = 1_000_000;
+
+/** Microdollars as dollars: $0.036, $5.00, $1,250. */
+export function money(micro: number): string {
+  const dollars = micro / MICRO;
+  if (micro === 0) return '$0';
+  if (dollars < 1) return `$${dollars.toFixed(3)}`;
+  if (dollars < 1000) return `$${dollars.toFixed(2)}`;
+  return `$${Math.round(dollars).toLocaleString('en-US')}`;
+}
+
+/** A cap in dollars, one way everywhere: $5 when whole, else at least two decimals: $0.50, $0.36, $1.50, $0.125. */
+export function capMoney(micro: number): string {
+  const dollars = micro / MICRO;
+  if (Number.isInteger(dollars)) return `$${dollars.toLocaleString('en-US')}`;
+  return `$${dollars.toFixed(3).replace(/0$/, '')}`;
+}
+
+/** Dollars typed by an operator ("5", "0.25") as microdollars, or undefined if not a positive amount. */
+export function parseDollars(text: string): number | undefined {
+  const t = text.trim().replace(/^\$/, '');
+  if (!/^(\d+(\.\d{1,6})?|\.\d{1,6})$/.test(t)) return undefined;
+  const micro = Math.round(Number(t) * MICRO);
+  return micro > 0 ? micro : undefined;
+}
+
+/** Whole days typed by an operator, or undefined if not a positive whole number. */
+export function parseDays(text: string): number | undefined {
+  const t = text.trim().replace(/d$/i, '');
+  if (!/^\d+$/.test(t)) return undefined;
+  const n = Number(t);
+  return n > 0 ? n : undefined;
+}
+
+const MIN = 60_000;
+const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
+
+/** How long ago: just now, 5m ago, 3h ago, 2d ago. */
+export function ago(iso: string, now: number): string {
+  const diff = Math.max(0, now - Date.parse(iso));
+  if (diff < 45_000) return 'just now';
+  if (diff < HOUR) return `${Math.max(1, Math.round(diff / MIN))}m ago`;
+  if (diff < DAY) return `${Math.round(diff / HOUR)}h ago`;
+  return `${Math.round(diff / DAY)}d ago`;
+}
+
+/** How long since a moment, to the second for the first minute: just now, 12s ago, 3m ago. */
+export function since(then: number, now: number): string {
+  const secs = Math.max(0, Math.round((now - then) / 1000));
+  if (secs < 5) return 'just now';
+  if (secs < 60) return `${secs}s ago`;
+  return ago(new Date(then).toISOString(), now);
+}
+
+/** How long until: in 3d, in 5h, in 40m, or expired. */
+export function until(iso: string, now: number): string {
+  const diff = Date.parse(iso) - now;
+  if (diff <= 0) return 'expired';
+  if (diff < HOUR) return `in ${Math.max(1, Math.round(diff / MIN))}m`;
+  if (diff < DAY) return `in ${Math.round(diff / HOUR)}h`;
+  // Rounded up: a key made for 15 days is "in 15d", not "in 14d" a millisecond later.
+  return `in ${Math.ceil(diff / DAY)}d`;
+}
+
+/** The days left, rounded down; negative once past. */
+export function daysLeft(iso: string, now: number): number {
+  return Math.floor((Date.parse(iso) - now) / DAY);
+}
+
+/** The days left, rounded up: what a person means by "3 days left". */
+export function daysCeil(iso: string, now: number): number {
+  return Math.ceil((Date.parse(iso) - now) / DAY);
+}
+
+/** 2026-11-17 12:13, in the operator's local time. */
+export function dateTime(iso: string): string {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** 2026-11-17 */
+export function dateOnly(iso: string): string {
+  return dateTime(iso).slice(0, 10);
+}
+
+/** 12:13:07, or the date alone for something from another day. */
+export function clock(iso: string, now: number): string {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, '0');
+  const same = new Date(now).toDateString() === d.toDateString();
+  return same
+    ? `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+    : `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** Fit text to a width, ending in an ellipsis when cut. */
+export function fit(text: string, width: number): string {
+  if (width <= 0) return '';
+  const chars = [...text];
+  if (chars.length <= width) return text;
+  if (width === 1) return '…';
+  return chars.slice(0, width - 1).join('') + '…';
+}
+
+export function padEnd(text: string, width: number): string {
+  const t = fit(text, width);
+  return t + ' '.repeat(Math.max(0, width - [...t].length));
+}
+
+export function padStart(text: string, width: number): string {
+  const t = fit(text, width);
+  return ' '.repeat(Math.max(0, width - [...t].length)) + t;
+}
+
+/** A horizontal bar for a ratio of 0..1: filled and empty cells. */
+export function bar(ratio: number, width: number): { filled: string; empty: string } {
+  const r = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
+  // Any spend at all shows at least one cell, so a small amount is not invisible.
+  const cells = r > 0 ? Math.max(1, Math.round(r * width)) : 0;
+  return { filled: '█'.repeat(cells), empty: '░'.repeat(width - cells) };
+}
+
+export function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}

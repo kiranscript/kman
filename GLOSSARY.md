@@ -60,7 +60,11 @@ _Avoid_: User, admin (too vague)
 
 **Dashboard**:
 The web interface, served by kman itself, for watching keys and responding to leaks.
-_Avoid_: Web UI, console, TUI (the TUI no longer exists)
+_Avoid_: Web UI, console, TUI (the TUI is a separate client; see below)
+
+**TUI**:
+A terminal client of the admin API that watches a running kman. `kman tui` is read-only and part of the binary; the one in `tui/` can also disable, enable, revoke and create virtual keys, and is a separate package. Neither runs the server.
+_Avoid_: Dashboard (the dashboard is the web interface served by kman)
 
 **Exposure**:
 How easy a working virtual key would be to abuse if it leaked: open to every address, never expiring, or unused for 30 days. `kman exposure` lists each finding with the command that fixes it.

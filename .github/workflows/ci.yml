@@ -272,9 +272,49 @@ jobs:
           docker logs systemd 2>&1 | tail -100
           docker exec systemd journalctl --no-pager -n 100 || true
 
+  tui:
+    # ADR 0009: the terminal client builds, type-checks and tests on its own, and its
+    # API client is run against the real binary so its types cannot drift from the API.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Install, type-check, build, test
+        working-directory: tui
+        run: |
+          npm ci
+          npm run typecheck
+          npm run build
+          npm test
+      - name: The client against a real kman
+        working-directory: tui
+        run: |
+          go build -o "$RUNNER_TEMP/kman" ../cmd/kman
+          cfg="$RUNNER_TEMP/cfg"; data="$RUNNER_TEMP/data"
+          "$RUNNER_TEMP/kman" init --config-dir "$cfg" --data-dir "$data" \
+            --admin-listen 127.0.0.1:18081 --proxy-listen 127.0.0.1:18080 --no-save-token > "$RUNNER_TEMP/init.out"
+          token="$(grep -o 'kma_[A-Za-z0-9_-]*' "$RUNNER_TEMP/init.out" | head -1)"
+          echo "::add-mask::$token"
+          "$RUNNER_TEMP/kman" serve --config-dir "$cfg" > "$RUNNER_TEMP/serve.log" 2>&1 &
+          for _ in $(seq 1 50); do curl -fs http://127.0.0.1:18081/admin/v1/openapi.json > /dev/null && break; sleep 0.2; done
+          export KMAN_ADMIN_URL=http://127.0.0.1:18081 KMAN_ADMIN_TOKEN="$token"
+          FAKE=sk-ci-not-a-real-credential "$RUNNER_TEMP/kman" upstream add openai --preset openai --credential-env FAKE --config-dir "$cfg"
+          KMAN_TUI_LIVE_URL="$KMAN_ADMIN_URL" KMAN_TUI_LIVE_TOKEN="$token" npm test -- test/live.test.ts
+
   required:
     if: always()
-    needs: [lint, test, sdk-e2e, race, cross-compile, price-flags, systemd-creds, bench]
+    needs: [lint, test, sdk-e2e, race, cross-compile, price-flags, systemd-creds, bench, tui]
     runs-on: ubuntu-latest
     steps:
       - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3

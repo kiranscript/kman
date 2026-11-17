@@ -453,7 +453,7 @@ All four milestones done, plus:
 
 ## Later, and out of scope
 
-**Later** (not in v1, listed so they aren't lost): keys limited to N uses or claim-once; temporary cap raises that expire; scheduled rotation that writes the new key to a file; a TUI as a thin admin-API client; Together and Mistral realtime STT; GPT-Live over WebRTC; metered batch, files, fine-tune, and multipart routes; a macOS keychain or Windows DPAPI key source behind the key-source seam; hosted apt/yum repositories; Apple notarization and Windows code signing; SLSA Build L3; operator-defined presets.
+**Later** (not in v1, listed so they aren't lost): keys limited to N uses or claim-once; temporary cap raises that expire; scheduled rotation that writes the new key to a file; a TUI as a thin admin-API client (started outside v1 in `tui/`, ADR 0009); Together and Mistral realtime STT; GPT-Live over WebRTC; metered batch, files, fine-tune, and multipart routes; a macOS keychain or Windows DPAPI key source behind the key-source seam; hosted apt/yum repositories; Apple notarization and Windows code signing; SLSA Build L3; operator-defined presets.
 
 **Out of scope for this effort:** the team tier (multiple operators, SSO and RBAC, multi-instance, Postgres, cloud KMS, the team licence); hosted or managed kman; non-HTTP protocols.
 

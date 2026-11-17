@@ -1,0 +1,54 @@
+# kman-tui
+
+A terminal client for a running kman, built with [Ink](https://github.com/vadimdemedes/ink) (React for the terminal). It is a thin client of the admin API: it shows what needs attention, virtual keys and their spend against caps, upstreams and the audit log, and can disable, enable, revoke and create virtual keys. [ADR 0009](../docs/adr/0009-the-tui-is-a-separate-thin-client.md) says why it is a separate package and what it may and may not do.
+
+It does not run the server. Start kman first (`kman serve`), then this.
+
+## Run it
+
+It needs Node 22 or later and a terminal of at least 80×24.
+
+```sh
+cd tui
+npm ci
+npm run build
+node dist/cli.js
+```
+
+Or, without building, `npm run dev`. `--config-dir <dir>` points it at another install.
+
+It finds the admin address and token the way the kman CLI does: the credentials file in the config directory (written by `kman init` or `kman login`), overridden by `KMAN_ADMIN_URL` and `KMAN_ADMIN_TOKEN`. The admin address can be `http://`, `https://` or `unix:/path/to/socket`. It talks only to that address and sends nothing anywhere else.
+
+## Keys
+
+| Key | Does |
+|---|---|
+| `1`–`4`, `←` `→`, `Tab` | switch view: Overview, Keys, Upstreams, Audit |
+| `↑` `↓`, `j` `k`, `PgUp` `PgDn`, `g` `G` | move |
+| `Enter` (Overview) | open the selected key from Needs attention |
+| `/`, `Esc` | filter keys by name, id, tag or upstream, and clear the filter |
+| `n` | create a key |
+| `d`, `e` | disable, enable the selected key (asks y/n) |
+| `x` | revoke the selected key (asks for its name to be typed) |
+| `r` | refresh now (it also refreshes every 3 seconds) |
+| `?` | help |
+| `q`, `Ctrl+C` | quit |
+
+A created key's secret is shown once, on a screen of its own. Only Enter closes it, `c` asks the terminal to copy it (OSC 52, which not every terminal allows), and it is gone from memory when it is closed.
+
+Colour uses the terminal's own 16 colours. `NO_COLOR` turns it off and keeps bold and inverse. Every status has a glyph and a word as well as a colour.
+
+## Test it
+
+```sh
+npm run typecheck
+npm test
+```
+
+The tests run against a fake admin API and need no server. One file, `test/live.test.ts`, runs the client against a real kman and is skipped unless it is pointed at one, which checks that the types in `src/api.ts` still match the real API:
+
+```sh
+KMAN_TUI_LIVE_URL=http://127.0.0.1:8081 KMAN_TUI_LIVE_TOKEN=kma_… npm test
+```
+
+The server needs one upstream with a credential. The test creates a key, disables, enables and revokes it, and leaves it revoked, so use a throwaway install. CI does exactly that.
