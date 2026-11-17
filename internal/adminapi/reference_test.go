@@ -136,7 +136,11 @@ func reference(t *testing.T, raw []byte) string {
 			}
 			r := resp[status].(node)
 			if c, ok := r["content"].(node); ok {
-				fmt.Fprintf(&b, "\nResponse %s: %s.\n", status, typeOf(c["application/json"].(node)["schema"]))
+				if _, file := c["application/octet-stream"]; file {
+					fmt.Fprintf(&b, "\nResponse %s: a file (application/octet-stream).\n", status)
+				} else {
+					fmt.Fprintf(&b, "\nResponse %s: %s.\n", status, typeOf(c["application/json"].(node)["schema"]))
+				}
 			} else {
 				fmt.Fprintf(&b, "\nResponse %s.\n", status)
 			}

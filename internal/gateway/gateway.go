@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"cmp"
 	"crypto/x509"
 	"log/slog"
 	"net/http"
@@ -9,8 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/limiter"
 	"github.com/kirank55/kman/internal/meter"
+	"github.com/kirank55/kman/internal/policy/geoip"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/vault"
@@ -43,6 +46,9 @@ type Options struct {
 	// (kman.yaml's trusted_proxies). With none, the client address is the
 	// connection's.
 	TrustedProxies []netip.Prefix
+	// Geo places a client address by country and ASN. It is nil with no GeoIP
+	// database (geoip in kman.yaml), and then a key locked to countries is refused.
+	Geo Geo
 	// Limiter holds the RPM windows and the invalid-key counts. It defaults to one
 	// with the default bounds, on Now.
 	Limiter *limiter.Limiter
@@ -55,9 +61,16 @@ type Options struct {
 	// Meter keeps every key's spend. Without one nothing is metered, and a key that
 	// must be (one with a spend cap or a model allowlist) is refused rather than let through.
 	Meter *meter.Meter
+	// Events receives one event for every request, however it ends (SPEC §9). It is
+	// never waited on: with a full queue an event is dropped and counted. Without
+	// one, no events are made.
+	Events *events.Bus
 	// OnUsage is told what each response it could read reported, once it has ended.
 	// It is a seam for tests that look at what was read, apart from what it cost.
 	OnUsage func(registry.Route, profiles.Usage)
+
+	// observe is told each request's address and place as it is emitted. It is for tests.
+	observe func(netip.Addr, geoip.Info)
 }
 
 // Gateway is the proxy listener's http.Handler.
@@ -101,6 +114,9 @@ type exchange struct {
 	body  []byte
 	// ip is where the request came from, by the connection or a trusted proxy.
 	ip netip.Addr
+	// geo is where the address is, when a GeoIP database says. It is what the
+	// request's event carries as its country and ASN.
+	geo geoip.Info
 	// usage reads usage from the response as it passes. It is nil before there's a
 	// response, and for one that can't be read or isn't metered. What it holds
 	// stands after a broken response too, when abort is also set.
@@ -117,6 +133,22 @@ type exchange struct {
 	// held is how many bytes of its body the request has counted against the
 	// gateway's MaxBuffered, until it ends.
 	held int64
+
+	// What the event is made of.
+	start time.Time
+	// keyID is the key the request proved it holds, even when the key was then
+	// refused: a request with a bad secret is attributed to no key.
+	keyID string
+	// priority sends the event down the priority lane: a disabled key or a canary.
+	priority bool
+	// canary is set for the use of a canary key, and only for that.
+	canary bool
+	// refused is the code the app was refused with, when it was.
+	refused   code
+	model     string // the model asked for, as the meter read it
+	respBytes int64
+	reported  profiles.Usage // what the response reported, once settled
+	charge    meter.Charge
 }
 
 // refusal is why a stage stopped a request, before anything of a response was
@@ -136,6 +168,7 @@ type stage func(*Gateway, *exchange) *refusal
 // policy, which reads the model from it.
 var pipeline = [...]stage{
 	(*Gateway).guarded,
+	(*Gateway).address,
 	(*Gateway).buffer,
 	(*Gateway).policy,
 	(*Gateway).limit,
@@ -146,10 +179,11 @@ var pipeline = [...]stage{
 // ServeHTTP runs one request through the pipeline. However it ends, even in a
 // panic, its reservation is settled and its event emitted.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	x := exchange{w: w, r: r}
+	x := exchange{w: w, r: r, start: g.opts.Now()}
 	defer g.finish(&x)
 	for _, run := range pipeline {
 		if ref := run(g, &x); ref != nil {
+			x.refused = ref.code
 			if !x.abort {
 				if x.body == nil && r.Body != nil && r.Body != http.NoBody {
 					// What is left of the body is unread. net/http would read it, with no
@@ -187,5 +221,51 @@ func (g *Gateway) finish(x *exchange) {
 	}
 }
 
-// emit will publish the request's event (#46). It runs for every request.
-func (g *Gateway) emit(*exchange) {}
+// maxOperationPath bounds the path an event keeps.
+const maxOperationPath = 256
+
+// emit publishes the request's event (SPEC §9). It runs for every request, and
+// never waits: Emit drops the event when the queue is full. The event holds what
+// happened, never what was said.
+func (g *Gateway) emit(x *exchange) {
+	if g.opts.observe != nil {
+		g.opts.observe(x.ip, x.geo)
+	}
+	if g.opts.Events == nil {
+		return
+	}
+	e := events.Event{
+		Time: x.start, Kind: events.KindRequest, KeyID: x.keyID, ClientIP: x.ip,
+		Method: x.r.Method, Path: x.r.URL.Path, Status: x.status,
+		Latency: g.opts.Now().Sub(x.start), ReqBytes: int64(len(x.body)), RespBytes: x.respBytes,
+		TokensIn: x.reported.InputTokens, TokensOut: x.reported.OutputTokens, TokensCached: x.reported.CachedTokens,
+		TokensCacheWrite: x.reported.CacheWriteTokens, TokensAudioIn: x.reported.AudioInputTokens, TokensAudioOut: x.reported.AudioOutputTokens,
+		Priority: x.priority, Canary: x.canary,
+	}
+	if len(e.Path) > maxOperationPath {
+		e.Path = e.Path[:maxOperationPath]
+	}
+	if x.route.Upstream != nil {
+		e.UpstreamID = x.route.Upstream.ID
+	}
+	// A model is the app's to name, so only a plain id is kept.
+	if m := cmp.Or(x.reported.Model, x.model); safeModel.MatchString(m) {
+		e.Model = m
+	}
+	if x.refused != "" {
+		e.BlockedCode = string(x.refused)
+		if x.status == 0 {
+			e.Status = meanings[x.refused].status
+		}
+		// A request that reached for the upstream and found none is still a forwarded
+		// request, answered by kman.
+		if x.refused != codeUpstreamUnavailable {
+			e.Kind = events.KindBlocked
+		}
+	}
+	if e.Kind != events.KindBlocked && x.res != nil && !x.charge.Unknown {
+		e.CostKnown, e.CostMicro, e.CostEstimated = true, x.charge.Micro, x.charge.Estimated
+	}
+	e.Country, e.ASN = x.geo.Country, int64(x.geo.ASN)
+	g.opts.Events.Emit(e)
+}

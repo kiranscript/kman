@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -36,6 +37,13 @@ type install struct {
 	normalize func([]byte) (int, []byte, error)
 	// spend stands for the meter, when a test shows spend.
 	spend func(keyID, policy string) admin.KeySpend
+	// rand is where new secrets come from; nil is the real source.
+	rand io.Reader
+	// clock, when set, is the clock instead of now: for tests in a synctest
+	// bubble, where time moves by itself.
+	clock func() time.Time
+	// alerts stands for the alert service, when a test shows channels.
+	alerts admin.Alerter
 }
 
 func newInstall(t *testing.T) *install {
@@ -65,12 +73,19 @@ func newInstallWith(t *testing.T, presets []registry.Preset) *install {
 // kman would be with its own presets.
 func (in *install) service(presets []registry.Preset) *admin.Service {
 	return admin.New(admin.Options{
-		Store:           in.store,
-		Now:             func() time.Time { return in.now },
+		Store: in.store,
+		Now: func() time.Time {
+			if in.clock != nil {
+				return in.clock()
+			}
+			return in.now
+		},
 		Vault:           in.vault,
+		Rand:            in.rand,
 		Presets:         presets,
 		NormalizePolicy: func(raw []byte) (int, []byte, error) { return in.normalize(raw) },
 		Spend:           in.spend,
+		Alerts:          in.alerts,
 		Apply: func(c registry.Change) {
 			in.applied = append(in.applied, c)
 			in.reg.Apply(c)

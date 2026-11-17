@@ -1,6 +1,37 @@
 {
   "components": {
     "schemas": {
+      "AddChannelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "slack or webhook.",
+            "type": "string"
+          },
+          "lifecycle_alerts": {
+            "description": "Whether the channel also takes spend and lifecycle warnings. Default true.",
+            "type": "boolean"
+          },
+          "min_severity": {
+            "description": "The lowest severity the channel takes: low, medium, high or critical. Default medium.",
+            "type": "string"
+          },
+          "name": {
+            "description": "1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit, unique among channels not removed.",
+            "type": "string"
+          },
+          "url": {
+            "description": "Where alerts go: a Slack incoming-webhook address, or the webhook's. It is https, or http to this machine. kman seals it and never shows it again.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "url"
+        ],
+        "type": "object"
+      },
       "AddCredentialRequest": {
         "additionalProperties": false,
         "properties": {
@@ -231,6 +262,132 @@
         ],
         "type": "object"
       },
+      "Channel": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "delivered": {
+            "description": "How many alerts it has been sent, until they are pruned.",
+            "type": "integer"
+          },
+          "failed": {
+            "description": "How many alerts were given up on.",
+            "type": "integer"
+          },
+          "host": {
+            "description": "The host of its address, which is all of the address that is shown.",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "slack or webhook.",
+            "type": "string"
+          },
+          "last_error": {
+            "description": "Why the latest failed attempt failed. Never the address.",
+            "type": "string"
+          },
+          "lifecycle_alerts": {
+            "description": "Whether it also takes spend and lifecycle warnings.",
+            "type": "boolean"
+          },
+          "min_severity": {
+            "description": "The lowest severity it takes: low, medium, high or critical.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pending": {
+            "description": "How many alerts wait in the outbox for it.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "host",
+          "min_severity",
+          "lifecycle_alerts",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ChannelList": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/Channel"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "channels"
+        ],
+        "type": "object"
+      },
+      "ChannelTestResult": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "description": "The channel's name.",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why the test alert did not arrive. Never the address.",
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "channel",
+          "ok"
+        ],
+        "type": "object"
+      },
+      "CompromiseCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "secret": {
+            "description": "The new real secret, made at the provider after the leaked one was revoked there. kman seals it and never shows it again.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret"
+        ],
+        "type": "object"
+      },
+      "CompromisedCredential": {
+        "additionalProperties": false,
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/Credential"
+          },
+          "rotated_keys": {
+            "description": "Every virtual key on the credential that was not revoked, oldest first, with its new secret, shown only this once. Each is an app that needs its new key.",
+            "items": {
+              "$ref": "#/components/schemas/RotatedKey"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "credential",
+          "rotated_keys"
+        ],
+        "type": "object"
+      },
       "CreateAdminTokenRequest": {
         "additionalProperties": false,
         "properties": {
@@ -298,6 +455,22 @@
         "required": [
           "token",
           "secret"
+        ],
+        "type": "object"
+      },
+      "CreatedChannel": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "signing_secret": {
+            "description": "For a webhook, the secret that signs each request (kmwhsec_...), shown only this once. A receiver recomputes the signature with it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
         ],
         "type": "object"
       },
@@ -412,6 +585,60 @@
         },
         "required": [
           "error"
+        ],
+        "type": "object"
+      },
+      "Exposure": {
+        "additionalProperties": false,
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ExposureFinding"
+            },
+            "type": "array"
+          },
+          "keys_checked": {
+            "description": "How many keys were looked at: the keys that work now. A disabled, revoked or expired key cannot be abused, and a canary is meant to be left alone.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "findings",
+          "keys_checked"
+        ],
+        "type": "object"
+      },
+      "ExposureFinding": {
+        "additionalProperties": false,
+        "properties": {
+          "fix": {
+            "description": "The kman command that fixes it, ready to run. An open key's has a placeholder to replace with the network the key is used from.",
+            "type": "string"
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "description": "For unused: the start of the last hour in which the key forwarded a request. Absent if it never has.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rule": {
+            "description": "open_to_every_address, never_expires or unused.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "rule",
+          "message",
+          "fix"
         ],
         "type": "object"
       },
@@ -959,6 +1186,104 @@
         ],
         "type": "object"
       },
+      "PruneRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "audit_log": {
+            "description": "Also delete the audit log's entries older than before. The one thing that ever deletes from the audit log. The prune is recorded in the log, and that record stays.",
+            "type": "boolean"
+          },
+          "before": {
+            "description": "Delete what is older than this: events, hourly usage, and alerts delivered before it. Not in the future.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "before"
+        ],
+        "type": "object"
+      },
+      "PruneResult": {
+        "additionalProperties": false,
+        "properties": {
+          "audit_entries": {
+            "description": "Audit log entries deleted. 0 unless audit_log was set.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "before": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "delivered_alerts": {
+            "description": "Alerts deleted that were delivered before the date. Pending and failed alerts are kept.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "events": {
+            "description": "Events deleted.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "hourly_usage": {
+            "description": "Hourly usage rows deleted: those whose hour ended before the date.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "before",
+          "events",
+          "hourly_usage",
+          "delivered_alerts",
+          "audit_entries"
+        ],
+        "type": "object"
+      },
+      "RotateKeyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "grace_seconds": {
+            "description": "How long the old secret keeps working beside the new one, at most 30 days. Absent or 0 ends it at once, on the next request.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "RotatedKey": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Key"
+              }
+            ],
+            "description": "The same key, with the same id, spend, policy and history: only its secret is new."
+          },
+          "previous_valid_until": {
+            "description": "When the old secret stops working. Absent when it stopped at once.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "sdk_env": {
+            "description": "The variable an SDK for its upstream reads the key from.",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The new virtual key (kmn_...). kman keeps only its hash, so it is shown only this once.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "secret"
+        ],
+        "type": "object"
+      },
       "Settings": {
         "additionalProperties": false,
         "properties": {
@@ -973,7 +1298,7 @@
             "type": "integer"
           },
           "soft_budget_defaults": {
-            "description": "The percentages of each spend cap that warn when crossed, rising, for keys that set none. Default 50, 80, 100.",
+            "description": "The percentages of each spend cap or soft budget that raise a warning when crossed, rising, for keys whose policy sets none (soft_budget_percents). Each warns once per day or month. Default 50, 80, 100; an empty list warns for no key that sets none. A change takes effect at the next check, within a minute.",
             "items": {
               "type": "integer"
             },
@@ -1061,6 +1386,45 @@
           "reserved_micro",
           "requests",
           "unmetered_requests"
+        ],
+        "type": "object"
+      },
+      "UpdateStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "description": "Whether Latest is newer than Current.",
+            "type": "boolean"
+          },
+          "checked_at": {
+            "description": "When the last check ran, successful or not.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "current": {
+            "description": "This binary's version, such as v0.1.0, or empty for a build that is not a release.",
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Whether update_check is on in kman.yaml. kman asks the GitHub releases API once a day only when it is.",
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Why the last check failed, if it did. Latest is still what an earlier check found.",
+            "type": "string"
+          },
+          "latest": {
+            "description": "The newest release the last successful check found.",
+            "type": "string"
+          },
+          "url": {
+            "description": "The page of the latest release.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "available"
         ],
         "type": "object"
       },
@@ -1551,6 +1915,177 @@
         "summary": "Read a page of the audit log, oldest entry first"
       }
     },
+    "/admin/v1/backup": {
+      "post": {
+        "operationId": "createBackup",
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Download a consistent copy of the database, made while kman runs; it holds ciphertext only, so it opens only with the master key"
+      }
+    },
+    "/admin/v1/channels": {
+      "get": {
+        "operationId": "listChannels",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List the alert channels, with what each one's outbox holds, never their addresses"
+      },
+      "post": {
+        "operationId": "addChannel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddChannelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedChannel"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Add a Slack or signed-webhook alert channel; a webhook's signing secret is returned only this once"
+      }
+    },
+    "/admin/v1/channels/{ref}": {
+      "delete": {
+        "operationId": "removeChannel",
+        "parameters": [
+          {
+            "description": "The channel's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Remove an alert channel and give up the alerts still waiting for it"
+      }
+    },
+    "/admin/v1/channels/{ref}/test": {
+      "post": {
+        "operationId": "testChannel",
+        "parameters": [
+          {
+            "description": "The channel's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelTestResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Send a test alert to a channel now and say whether it arrived"
+      }
+    },
     "/admin/v1/credentials": {
       "post": {
         "operationId": "addCredential",
@@ -1673,6 +2208,83 @@
           }
         },
         "summary": "Rename a credential or replace its secret"
+      }
+    },
+    "/admin/v1/credentials/{ref}/compromise": {
+      "post": {
+        "operationId": "compromiseCredential",
+        "parameters": [
+          {
+            "description": "The credential's name or id.",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompromiseCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompromisedCredential"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once"
+      }
+    },
+    "/admin/v1/exposure": {
+      "get": {
+        "operationId": "getExposure",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Exposure"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List the keys that work now and would be easy to abuse: open to every address, never expiring, or unused for 30 days, each with the command that fixes it"
       }
     },
     "/admin/v1/keys": {
@@ -1953,6 +2565,55 @@
         "summary": "End a virtual key for good, from the next request; it cannot be undone"
       }
     },
+    "/admin/v1/keys/{id}/rotate": {
+      "post": {
+        "operationId": "rotateKey",
+        "parameters": [
+          {
+            "description": "The key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotateKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotatedKey"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Replace a virtual key's secret and keep the key; the new secret is returned only this once"
+      }
+    },
     "/admin/v1/openapi.json": {
       "get": {
         "operationId": "openapi",
@@ -2170,6 +2831,44 @@
         "summary": "Say how old the built-in price table is, and whether to upgrade"
       }
     },
+    "/admin/v1/prune": {
+      "post": {
+        "operationId": "pruneData",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PruneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PruneResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Delete events, hourly usage and delivered alerts older than a date, and with audit_log the audit log's entries too; the prune is audited"
+      }
+    },
     "/admin/v1/settings": {
       "get": {
         "operationId": "getSettings",
@@ -2232,6 +2931,34 @@
           }
         },
         "summary": "Change some settings; each change is audited"
+      }
+    },
+    "/admin/v1/update": {
+      "get": {
+        "operationId": "getUpdateStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Say whether a newer kman release is known; only an install with update_check on ever asks"
       }
     },
     "/admin/v1/upstreams": {

@@ -34,6 +34,7 @@ func (g *Gateway) reserve(x *exchange) *refusal {
 	}
 	profile := profiles.For(up.Profile)
 	asked := profile.Ask(x.body)
+	x.model = asked.Model
 	res, err := g.opts.Meter.Reserve(g.opts.Now(), meter.Ask{
 		KeyID: key.ID, UpstreamID: up.ID, Preset: up.Preset, MultiplierPPM: up.PriceMultiplierPPM,
 		Meters: profile.Meters(), Metered: asked.Metered, Model: asked.Model, MaxTokens: asked.MaxTokens,
@@ -69,6 +70,7 @@ func (g *Gateway) settle(x *exchange) {
 	var usage profiles.Usage
 	if x.usage != nil {
 		usage = x.usage.Usage()
+		x.reported = usage
 		if g.opts.OnUsage != nil {
 			g.opts.OnUsage(x.route, usage)
 		}
@@ -76,7 +78,7 @@ func (g *Gateway) settle(x *exchange) {
 	if x.res == nil {
 		return
 	}
-	g.opts.Meter.Settle(g.opts.Now(), x.res, meter.Outcome{
+	x.charge = g.opts.Meter.Settle(g.opts.Now(), x.res, meter.Outcome{
 		Status: x.status, Usage: usage, Broken: x.abort,
 		Free: profiles.For(x.route.Upstream.Profile).Free(x.r.URL.Path),
 	})

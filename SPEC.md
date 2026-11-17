@@ -39,7 +39,7 @@ kman is a self-hosted proxy that holds real upstream API keys and hands apps vir
 These hold in every milestone. Each has a test.
 
 1. **The master key never lives in the data directory.** kman refuses to start otherwise ([ADR 0003](docs/adr/0003-master-key-outside-the-data-dir.md)).
-2. **Every change to a running kman goes through the admin API's service layer**, is one store transaction, and is audited with its **actor**. Nothing is dashboard-only. Child keys are the one exception ([ADR 0004](docs/adr/0004-one-mutation-path-nothing-dashboard-only.md)).
+2. **Every change to a running kman goes through the admin API's service layer**, is one store transaction, and is audited with its **actor**. Nothing is dashboard-only. Child keys are the one exception, and `SettleSecrets` housekeeping is the one pass that changes the store with no audit entry; the offline `restore` and `rekey` audit but cannot alert ([ADR 0004](docs/adr/0004-one-mutation-path-nothing-dashboard-only.md)).
 3. **A credential is never shown to an app, an operator, a log, an event, an alert, or a metric** after it is entered. Virtual-key secrets and admin tokens are shown once, at creation.
 4. **Capped or allowlisted keys never forward an unmetered request.**
 5. **The request path takes no locks** and reads an immutable snapshot ([ADR 0006](docs/adr/0006-module-map.md)).
@@ -55,22 +55,22 @@ Fifteen modules, one Go package each under `internal/`, plus the `token` leaf pa
 |---|---|---|
 | `gateway` | `http.Handler` for the proxy listener | The pipeline: authenticate → policy → limit → reserve → forward → settle → emit. Header stripping, redirect blocking, a bounded body buffer. |
 | `profiles` | `Profile`, `RealtimeAdapter` | OpenAI, Anthropic, and generic profiles; realtime adapters; presets as data. |
-| `policy` | `Evaluate(facts, policy) Decision`, pure | Allowlists, locks, model rules, the unmetered rule. |
+| `policy` | `Evaluate(facts, policy) Decision`, pure | Allowlists, locks (`allowed_cidrs`, `allowed_countries`; each lock that is set must hold), model rules, the unmetered rule, and the GeoIP reader (`policy/geoip`, files only, no network). |
 | `limiter` | `Allow(key)`, `AllowInvalid(ip)` | RPM limits and invalid-key throttling, in bounded LRU memory. |
-| `meter` | `Reserve`, `Settle`, `Spend` | All spend: counters, periods, increment flushes, fail-closed, soft-budget crossings. |
+| `meter` | `Reserve`, `Settle`, `Spend` | All spend: counters, periods, increment flushes, fail-closed. |
 | `pricing` | `Estimate`, `Cost` | The **price table** and **price overrides**. |
 | `registry` | `Lookup(keyID)`, `Apply(change)` | The snapshot, swapped atomically, and its generation. |
 | `vault` | `Credential(id) []byte`, `Seal`, offline `Rekey` | Envelope encryption, the wipeable plaintext cache, four key-source adapters. |
 | `store` | `Do(ctx, func(Tx) error)`, typed repos | SQLite, migrations, typed errors (`ErrConflict`, `ErrNotFound`). |
 | `events` | `Emit`, `Subscribe` | A bounded queue with a priority lane, and fan-out. |
 | `detect` | `Observe(event) []Decision` | Baselines, rules, incidents. Returns decisions, mutates nothing. |
-| `alerts` | `Notify(alert)` | The persisted outbox, retries, and the channel adapters. |
+| `alerts` | `AlertAudit(tx, entry)`, `Wake`, `Run`, `RunWatch`, `Check` | The persisted outbox, retries, the channel adapters, and the M1 warning producers: soft-budget crossings and projections (from the spend the meter flushed), expiry, and refused credentials. |
 | `sessions` | `Open`, `CloseKey(keyID)`, child-key mint | Live realtime sessions and in-memory child keys. |
 | `admin` | one command per operation | Store transaction → registry update → audit entry. |
 | `adminapi`, `dashboard`, `cli` | transports over `admin` | Typed DTOs and OpenAPI, templ pages, the one typed client. |
 | `token` | `Kind`, `KeyID`, and the token formats | A leaf: the token types shared by every module, and minting and parsing per ADR 0001. It imports no internal package. |
 
-Import rule: transports import only `admin`. `admin` imports `store`, `registry`, `vault`, `events`, `sessions`. `gateway` imports `registry`, `policy`, `limiter`, `meter`, `vault`, `profiles`, `events`, `sessions`, and never `admin`. Nothing imports a transport. `token` is a leaf that imports no internal package, and any module may import it. `detect` decides; `admin` executes its decisions as actor `system:detect`.
+Import rule: transports import only `admin`. `admin` imports `store`, `registry`, `vault`, `events`, `sessions`. `gateway` imports `registry`, `policy`, `limiter`, `meter`, `vault`, `profiles`, `events`, `sessions`, and never `admin`. `alerts` imports `store` and `events`, and gets what `admin` hands it (the audit entries, in their transaction) through an interface that `admin` defines. Nothing imports a transport. `token` is a leaf that imports no internal package, and any module may import it. `detect` decides; `admin` executes its decisions as actor `system:detect`.
 
 ## 3. Install, first run, and configuration
 
@@ -104,7 +104,7 @@ export OPENAI_BASE_URL=http://127.0.0.1:8080/v1 OPENAI_API_KEY=kmn_…
 then optionally `kman dashboard` and `kman canary create`. Plain `kman` prints a status summary and names the next command at every stage.
 
 **Configuration** splits in two:
-- `kman.yaml`, read at startup only: listeners, `data_dir`, `key_source`, `trusted_proxies`, GeoIP database path, `retention`, `update_check`, `dashboard.url`, `allow_key_in_data_dir`, TLS for listeners.
+- `kman.yaml`, read at startup only: listeners, `data_dir`, `key_source`, `trusted_proxies`, GeoIP database paths (`geoip.country_db`, `geoip.asn_db`), `retention`, `update_check`, `dashboard.url`, `allow_key_in_data_dir`, TLS for listeners.
 - The `settings` table, changed while running through the admin API and audited: maximum key lifetime, default key TTL (90 days), `spend_timezone` (UTC), install-wide detection thresholds, soft-budget defaults.
 
 **`kman demo`** runs a throwaway install in a temp directory with an in-process mock upstream, seeds a week of compressed traffic that sets off the incidents kman exists for, and opens the dashboard. It shows a "DEMO" banner everywhere, picks free ports, sends nothing off the machine, deletes itself on exit, and refuses to run against a real config.
@@ -228,7 +228,7 @@ The default LLM allowlists exclude batch, files, fine-tune, and multipart audio 
   - Channels: Slack and signed webhook in M1; Discord and ntfy in M2. A webhook can bridge to anything else.
   - Each channel has `min_severity` (default medium) and a toggle for spend and lifecycle warnings (default on).
   - Contents: key name and id, severity, rules, evidence, the incident id, and copy-paste CLI commands. Never a secret or request content. No action links; a deep link to the incident page only if `dashboard.url` is set.
-- M1 producers: the audit log, soft budgets, and credential and expiry warnings.
+- M1 producers: the audit log, soft budgets, and credential and expiry warnings. The code goes beyond that list with the **priority lane's** alerts: the use of a disabled key (high) and of a canary key (critical). They name the key and where the request came from, and never the request's path or anything else it said.
 - Prometheus metrics are served on the admin listener at `/metrics`, behind the admin token. An opt-in `metrics_listen` serves them without auth for scrapers.
 
 ## 10. Detection and incidents
@@ -315,6 +315,7 @@ The full table-by-table schema is in [the schema ticket](https://github.com/kira
 - Spend is `spend_daily`, written only as increments. `usage_hourly` is incremented with each event batch. The audit log is append-only, enforced by a trigger.
 - **Never persisted:** reservations, limiter windows, child keys, live sessions, login links, plaintext secrets. **Rebuilt at startup:** the registry snapshot, detection's rolling windows (from the last 24 h of events), and month-to-date spend.
 - **Retention defaults:** events 30 days, hourly usage 400 days, daily spend, incidents, and the audit log forever, the alert outbox 30 days after delivery. `retention: keep_everything` disables pruning. `kman prune --before <date>` is always available and audited, including a guarded prune of the audit log.
+- **Known gap:** the `budget_alerts` table (the periods a budget warning has already been sent for) has no retention and grows by a few rows per key per period.
 - **Fixtures:** each release tag commits `internal/store/fixtures/<tag>.db` from a deterministic generator. A migration test upgrades every past fixture.
 
 ## 15. Release and supply chain
@@ -379,7 +380,7 @@ Put real keys behind kman and kill a leak.
 7. **Security review:** one focused review of everything `v0.1.0` ships ([#59](https://github.com/kirank55/kman/issues/59)).
 8. **Ship:** the release pipeline, `install.sh`, the image and Compose example, the Homebrew formula and packages, `README`, quickstart, operator guide, `SECURITY.md`, `THREAT-MODEL.md`, the quickstart CI test, the `v0.1.0` fixture.
 
-**Deferred past `v0.1.0`** (these sections of the spec still describe where kman is going, not what `v0.1.0` does): CIDR and country locks ([#43](https://github.com/kirank55/kman/issues/43)); key rotation and credential compromise ([#45](https://github.com/kirank55/kman/issues/45)); events, `usage_hourly` and `/metrics` ([#46](https://github.com/kirank55/kman/issues/46)); the alert outbox and channels ([#47](https://github.com/kirank55/kman/issues/47)); soft budgets and warnings ([#48](https://github.com/kirank55/kman/issues/48)); `scan` and `exposure` ([#49](https://github.com/kirank55/kman/issues/49)); `backup`, `restore`, `prune` and retention ([#50](https://github.com/kirank55/kman/issues/50)). M2 needs events and alerts, so #46 and #47 return before it starts.
+**Shipped after the `v0.1.0` cut.** The first release left these out, and they have all since been implemented, so the sections that describe them describe what kman now does: CIDR and country locks ([#43](https://github.com/kirank55/kman/issues/43)); key rotation and credential compromise ([#45](https://github.com/kirank55/kman/issues/45)); events, `usage_hourly` and `/metrics` ([#46](https://github.com/kirank55/kman/issues/46)); the alert outbox and channels ([#47](https://github.com/kirank55/kman/issues/47)); soft budgets and warnings ([#48](https://github.com/kirank55/kman/issues/48)); `scan` and `exposure` ([#49](https://github.com/kirank55/kman/issues/49)); `backup`, `restore`, `prune` and retention ([#50](https://github.com/kirank55/kman/issues/50)). They are in the changelog's Unreleased section, not in a tagged release yet, and the `v0.1.0` release notes and [what `v0.1.0` leaves out](docs/v0.1.0-scope.md) still describe the first release as it was. M2, which needs events and alerts, can start.
 
 **Done when:**
 - The quickstart test passes on Linux and macOS, word for word from the docs.

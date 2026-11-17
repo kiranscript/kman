@@ -194,6 +194,9 @@ type Charge struct {
 	// Estimated says it is the reservation, charged because the real cost is unknown.
 	Estimated bool
 	Model     string // the model charged, when it was priced by one
+	// Unknown says the cost can't be known: the model has no price and the
+	// response reported none. Micro is then zero, which is not a cost of zero.
+	Unknown bool
 }
 
 // Settle replaces a reservation with what the request cost, and says what that
@@ -221,6 +224,7 @@ func (m *Meter) Settle(now time.Time, r *Reservation, o Outcome) Charge {
 			c = Charge{Micro: max(o.Usage.ReportedMicro, 0)}
 		} else {
 			counted = false
+			c.Unknown = true
 			r.win.countUnmetered()
 		}
 	case o.Broken:

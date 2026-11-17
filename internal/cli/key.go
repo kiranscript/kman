@@ -13,7 +13,7 @@ import (
 )
 
 func cmdKey(ctx context.Context, c *call) error {
-	sub, err := c.sub("<create|list|show|update|disable|enable|revoke> ...", "create", "list", "show", "update", "disable", "enable", "revoke")
+	sub, err := c.sub("<create|list|show|update|disable|enable|revoke|rotate> ...", "create", "list", "show", "update", "disable", "enable", "revoke", "rotate")
 	if err != nil {
 		return err
 	}
@@ -26,6 +26,8 @@ func cmdKey(ctx context.Context, c *call) error {
 		return keyShow(ctx, c)
 	case "disable", "enable", "revoke":
 		return keyLifecycle(ctx, c, sub)
+	case "rotate":
+		return keyRotate(ctx, c)
 	}
 	return keyUpdate(ctx, c)
 }

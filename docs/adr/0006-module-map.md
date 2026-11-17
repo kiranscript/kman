@@ -5,6 +5,7 @@ kman is split into deep modules, one Go package per module under `internal/`. Th
 - **Transports** (`adminapi`, `dashboard`, `cli`) import only `admin`. Nothing imports a transport.
 - **`admin`** is the one mutation path (ADR 0004). It imports `store`, `registry`, `vault`, `events`, and `sessions`. Each command runs one store transaction, then publishes the change to the registry, then records an audit entry carrying the actor.
 - **`gateway`** is the proxy listener. It imports `registry`, `policy`, `limiter`, `meter`, `vault`, `profiles`, `events`, and `sessions`, and never imports `admin`.
+- **`alerts`** imports `store` and `events`. `admin` imports neither it nor its types: it defines a small `Alerter` interface that the composition root fills with the alerts service, and calls it in each command's transaction, so an audit entry and its alert commit together. Delivery has a goroutine per channel, so one that hangs delays no other.
 - **`token`** is a leaf package holding the token types (ADR 0001) that several modules share: `gateway` parses tokens, `admin` mints them, `sessions` mints child keys. It imports no internal package, and any module may import it, without counting against the lists above.
 
 The structural choices that would surprise a reader:

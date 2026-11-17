@@ -227,6 +227,9 @@ func (s *Store) tighten(path string, want os.FileMode) error {
 	return nil
 }
 
+// Dir is the data directory the database is in.
+func (s *Store) Dir() string { return filepath.Dir(s.path) }
+
 // Close closes the database. SQLite checkpoints the WAL into the database
 // file as the last connection closes.
 func (s *Store) Close() error {

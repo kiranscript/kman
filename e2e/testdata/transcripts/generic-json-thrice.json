@@ -1,0 +1,17 @@
+{
+  "note": "Written by hand for the generic profile: there is no real service behind it to record. Three identical answers, for tests that rotate a key and use both its secrets.",
+  "exchanges": [
+    {
+      "request": {"method": "POST", "path": "/v1/things"},
+      "response": {"status": 201, "headers": {"Content-Type": ["application/json"]}, "chunks": ["{\"id\":\"thing_1\"}\n"]}
+    },
+    {
+      "request": {"method": "POST", "path": "/v1/things"},
+      "response": {"status": 201, "headers": {"Content-Type": ["application/json"]}, "chunks": ["{\"id\":\"thing_2\"}\n"]}
+    },
+    {
+      "request": {"method": "POST", "path": "/v1/things"},
+      "response": {"status": 201, "headers": {"Content-Type": ["application/json"]}, "chunks": ["{\"id\":\"thing_3\"}\n"]}
+    }
+  ]
+}

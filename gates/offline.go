@@ -3,6 +3,7 @@ package gates
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -13,10 +14,13 @@ import (
 var networked = []string{"net", "net/http", "crypto/tls", "os/exec"}
 
 // Deps returns everything pattern's package depends on, itself included,
-// without its tests.
+// without its tests. It lists for linux whatever the host: on Windows the
+// operating-system shim golang.org/x/sys/windows imports net, which says
+// nothing about whether the package itself can reach the network.
 func Deps(dir, pattern string) ([]string, error) {
 	cmd := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", pattern)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOOS=linux")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -26,13 +30,19 @@ func Deps(dir, pattern string) ([]string, error) {
 	return strings.Fields(string(out)), nil
 }
 
-// CheckOffline reports each dependency of a package that could reach the
-// network.
+// CheckOffline reports each dependency of the pricing package that could reach
+// the network.
 func CheckOffline(pkg string, deps []string) []Violation {
+	return CheckOfflineBecause(pkg, deps, "price data is never fetched at runtime (ADR 0007)")
+}
+
+// CheckOfflineBecause reports each dependency of a package that could reach the
+// network, and gives why it may not.
+func CheckOfflineBecause(pkg string, deps []string, why string) []Violation {
 	var vs []Violation
 	for _, d := range deps {
 		if slices.Contains(networked, d) {
-			vs = append(vs, Violation{pkg, "depends on " + d + "; price data is never fetched at runtime (ADR 0007)"})
+			vs = append(vs, Violation{pkg, "depends on " + d + "; " + why})
 		}
 	}
 	return vs

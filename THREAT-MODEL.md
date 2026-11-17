@@ -42,7 +42,7 @@ The review checked each of SPEC §1's eight invariants against the code and by r
 | 3 | A credential is never shown to an app, an operator, a log, an event or a metric; virtual-key secrets and admin tokens are shown once | A planted-secrets session searched every output, response, file and log for each secret and its fragments, and found nothing outside the places they belong. The one deliberate exception is a credential's last four characters (L-1). | `e2e/secrets_test.go`; the caveats are M-1 and L-1. |
 | 4 | A capped or allowlisted key never forwards an unmetered request | Probes with duplicate and re-cased `model`, escaped keys, non-string models, compressed and non-JSON bodies, and bodiless GETs were each refused as `unmetered_request` or read to the same model the upstream will read. | Regression tests in the gateway, the meter and end to end. Residual risk: M-2, M-3. |
 | 5 | The request path takes no locks and reads an immutable snapshot | True of the registry's lookup. The limiter, the meter's day rollover and some pools take small locks or atomics (L-6). | Lookup tests for no locks, no allocations and whole snapshots only. |
-| 6 | kman makes no network call the operator did not configure or ask for | A recorded session of a bare install sent **0 packets**; with one OpenAI upstream and one request it sent 4 DNS packets for the upstream's name and nothing else. | `scripts/record-network.sh` (Linux; run before each release). |
+| 6 | kman makes no network call the operator did not configure or ask for | A recorded session of a bare install sent **0 packets**; alerts reach the network only through a channel the operator added; with one OpenAI upstream and one request it sent 4 DNS packets for the upstream's name and nothing else. | `scripts/record-network.sh` (Linux; run before each release). |
 | 7 | Price data changes only with a release or an audited override | The table is embedded in the binary; overrides are admin commands with audit entries. The release-side risk is M-7. | Tests that pricing cannot reach the network. |
 | 8 | No listener is public by default; plain HTTP on a non-loopback admin address is refused | Both listeners bind `127.0.0.1`; an admin Unix socket is `0600`. The proxy listener, though, can be bound off loopback in plain HTTP with no warning (L-3). | Listener tests. |
 
@@ -91,9 +91,21 @@ The review checked each of SPEC §1's eight invariants against the code and by r
 
 ### The admin API
 
-**What kman does.** Bearer tokens only (`Authorization: Bearer kma_…`, never a cookie); the token is looked up by its hash on every request, so a revoked token is refused at once; `Cache-Control: no-store`; bodies are capped at 1 MiB and unknown fields are refused; no CORS, and every route needs a non-simple header, so a web page cannot call it blind. The listener is `127.0.0.1`, or a `0600` Unix socket; plain HTTP off loopback is refused unless TLS or `allow_plain_http` says otherwise. Every change is audited with the token's name.
+**What kman does.** Bearer tokens only (`Authorization: Bearer kma_…`, never a cookie); the token is looked up by its hash on every request, so a revoked token is refused at once; `Cache-Control: no-store`; bodies are capped at 1 MiB and unknown fields are refused; no CORS, and every route needs a non-simple header, so a web page cannot call it blind. The listener is `127.0.0.1`, or a `0600` Unix socket; plain HTTP off loopback is refused unless TLS or `allow_plain_http` says otherwise. Every change is audited with the token's name. `/metrics` on the admin listener needs an admin token too; the opt-in `metrics_listen` serves it with no authentication, so keep it on loopback or a private network.
 
 **What is left.** The owner admin token is kept in `credentials.json` (`0600`) by design, so anyone who can read that file as you is the owner. `kman login` warns on plain HTTP to a remote host and proceeds (L-7). Keep the admin listener off the network ([TLS and reverse proxies](docs/operator-guide/tls.md)).
+
+### Alert channels
+
+**What kman does.** An alert is the one thing kman sends on its own, and only to a channel the operator added (invariant 6, [ADR 0008](docs/adr/0008-no-network-call-unless-configured.md)): with none, a test fails if alerts touch the network at all. A channel's address is sealed like a credential, since a Slack address is itself a secret: it is read from a prompt, a pipe or an environment variable and never an argument, it is shown nowhere after entry except its host, and the errors kman records or prints never quote it. The address must be `https` (plain `http` only to loopback), holds no login, and kman follows no redirect, so an alert does not end up somewhere the operator did not name. An alert is built from names, ids, counts and addresses and has no field for a secret or for request content; the audit entry's before and after are not copied into it. A webhook is signed with HMAC-SHA256 over its timestamp and body, under a secret shown once. Each channel has its own delivery worker and a 10 second timeout, so a channel that hangs delays no other. The audit log's alert is queued in the transaction of the change, so a committed change is never without its alert.
+
+**What is left.**
+
+- **Alerts are at least once.** A receiver may see a delivery twice and must drop a repeated `X-Kman-Delivery`.
+- **An alert is not authentication.** Slack and the receiver of an unsigned address take what arrives: only a webhook is signed, and a receiver has to check the signature and the timestamp.
+- **A key's name and id travel to the channel.** They are labels, not secrets, but a Slack workspace will hold them. The outbox holds delivered alerts, with the same content, for the retention period (30 days).
+- **A failing alert pipeline is silent to the app** and visible only in `kman channel list` and the log. Watch for a channel with alerts pending.
+- **A request kman never saw cannot alert.** Alerts follow the audit log and the priority lane; the detection rules are not in this release. Spend, expiry and refused-credential warnings are alerts too, with the same content rules, and a warning can come up to a minute after the spend that raised it.
 
 ### The supply chain
 
@@ -119,7 +131,7 @@ kman is only as safe as these hold:
 
 ## What v0.1.0 does not do
 
-Detection, alerts, key rotation, address locks, soft budgets, events and metrics, the dashboard, leak scanning, backup and restore commands, and realtime: [the list, and what to do meanwhile](docs/v0.1.0-scope.md). The review did not cover Windows or macOS behaviour, whether the systemd and Docker guides run end to end (no CI job runs `rekey` in them), or what a live provider really sends: the test transcripts are written from the SDKs' types, not captured.
+Detection, soft budgets and expiry warnings, address locks, the dashboard, leak scanning, backup and restore commands, and realtime (later builds add all but detection, the dashboard and realtime): [the list, and what to do meanwhile](docs/v0.1.0-scope.md). The review did not cover Windows or macOS behaviour, whether the systemd and Docker guides run end to end (no CI job runs `rekey` in them), or what a live provider really sends: the test transcripts are written from the SDKs' types, not captured.
 
 ## How this was checked, and what to rerun
 

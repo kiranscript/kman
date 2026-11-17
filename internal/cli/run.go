@@ -40,6 +40,9 @@ type Env struct {
 	// Initialised reports whether kman init has set up this machine, for the
 	// status summary. Nil means it has not.
 	Initialised func() bool
+	// Now is the time, for the sample data of kman tui --demo. Nil means the
+	// zero time.
+	Now func() time.Time
 }
 
 // command is one online command.
@@ -50,6 +53,7 @@ type command struct {
 }
 
 var commands = []command{
+	{"tui", "browse keys, exposure, audit and upstreams in a terminal", cmdDashboard},
 	{"login", "save an admin URL and token for the commands on this machine", cmdLogin},
 	{"logout", "remove the saved admin URL and token", cmdLogout},
 	{"admin-token", "create, list, rotate or revoke admin tokens", cmdAdminToken},
@@ -59,6 +63,10 @@ var commands = []command{
 	{"upstream", "add, list, show, update, remove or sync upstreams", cmdUpstream},
 	{"credential", "add, update or remove credentials", cmdCredential},
 	{"key", "create, list, show, update, disable, enable or revoke virtual keys", cmdKey},
+	{"backup", "write a consistent copy of the database, while kman runs", backupFile},
+	{"prune", "delete events, hourly usage and delivered alerts older than a date, and the audit log's entries too if asked", pruneData},
+	{"exposure", "list the keys that would be easy to abuse if they leaked, each with the command that fixes it", cmdExposure},
+	{"channel", "add, list, test or remove alert channels", cmdChannel},
 }
 
 // Commands names the online commands Run serves, for kman's usage line.

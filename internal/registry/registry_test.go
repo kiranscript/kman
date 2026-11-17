@@ -276,3 +276,18 @@ func TestAPolicyKmanCannotReadRequiresMeteringSoItCanNeverGoFree(t *testing.T) {
 		t.Error("an unreadable policy must say why and require metering")
 	}
 }
+
+func TestKeysListsEveryKeyOfASnapshot(t *testing.T) {
+	r := registry.New()
+	r.Apply(registry.Change{Generation: 1, Keys: []registry.Key{{ID: "a", PolicyVersion: 1}, {ID: "b", PolicyVersion: 1}, {ID: "c", PolicyVersion: 1}}})
+	got := map[string]bool{}
+	for k := range r.Snapshot().Keys() {
+		got[k.ID] = true
+	}
+	if len(got) != 3 || !got["a"] || !got["b"] || !got["c"] {
+		t.Errorf("Keys = %v", got)
+	}
+	for range r.Snapshot().Keys() {
+		break // a caller may stop early
+	}
+}

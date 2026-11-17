@@ -3,6 +3,8 @@ package gateway
 import (
 	"net/http"
 	"net/netip"
+
+	"github.com/kirank55/kman/internal/policy/geoip"
 )
 
 // WriteError writes the error for a code, for the test of the error table:
@@ -14,3 +16,7 @@ func ClientIP(r *http.Request, trusted []netip.Prefix) netip.Addr { return clien
 
 // Buffered is how many bytes of request bodies the gateway holds now.
 func (g *Gateway) Buffered() int64 { return g.buffered.Load() }
+
+// ObserveEmit has the gateway tell f each request's address and place as the
+// request's event is emitted.
+func ObserveEmit(o *Options, f func(netip.Addr, geoip.Info)) { o.observe = f }

@@ -28,11 +28,15 @@ func OpenAPI() ([]byte, error) {
 		paths[path][strings.ToLower(method)] = op
 	}
 	for _, rt := range routes {
+		success := func() map[string]any { return jsonResponse(http.StatusText(rt.status), g.of(rt.resp)) }
+		if rt.download != nil {
+			success = func() map[string]any { return fileResponse(http.StatusText(rt.status)) }
+		}
 		op := map[string]any{
 			"operationId": rt.id,
 			"summary":     rt.summary,
 			"responses": map[string]any{
-				fmt.Sprint(rt.status): jsonResponse(http.StatusText(rt.status), g.of(rt.resp)),
+				fmt.Sprint(rt.status): success(),
 				"default":             jsonResponse("An error", g.of(reflect.TypeFor[ErrorResponse]())),
 			},
 		}
@@ -90,6 +94,14 @@ func jsonResponse(desc string, schema any) map[string]any {
 	return map[string]any{
 		"description": desc,
 		"content":     map[string]any{"application/json": map[string]any{"schema": schema}},
+	}
+}
+
+// fileResponse is a response that is a file, sent as it is.
+func fileResponse(desc string) map[string]any {
+	return map[string]any{
+		"description": desc,
+		"content":     map[string]any{"application/octet-stream": map[string]any{"schema": map[string]any{"type": "string", "format": "binary"}}},
 	}
 }
 

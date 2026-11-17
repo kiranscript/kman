@@ -285,3 +285,23 @@ func TestTheDayResetsButTheMonthCarriesOn(t *testing.T) {
 		t.Errorf("a reservation open across midnight was left held: %+v", got)
 	}
 }
+
+// An unpriced model's cost is unknown, which is not a cost of zero: the charge
+// says so, for the event of the request. A cost the response reported is known.
+func TestAChargeForAModelWithNoPriceIsUnknownUnlessTheResponseReportedACost(t *testing.T) {
+	m, _ := newMeter(t)
+	a := ask("k")
+	a.Model = "no-such-model"
+	r, err := m.Reserve(t0, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := m.Settle(t0, r, ok(200, usage())); !c.Unknown || c.Micro != 0 {
+		t.Errorf("charge %+v, want an unknown cost", c)
+	}
+	r, _ = m.Reserve(t0, a)
+	reported := meter.Outcome{Status: 200, Usage: profiles.Usage{Seen: true, ReportedCost: true, ReportedMicro: 42}}
+	if c := m.Settle(t0, r, reported); c.Unknown || c.Micro != 42 {
+		t.Errorf("charge %+v, want the reported 42", c)
+	}
+}

@@ -42,6 +42,7 @@ type API interface {
 	AddCredential(ctx context.Context, req AddCredentialRequest) (Credential, error)
 	UpdateCredential(ctx context.Context, req CredentialUpdate) (Credential, error)
 	RemoveCredential(ctx context.Context, req CredentialRef) (Credential, error)
+	CompromiseCredential(ctx context.Context, req CompromiseCredentialRequest) (CompromisedCredential, error)
 
 	CreateKey(ctx context.Context, req CreateKeyRequest) (CreatedKey, error)
 	ListKeys(ctx context.Context, req KeyQuery) (KeyList, error)
@@ -50,12 +51,25 @@ type API interface {
 	DisableKey(ctx context.Context, req KeyRef) (Key, error)
 	EnableKey(ctx context.Context, req KeyRef) (Key, error)
 	RevokeKey(ctx context.Context, req KeyRef) (Key, error)
+	RotateKey(ctx context.Context, req RotateKeyRequest) (RotatedKey, error)
 
 	ListPrices(ctx context.Context, req PriceQuery) (PriceList, error)
 	PriceDataStatus(ctx context.Context) (PriceDataStatus, error)
 	SetPriceOverride(ctx context.Context, req PriceOverrideSet) (PriceOverride, error)
 	RemovePriceOverride(ctx context.Context, req PriceOverrideRef) (PriceOverride, error)
 	ImportPriceOverrides(ctx context.Context, req PriceOverrideImport) (PriceOverrideImportResult, error)
+
+	Exposure(ctx context.Context) (Exposure, error)
+
+	Backup(ctx context.Context) (Download, error)
+	Prune(ctx context.Context, req PruneRequest) (PruneResult, error)
+
+	UpdateStatus(ctx context.Context) (UpdateStatus, error)
+
+	AddChannel(ctx context.Context, req AddChannelRequest) (CreatedChannel, error)
+	ListChannels(ctx context.Context) (ChannelList, error)
+	TestChannel(ctx context.Context, req ChannelRef) (ChannelTestResult, error)
+	RemoveChannel(ctx context.Context, req ChannelRef) (Channel, error)
 }
 
 var _ API = (*Service)(nil)
@@ -95,6 +109,14 @@ type Options struct {
 	// from its policy as stored. The composition root adapts the meter, which
 	// admin may not import. Nil shows no spend, for what runs no request path.
 	Spend func(keyID, policy string) KeySpend
+	// Alerts is the alert service: every audit entry is handed to it in the
+	// transaction that records it, and `channel test` sends through it. The
+	// composition root passes the alerts module, which admin may not import.
+	// Nil queues no alerts, for init and tools that run no alerts.
+	Alerts Alerter
+	// Update reports what the opt-in update check has learned. The composition
+	// root passes it only when update_check is on; nil says the check is off.
+	Update func() UpdateStatus
 }
 
 // Service runs the admin commands.
@@ -109,16 +131,22 @@ type Service struct {
 	policy  func(raw []byte) (int, []byte, error)
 	publish func([]PriceOverride) error
 	spend   func(keyID, policy string) KeySpend
+	alerts  Alerter
+	update  func() UpdateStatus
 
 	// publishing holds a command from its transaction to its publish, so
 	// memory sees commands in the order they committed. The request path
 	// never takes it.
 	publishing sync.Mutex
+
+	// settle wakes RunSettling after a rotation.
+	settle chan struct{}
 }
 
 // New returns the admin service over opts.Store.
 func New(opts Options) *Service {
-	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices, spend: opts.Spend}
+	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices, spend: opts.Spend, alerts: opts.Alerts, update: opts.Update}
+	s.settle = make(chan struct{}, 1)
 	if s.rand == nil {
 		s.rand = rand.Reader
 	}
@@ -193,9 +221,17 @@ func (s *Service) commandWith(ctx context.Context, fx *effects, fn func(tx *stor
 			if err != nil {
 				return err
 			}
-			if _, err := tx.AppendAudit(store.AuditEntry{TS: now, Actor: c.Actor, Action: e.action,
-				TargetKind: e.kind, TargetID: e.id, BeforeJSON: before, AfterJSON: after, ClientIP: c.ClientIP}); err != nil {
+			entry := store.AuditEntry{TS: now, Actor: c.Actor, Action: e.action,
+				TargetKind: e.kind, TargetID: e.id, BeforeJSON: before, AfterJSON: after, ClientIP: c.ClientIP}
+			if entry.ID, err = tx.AppendAudit(entry); err != nil {
 				return err
+			}
+			// The audit log is an alert producer (SPEC §9): the alert is queued in
+			// this transaction, so it is never lost with a change that committed.
+			if s.alerts != nil {
+				if err := s.alerts.AlertAudit(tx, entry); err != nil {
+					return err
+				}
 			}
 		}
 		published = true
@@ -218,6 +254,9 @@ func (s *Service) commandWith(ctx context.Context, fx *effects, fn func(tx *stor
 	s.apply(fx.change)
 	for _, id := range fx.wipe {
 		s.vault.Delete(id)
+	}
+	if s.alerts != nil {
+		s.alerts.Wake() // after the secrets are cached, which the dispatcher needs
 	}
 	return putErr
 }
@@ -259,6 +298,13 @@ func (s *Service) Load(ctx context.Context) error {
 			change.Credentials = append(change.Credentials, publishedCredential(c))
 			sealed = append(sealed, sealedSecret{c.ID, sealedOf(c)})
 		}
+		channels, err := tx.AlertChannels()
+		if err != nil {
+			return err
+		}
+		for _, c := range channels {
+			sealed = append(sealed, sealedSecret{c.ID, sealedOfChannel(c)})
+		}
 		keys, err := tx.Keys()
 		if err != nil {
 			return err
@@ -278,7 +324,7 @@ func (s *Service) Load(ctx context.Context) error {
 	}
 	for _, p := range sealed {
 		if err := s.vault.Put(p.id, p.sealed); err != nil {
-			return fmt.Errorf("load credential %s: %w", p.id, err)
+			return fmt.Errorf("load secret %s: %w", p.id, err)
 		}
 	}
 	if err := s.publish(overrides); err != nil {

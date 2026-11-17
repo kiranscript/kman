@@ -168,6 +168,11 @@ func (c *client) PriceDataStatus(ctx context.Context) (admin.PriceDataStatus, er
 	return out, c.do(ctx, "GET", "/prices/status", nil, nil, &out)
 }
 
+func (c *client) Exposure(ctx context.Context) (admin.Exposure, error) {
+	var out admin.Exposure
+	return out, c.do(ctx, "GET", "/exposure", nil, nil, &out)
+}
+
 func (c *client) SetPriceOverride(ctx context.Context, req admin.PriceOverrideSet) (admin.PriceOverride, error) {
 	var out admin.PriceOverride
 	return out, c.do(ctx, "PUT", "/price-overrides", nil, req, &out)
