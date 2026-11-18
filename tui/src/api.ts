@@ -95,8 +95,32 @@ export interface Settings {
 export interface CreateKeyInput {
   name?: string;
   upstream: string;
+  /** A credential's name. Needed when the upstream has more than one. */
+  credential?: string;
   ttl_seconds?: number;
   policy?: KeyPolicy;
+}
+
+/** What one client address did with a key (GET /keys/{id}/clients). */
+export interface KeyClient {
+  address: string;
+  requests: number;
+  blocked: number;
+  first_seen: string;
+  last_seen: string;
+  country?: string;
+  asn?: number;
+  /** The known cost of its requests, in microdollars. */
+  cost_micro: number;
+  /** Forwarded requests whose cost is not known, which cost_micro leaves out. */
+  unmetered_requests?: number;
+}
+
+/** The addresses a key was used from, newest first; `total` can be more than are listed. */
+export interface KeyClients {
+  key_id: string;
+  clients: KeyClient[];
+  total: number;
 }
 
 export interface CreatedKey {
@@ -139,6 +163,11 @@ export interface AdminClient {
   disableKey(id: string): Promise<Key>;
   enableKey(id: string): Promise<Key>;
   revokeKey(id: string): Promise<Key>;
+  /**
+   * The client addresses a key was used from. Refused with `conflict` until the install turns
+   * on expose_client_addresses: an address is personal data.
+   */
+  keyClients(id: string): Promise<KeyClients>;
 }
 
 const TIMEOUT_MS = 5000;
@@ -197,10 +226,14 @@ export function createClient(conn: Connection): AdminClient {
       return (await request<{ actor: string }>('GET', '/admin/v1/whoami')).actor;
     },
     async listKeys() {
-      return (await request<{ keys: Key[] }>('GET', '/admin/v1/keys')).keys ?? [];
+      const keys = (await request<{ keys: Key[] | null }>('GET', '/admin/v1/keys')).keys ?? [];
+      // The server sends a key with no tags as null.
+      return keys.map((k) => ({ ...k, tags: k.tags ?? [], policy: k.policy ?? {} }));
     },
     async listUpstreams() {
-      return (await request<{ upstreams: Upstream[] }>('GET', '/admin/v1/upstreams')).upstreams ?? [];
+      const list = (await request<{ upstreams: Upstream[] | null }>('GET', '/admin/v1/upstreams')).upstreams ?? [];
+      // The server leaves out `credentials` for an upstream that has none.
+      return list.map((u) => ({ ...u, credentials: u.credentials ?? [], path_allowlist: u.path_allowlist ?? [] }));
     },
     async latestAudit(limit) {
       const page = await request<{ entries: AuditEntry[] }>(
@@ -215,6 +248,10 @@ export function createClient(conn: Connection): AdminClient {
     disableKey: (id) => request<Key>('POST', `${keyPath(id)}/disable`),
     enableKey: (id) => request<Key>('POST', `${keyPath(id)}/enable`),
     revokeKey: (id) => request<Key>('POST', `${keyPath(id)}/revoke`),
+    async keyClients(id) {
+      const got = await request<KeyClients>('GET', `${keyPath(id)}/clients`);
+      return { ...got, clients: got.clients ?? [] };
+    },
   };
 }
 

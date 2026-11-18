@@ -621,6 +621,18 @@ usage: kman key show <name or key id> [--json]
     	print the admin API's JSON response
 ```
 
+### `kman key clients`
+
+```
+usage: kman key clients <name or key id> [--json]
+
+Lists the client addresses a key was used from, the most recently seen first, with what each did. It needs the expose_client_addresses setting: kman settings set expose_client_addresses true.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
 ### `kman key update`
 
 ```

@@ -70,7 +70,7 @@ Spend and expiry are checked when kman starts and then every minute, on what the
 
 ### Address locks
 
-`allowed_cidrs` and `allowed_countries` lock a key to where it may be used from. A request from anywhere else is refused with `403 address_not_allowed`, before its body is read. With both, the address must satisfy both. A country lock is refused when you set it unless kman has a GeoIP country database, and an address the database does not know fails the lock. See [Address locks and GeoIP](operator-guide/geoip.md).
+`allowed_cidrs` and `allowed_countries` lock a key to where it may be used from. A request from anywhere else is refused with `403 address_not_allowed`, before its body is read. With both, the address must satisfy both. A country lock is refused when you set it unless kman has a GeoIP country database, and an address the database does not know fails the lock. See [Address locks and GeoIP](operator-guide/geoip.md). To see which addresses a key was used from, and so which network to lock it to, run `kman key clients <key>` ([which addresses used a key](operator-guide/metrics.md#which-addresses-used-a-key)).
 
 ### Paths
 

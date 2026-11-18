@@ -105,7 +105,7 @@ then optionally `kman dashboard` and `kman canary create`. Plain `kman` prints a
 
 **Configuration** splits in two:
 - `kman.yaml`, read at startup only: listeners, `data_dir`, `key_source`, `trusted_proxies`, GeoIP database paths (`geoip.country_db`, `geoip.asn_db`), `retention`, `update_check`, `dashboard.url`, `allow_key_in_data_dir`, TLS for listeners.
-- The `settings` table, changed while running through the admin API and audited: maximum key lifetime, default key TTL (90 days), `spend_timezone` (UTC), install-wide detection thresholds, soft-budget defaults.
+- The `settings` table, changed while running through the admin API and audited: maximum key lifetime, default key TTL (90 days), `spend_timezone` (UTC), install-wide detection thresholds, soft-budget defaults, and `expose_client_addresses` (off): whether the admin API may say which client addresses used a key.
 
 **`kman demo`** runs a throwaway install in a temp directory with an in-process mock upstream, seeds a week of compressed traffic that sets off the incidents kman exists for, and opens the dashboard. It shows a "DEMO" banner everywhere, picks free ports, sends nothing off the machine, deletes itself on exit, and refuses to run against a real config.
 
@@ -221,7 +221,7 @@ The default LLM allowlists exclude batch, files, fine-tune, and multipart audio 
 
 ## 9. Events and alerts
 
-- Every request and every realtime session produces one **event**: key, client IP, country, ASN, upstream, model, operation, status, blocked code, latency, bytes, tokens by kind, cost (or unknown), and whether the cost is estimated. Never request or response content.
+- Every request and every realtime session produces one **event**: key, client IP, country, ASN, upstream, model, operation, status, blocked code, latency, bytes, tokens by kind, cost (or unknown), and whether the cost is estimated. Never request or response content. A client address is personal data, so the admin API gives them out only when `expose_client_addresses` is on (ADR 0010); the events themselves are kept as retention says.
 - `events` fans out to the store writer, `detect` (from M2), and the live feed (SSE and `--follow`).
 - Canary and disabled-key events take a **priority lane** straight to the alert outbox.
 - **Alerts** go through a persisted outbox with retries and backoff, throttled per incident.
@@ -281,7 +281,7 @@ From [realtime](https://github.com/kirank55/kman/issues/13), [ADR 0005](docs/adr
   - Install: `init`, `keygen`, `rekey`, `serve`, `login`, `logout`, `dashboard`, `demo`, `version [--check]`, `geoip update`, `backup`, `restore`, `prune`, `settings get|set`, plain `kman` (status summary).
   - Admin tokens: `admin-token create|list|rotate|revoke`. Rotating or revoking a token ends its dashboard sessions.
   - Upstreams and credentials: `upstream add|list|show|update|rm|sync`, `credential add|update|rm|compromise`.
-  - Keys: `key create|list|show|update|disable|enable|revoke|rotate [--grace]`, `canary create|list|reset`.
+  - Keys: `key create|list|show|clients|update|disable|enable|revoke|rotate [--grace]`, `canary create|list|reset`. `key clients` (`GET /admin/v1/keys/{id}/clients`) groups a key's events by client address and works only with `expose_client_addresses` on.
   - Spend: `price set|rm|list|import`.
   - Detection (M2): `incidents`, `incident …`, `known-source …`, `detections --follow`, `detection test`.
   - Alerts: `channel add|list|test|rm`.

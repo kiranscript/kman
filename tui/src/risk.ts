@@ -59,7 +59,7 @@ export function keyRisks(key: Key, now: number): Risk[] {
 
   const unmetered = key.spend?.today.unmetered_requests ?? 0;
   if (unmetered > 0) {
-    risks.push({ severity: 'warn', label: `${unmetered} unmetered ${unmetered === 1 ? 'request' : 'requests'} today`, weight: 500 });
+    risks.push({ severity: 'warn', label: `${unmetered} unmetered today`, weight: 500 });
   }
   return risks;
 }

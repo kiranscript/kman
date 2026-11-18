@@ -150,3 +150,49 @@ func TestLastUsedIsTheLatestHourWithAForwardedRequest(t *testing.T) {
 		t.Errorf("LastUsed = %v, want %v (the start of the latest hour with a forwarded request; blocked attempts do not count)", got, want)
 	}
 }
+
+func TestAKeyIsGroupedByTheAddressesItWasUsedFrom(t *testing.T) {
+	s := open(t)
+	t0 := time.Date(2026, 11, 11, 10, 0, 0, 0, time.UTC)
+	ev := func(at time.Duration, key, kind, ip string, cost int64, known bool) store.EventRow {
+		return store.EventRow{Time: t0.Add(at), Kind: kind, KeyID: key, ClientIP: ip, Country: "DE", ASN: 3320, Status: 200, CostMicro: cost, CostKnown: known}
+	}
+	do(t, s, func(tx *store.Tx) error {
+		return tx.AddEvents([]store.EventRow{
+			ev(0, "k1", "request", "203.0.113.7", 1000, true),
+			ev(time.Minute, "k1", "request", "203.0.113.7", 0, false), // forwarded, cost unknown
+			ev(2*time.Minute, "k1", "blocked", "203.0.113.7", 0, false),
+			ev(3*time.Minute, "k1", "request", "198.51.100.9", 500, true),
+			ev(4*time.Minute, "k1", "request", "", 700, true),          // the Unix socket: no address
+			ev(5*time.Minute, "k2", "request", "192.0.2.1", 900, true), // another key
+		})
+	})
+	var got []store.ClientRow
+	var total int
+	do(t, s, func(tx *store.Tx) error {
+		var err error
+		got, total, err = tx.KeyClients("k1", 10)
+		return err
+	})
+	if total != 2 || len(got) != 2 {
+		t.Fatalf("KeyClients = %d rows of %d, want 2 of 2: %+v", len(got), total, got)
+	}
+	// The most recently seen address first.
+	if got[0].IP != "198.51.100.9" || got[1].IP != "203.0.113.7" {
+		t.Fatalf("order = %s, %s", got[0].IP, got[1].IP)
+	}
+	a := got[1]
+	if a.Requests != 2 || a.Blocked != 1 || a.CostMicro != 1000 || a.Unmetered != 1 || a.Country != "DE" || a.ASN != 3320 ||
+		!a.FirstSeen.Equal(t0) || !a.LastSeen.Equal(t0.Add(2*time.Minute)) {
+		t.Fatalf("203.0.113.7 = %+v", a)
+	}
+
+	do(t, s, func(tx *store.Tx) error {
+		var err error
+		got, total, err = tx.KeyClients("k1", 1)
+		return err
+	})
+	if len(got) != 1 || total != 2 {
+		t.Fatalf("with a limit of 1: %d rows of %d, want 1 of 2", len(got), total)
+	}
+}

@@ -60,6 +60,35 @@ describe.skipIf(!url || !token)('against a real kman', () => {
     expect(audit.map((e) => e.id)).toEqual([...audit.map((e) => e.id)].sort((a, b) => a - b));
   });
 
+  it('reads a key\'s client addresses in the expected shape, or is refused until the install turns them on', async () => {
+    const key = (await client.listKeys())[0];
+    expect(key, 'the server needs a key').toBeDefined();
+    const outcome = await client.keyClients(key!.id).then(
+      (got) => ({ got }),
+      (err: unknown) => ({ err }),
+    );
+    if ('err' in outcome) {
+      // The install's default: off. The refusal says how to turn it on.
+      expect(outcome.err).toMatchObject({ code: 'conflict', status: 409 });
+      expect((outcome.err as Error).message).toContain('expose_client_addresses');
+      return;
+    }
+    const { got } = outcome;
+    expect(got.key_id).toBe(key!.id);
+    expect(got.total).toEqual(expect.any(Number));
+    expect(got.clients.length).toBeLessThanOrEqual(got.total);
+    for (const c of got.clients) {
+      expect(c).toMatchObject({
+        address: expect.any(String),
+        requests: expect.any(Number),
+        blocked: expect.any(Number),
+        first_seen: expect.any(String),
+        last_seen: expect.any(String),
+        cost_micro: expect.any(Number),
+      });
+    }
+  });
+
   it('refuses a wrong token as unauthorized', async () => {
     const bad = createClient({ url: url!, token: 'kma_not-a-real-token' });
     await expect(bad.whoami()).rejects.toMatchObject({ code: 'unauthorized' });

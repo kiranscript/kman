@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { useEffect, useState } from 'react';
-import { fit, since } from '../format.js';
+import { fit, since, wrapLines } from '../format.js';
 import type { Link } from '../useAdmin.js';
 import { Hint } from './parts.js';
 import { color } from './theme.js';
@@ -23,7 +23,7 @@ export function Header({ link, url, actor, width }: { link: Link; url: string; a
       break;
     case 'down':
       status = {
-        glyph: '○',
+        glyph: '◌',
         text: link.lastOk ? `connection lost · last data ${since(link.lastOk, Date.now())}` : 'cannot connect',
         color: color.warn,
       };
@@ -32,9 +32,14 @@ export function Header({ link, url, actor, width }: { link: Link; url: string; a
       status = { glyph: '✖', text: 'token refused', color: color.danger };
       break;
     default:
-      status = { glyph: '○', text: 'connecting…' };
+      status = { glyph: '◌', text: 'connecting…' };
   }
-  const where = `${actor ? `${actor} @ ` : ''}${url}`;
+  // The status comes first and keeps its words; the address gives way, leaving at least
+  // two columns between them: first the actor, then the end of the address.
+  const used = [...`kman admin  ${status.glyph} ${status.text}`].length;
+  const room = width - used - 2;
+  const full = `${actor ? `${actor} @ ` : ''}${url}`;
+  const where = [...full].length <= room ? full : room >= 12 ? fit(url, room) : '';
   return (
     <Box width={width} justifyContent="space-between">
       <Text wrap="truncate-end">
@@ -47,9 +52,7 @@ export function Header({ link, url, actor, width }: { link: Link; url: string; a
           {status.text}
         </Text>
       </Text>
-      <Text dimColor wrap="truncate-start">
-        {fit(where, Math.max(10, Math.floor(width / 2) - 2))}
-      </Text>
+      {where ? <Text dimColor>{where}</Text> : null}
     </Box>
   );
 }
@@ -125,14 +128,36 @@ export function fitHints(hints: HintItem[], width: number): HintItem[] {
   return kept;
 }
 
+const noticeMark = (n: Notice) => `${n.tone === 'ok' ? '✔' : n.tone === 'error' ? '✖' : '·'} `;
+const NOTICE_LINES = 3;
+
+/** The lines of a notice: one for most, and up to three, hanging under the mark, for a failure. */
+function noticeLines(n: Notice, width: number): string[] {
+  const mark = noticeMark(n);
+  if (n.tone !== 'error') return [fit(mark + n.text, width)];
+  return wrapLines(n.text, width - mark.length, NOTICE_LINES).map((l, i) => (i === 0 ? mark : ' '.repeat(mark.length)) + l);
+}
+
+/**
+ * Rows a notice takes. A failure keeps the reason on screen until a key is pressed, so
+ * it gets a second row rather than being cut; everything else is one row.
+ */
+export function noticeRows(notice: Notice | undefined, width: number): number {
+  if (!notice || notice.tone !== 'error') return 1;
+  return Math.max(1, noticeLines(notice, width).length);
+}
+
 export function Footer({ notice, hints, width }: { notice?: Notice; hints: HintItem[]; width: number }) {
   const shown = fitHints(hints, width);
   const tone = notice?.tone === 'ok' ? color.ok : notice?.tone === 'error' ? color.danger : undefined;
+  const shownLines = notice ? noticeLines(notice, width) : [' '];
   return (
     <Box flexDirection="column" width={width}>
-      <Text color={tone} wrap="truncate-end">
-        {notice ? `${notice.tone === 'ok' ? '✔' : notice.tone === 'error' ? '✖' : '·'} ${notice.text}` : ' '}
-      </Text>
+      {shownLines.map((line, i) => (
+        <Text key={i} color={tone} wrap="truncate-end">
+          {line}
+        </Text>
+      ))}
       <Box>
         {shown.map((h, i) => (
           <Box key={h.k + h.label} marginRight={i < shown.length - 1 ? HINT_GAP : 0} flexShrink={0}>
