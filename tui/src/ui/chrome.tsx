@@ -1,101 +1,40 @@
 import { Box, Text } from 'ink';
 import { useEffect, useState } from 'react';
-import { fit, since } from '../format.js';
-import type { Link } from '../useAdmin.js';
 import { Hint } from './parts.js';
 import { color } from './theme.js';
+import type { Link } from '../useAdmin.js';
 
-export type Tab = 'overview' | 'keys' | 'upstreams' | 'audit';
+/** The panels on the left, in order. The number is the key that jumps to each. */
+export type Tab = 'status' | 'keys' | 'upstreams' | 'audit';
 export const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
+  { id: 'status', label: 'Status' },
   { id: 'keys', label: 'Keys' },
   { id: 'upstreams', label: 'Upstreams' },
   { id: 'audit', label: 'Audit' },
 ];
 
-export function Header({ link, url, actor, width }: { link: Link; url: string; actor?: string; width: number }) {
-  const tick = useTick(1000);
-  void tick;
-  let status: { glyph: string; text: string; color?: string };
+/** "live", "offline", "token refused": the connection in one word, with a glyph. */
+export function linkBadge(link: Link): { glyph: string; word: string; color?: string } {
   switch (link.state) {
     case 'ok':
-      status = { glyph: '●', text: `live · updated ${since(link.at, Date.now())}`, color: color.ok };
-      break;
+      return { glyph: '●', word: 'live', color: color.ok };
     case 'down':
-      status = {
-        glyph: '○',
-        text: link.lastOk ? `connection lost · last data ${since(link.lastOk, Date.now())}` : 'cannot connect',
-        color: color.warn,
-      };
-      break;
+      return { glyph: '○', word: link.lastOk ? 'offline' : 'cannot connect', color: color.warn };
     case 'denied':
-      status = { glyph: '✖', text: 'token refused', color: color.danger };
-      break;
+      return { glyph: '✖', word: 'token refused', color: color.danger };
     default:
-      status = { glyph: '○', text: 'connecting…' };
+      return { glyph: '○', word: 'connecting' };
   }
-  const where = `${actor ? `${actor} @ ` : ''}${url}`;
-  return (
-    <Box width={width} justifyContent="space-between">
-      <Text wrap="truncate-end">
-        <Text bold color={color.accent}>
-          kman
-        </Text>
-        <Text dimColor> admin  </Text>
-        <Text color={status.color}>{status.glyph} </Text>
-        <Text color={status.color} dimColor={status.color === undefined}>
-          {status.text}
-        </Text>
-      </Text>
-      <Text dimColor wrap="truncate-start">
-        {fit(where, Math.max(10, Math.floor(width / 2) - 2))}
-      </Text>
-    </Box>
-  );
 }
 
-function useTick(ms: number): number {
+/** Re-renders every `ms`, so "updated 3s ago" keeps counting. */
+export function useTick(ms: number): number {
   const [n, setN] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setN((x) => x + 1), ms);
     return () => clearInterval(t);
   }, [ms]);
   return n;
-}
-
-export function Tabs({
-  active,
-  counts,
-  warnings,
-  infos,
-  width,
-}: {
-  active: Tab;
-  counts: Partial<Record<Tab, number>>;
-  /** Keys with a warning or worse. */
-  warnings: number;
-  /** Keys with only a note, such as no spend cap. */
-  infos: number;
-  width: number;
-}) {
-  return (
-    <Box width={width} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderDimColor>
-      {TABS.map((t, i) => {
-        const on = t.id === active;
-        const count = counts[t.id];
-        return (
-          <Box key={t.id} marginRight={2}>
-            <Text inverse={on} bold={on} color={on ? color.accent : undefined}>
-              {` ${i + 1} ${t.label}`}
-              {count !== undefined ? ` ${count}` : ''}
-              {t.id === 'overview' && warnings > 0 ? ` ▲${warnings}` : ''}
-              {t.id === 'overview' && infos > 0 ? ` ○${infos}` : ''}{' '}
-            </Text>
-          </Box>
-        );
-      })}
-    </Box>
-  );
 }
 
 export interface Notice {
@@ -125,20 +64,31 @@ export function fitHints(hints: HintItem[], width: number): HintItem[] {
   return kept;
 }
 
-export function Footer({ notice, hints, width }: { notice?: Notice; hints: HintItem[]; width: number }) {
-  const shown = fitHints(hints, width);
+/**
+ * The two rows under the panels, as in lazygit: a notice row, then the options bar
+ * with the keys that work right now and, at the right, the connection.
+ */
+export function Footer({ notice, hints, link, width }: { notice?: Notice; hints: HintItem[]; link: Link; width: number }) {
+  const badge = linkBadge(link);
+  const tail = ` ${badge.glyph} ${badge.word} `;
+  const shown = fitHints(hints, width - [...tail].length - 1);
   const tone = notice?.tone === 'ok' ? color.ok : notice?.tone === 'error' ? color.danger : undefined;
   return (
     <Box flexDirection="column" width={width}>
       <Text color={tone} wrap="truncate-end">
-        {notice ? `${notice.tone === 'ok' ? '✔' : notice.tone === 'error' ? '✖' : '·'} ${notice.text}` : ' '}
+        {notice ? ` ${notice.tone === 'ok' ? '✔' : notice.tone === 'error' ? '✖' : '·'} ${notice.text}` : ' '}
       </Text>
-      <Box>
-        {shown.map((h, i) => (
-          <Box key={h.k + h.label} marginRight={i < shown.length - 1 ? HINT_GAP : 0} flexShrink={0}>
-            <Hint k={h.k}>{h.label}</Hint>
-          </Box>
-        ))}
+      <Box width={width} justifyContent="space-between">
+        <Box paddingLeft={1}>
+          {shown.map((h, i) => (
+            <Box key={h.k + h.label} marginRight={i < shown.length - 1 ? HINT_GAP : 0} flexShrink={0}>
+              <Hint k={h.k}>{h.label}</Hint>
+            </Box>
+          ))}
+        </Box>
+        <Text color={badge.color} dimColor={badge.color === undefined} wrap="truncate-end">
+          {tail}
+        </Text>
       </Box>
     </Box>
   );

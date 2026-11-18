@@ -2,7 +2,7 @@ import { render } from 'ink-testing-library';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api.js';
 import { App } from '../src/App.js';
-import { fakeClient, tick, until } from './fakes.js';
+import { fakeClient, key, tick, until } from './fakes.js';
 
 // ink-testing-library's stdout is 100 columns wide.
 const SIZE = { columns: 100, rows: 34 };
@@ -42,7 +42,7 @@ describe('App', () => {
     const s = m.screen();
     expect(s).toContain('owner @ http://127.0.0.1:8081');
     expect(s).toContain('2 active');
-    expect(s).toContain('Needs attention');
+    expect(s).toContain('NEEDS ATTENTION');
     expect(s).toContain('ci-evals');
     expect(s).toContain('90% of its daily cap');
     m.unmount();
@@ -54,7 +54,8 @@ describe('App', () => {
     await m.press('2');
     const s = m.screen();
     expect(s).toContain('● active');
-    expect(s).toContain('◐ disabled');
+    // The list says it in a glyph and a word, the detail pane in both.
+    expect(s.split('\n').find((l) => l.includes('old-proto'))).toMatch(/◐.*disabled/);
     expect(s).toContain('$0.108 / $5');
     m.unmount();
   });
@@ -64,7 +65,7 @@ describe('App', () => {
     await loaded(m);
     await m.press('2');
     await m.press('d');
-    expect(m.screen()).toContain('Disable checkout?');
+    expect(m.screen()).toContain('Disable this key?');
     await m.press('n');
     expect(m.client.calls).toEqual([]);
     await m.press('d');
@@ -82,8 +83,9 @@ describe('App', () => {
     await m.press('d');
     await m.press('y');
     await until(() => m.screen().includes('Disabled checkout.'), 'the notice');
-    const row = m.screen().split('\n').find((l) => l.includes('checkout') && l.includes('disabled'));
-    expect(row).toContain('▌');
+    // checkout is now the second of three; the selection followed it.
+    expect(m.screen()).toContain('Key: checkout');
+    expect(m.screen()).toContain('2 of 3');
     m.unmount();
   });
 
@@ -175,7 +177,8 @@ describe('App', () => {
     await m.press('/');
     await m.press('ci-');
     const s = m.screen();
-    expect(s).toContain('1 of 3 keys');
+    expect(s).toContain('Keys (1/3)');
+    expect(s).toContain('/ ci-');
     expect(s).not.toContain('old-proto');
     await m.press(ESC);
     expect(m.screen()).toContain('old-proto');
@@ -188,7 +191,7 @@ describe('App', () => {
     await loaded(m);
     client.fail = new ApiError('unreachable', 'cannot reach http://127.0.0.1:8081: connection refused');
     await m.press('r');
-    await until(() => m.screen().includes('connection lost'), 'the lost-connection flag');
+    await until(() => m.screen().includes('offline'), 'the lost-connection flag');
     expect(m.screen()).toContain('ci-evals');
     client.fail = undefined;
     await m.press('r');
@@ -255,7 +258,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('2');
       await m.press('d');
-      expect(m.screen()).toContain('Disable checkout?');
+      expect(m.screen()).toContain('Disable this key?');
       m.resize({ columns: 60, rows: 12 });
       await until(() => m.screen().includes('Terminal too small'), 'the size gate');
       await m.press('y'); // would confirm the disable if it were let through
@@ -263,7 +266,7 @@ describe('App', () => {
       await m.press('x');
       expect(m.client.calls).toEqual([]);
       m.resize(SIZE);
-      await until(() => m.screen().includes('Disable checkout?'), 'the prompt to come back');
+      await until(() => m.screen().includes('Disable this key?'), 'the prompt to come back');
       expect(m.client.calls).toEqual([]);
       m.unmount();
     });
@@ -317,9 +320,11 @@ describe('App', () => {
       await loaded(m);
       const s = m.screen();
       // ci-evals (90% of its cap) and uncapped (no cap): two rows, so two everywhere.
-      expect(s).toContain('Needs attention · 2');
-      expect(s).toContain('Overview ▲1 ○1');
-      expect(s).toContain('no spend cap');
+      expect(s).toContain('NEEDS ATTENTION (2)');
+      expect(s).toContain('[1] Status ▲1');
+      expect(s).toContain('1 of 2');
+      expect(s).toContain('uncapped');
+      expect(s).toContain('no cap');
       m.unmount();
     });
 
@@ -327,9 +332,8 @@ describe('App', () => {
       const m = mount();
       await loaded(m);
       await m.press(ENTER);
-      await until(() => m.screen().includes('STATUS'), 'the keys table');
-      const row = m.screen().split('\n').find((l) => l.includes('ci-evals') && l.includes('▌'));
-      expect(row).toBeDefined();
+      await until(() => m.screen().includes('Key: ci-evals'), 'the key to open');
+      expect(m.screen()).toContain('2 of 3');
       m.unmount();
     });
 
@@ -339,9 +343,10 @@ describe('App', () => {
       const m = mount(client, { columns: 80, rows: 24 });
       await loaded(m);
       await m.press('2');
-      expect(m.screen()).toMatch(/↓ \d+ more/);
+      expect(m.screen()).toContain('1 of 17');
       await m.press('G');
-      expect(m.screen()).toMatch(/↑ \d+ more/);
+      expect(m.screen()).toContain('17 of 17');
+      expect(m.screen()).toContain('Key: ');
       m.unmount();
     });
 
@@ -422,9 +427,9 @@ describe('App', () => {
     await m.press('r');
     await until(() => m.screen().includes('live'), 'recovery');
     // None of those keys took effect while nothing could be seen.
-    expect(m.screen()).not.toContain('Keyboard');
+    expect(m.screen()).not.toContain('Keybindings');
     expect(m.screen()).not.toContain('New virtual key');
-    expect(m.screen()).toContain('Needs attention');
+    expect(m.screen()).toContain('NEEDS ATTENTION');
     m.unmount();
   });
 
@@ -453,6 +458,7 @@ describe('App', () => {
     expect(s).toContain('PgUp PgDn');
     expect(s).toContain('MARKS');
     expect(s.split('\n').length).toBeLessThanOrEqual(24);
+    expect(s).toContain('Keybindings');
     m.unmount();
   });
 
@@ -502,7 +508,7 @@ describe('App', () => {
     m2.unmount();
   });
 
-  it('shows what is scrolled out the same way in every view: on the title row, with arrows', async () => {
+  it('shows where the selection is in a long list, on the border, as "n of m"', async () => {
     const client = fakeClient();
     for (let i = 0; i < 12; i++) {
       client.keys.push({ ...client.keys[0]!, id: `k_${i}`, name: `uncapped-${i}`, spend: undefined });
@@ -510,10 +516,10 @@ describe('App', () => {
     const m = mount(client, { columns: 80, rows: 24 });
     await loaded(m);
     const lines = m.screen().split('\n');
-    const title = lines.findIndex((l) => l.includes('Needs attention'));
-    expect(lines[title]).toMatch(/↓ \d+ more/);
+    const bottom = lines.findIndex((l) => l.includes('1 of 13'));
+    expect(lines[bottom]).toMatch(/^[│╰┃┗]/);
     // And not as a line under the list.
-    expect(m.screen()).not.toMatch(/\d+ (above|below)/);
+    expect(m.screen()).not.toMatch(/\d+ (above|below|more)/);
     m.unmount();
   });
 
@@ -532,6 +538,376 @@ describe('App', () => {
   });
 });
 
+describe('review round 1', () => {
+  const SMALL = { columns: 80, rows: 24 };
+
+  it('keeps every field of an upstream reachable at 80x24: the routes and the key count scroll into view', async () => {
+    const m = mount(fakeClient(), SMALL);
+    await loaded(m);
+    await m.press('3');
+    expect(m.screen()).toContain('↓ J more');
+    expect(m.screen()).toContain('J/K scroll');
+    expect(m.screen()).not.toContain('POST /v1/chat/completions');
+    await m.press('J');
+    expect(m.screen()).toContain('POST /v1/chat/completions');
+    expect(m.screen()).toContain('3 keys');
+    await m.press('K');
+    expect(m.screen()).toContain('address');
+    m.unmount();
+  });
+
+  it('keeps the client address of an audit entry reachable at 80x24', async () => {
+    const client = fakeClient();
+    client.latestAudit = async () => [
+      { id: 1, time: '2026-11-17T12:00:00Z', actor: 'owner', action: 'key.create', target_kind: 'key', target_id: 'k_web', client_ip: '203.0.113.7' },
+    ];
+    const m = mount(client, SMALL);
+    await loaded(m);
+    await m.press('4');
+    if (!m.screen().includes('203.0.113.7')) await m.press('J');
+    expect(m.screen()).toContain('203.0.113.7');
+    m.unmount();
+  });
+
+  it('shows a key note at 80x24, scrolling if it has to', async () => {
+    const client = fakeClient();
+    client.keys[0]!.note = 'owned by the checkout team';
+    const m = mount(client, SMALL);
+    await loaded(m);
+    await m.press('2');
+    if (!m.screen().includes('owned by the checkout team')) await m.press('J');
+    expect(m.screen()).toContain('owned by the checkout team');
+    m.unmount();
+  });
+
+  it('shows the price data age in the Status panel, at every size, and says when it is stale', async () => {
+    for (const [size, text] of [
+      [SMALL, /price 3d/],
+      [{ columns: 100, rows: 24 }, /price (3d|data 3 days old)/],
+      [SIZE, /price data 3 days old/],
+    ] as const) {
+      const m = mount(fakeClient(), size);
+      await loaded(m);
+      expect(m.screen()).toMatch(text);
+      m.unmount();
+    }
+    for (const size of [SMALL, { columns: 100, rows: 24 }, SIZE]) {
+      const client = fakeClient();
+      client.priceStatus = async () => ({ age_days: 70, generated_at: '2026-09-01T00:00:00Z', stale: true });
+      const m = mount(client, size);
+      await loaded(m);
+      expect(m.screen()).toMatch(/▲ price stale/);
+      m.unmount();
+    }
+  });
+
+  it('shows the counts and the spend at 80x24 and 100x24, where Status has room for one line', async () => {
+    for (const size of [SMALL, { columns: 100, rows: 24 }]) {
+      const m = mount(fakeClient(), size);
+      await loaded(m);
+      expect(m.screen()).toContain('2 active');
+      expect(m.screen()).toContain('today');
+      m.unmount();
+    }
+  });
+
+  it('draws an empty filter result and the filter on separate rows at 80x24, while typing and after Enter', async () => {
+    const m = mount(fakeClient(), SMALL);
+    await loaded(m);
+    await m.press('2');
+    await m.press('/');
+    await m.press('zzz');
+    const rows = () => m.screen().split('\n');
+    expect(rows().some((l) => l.includes('No key matches.'))).toBe(true);
+    expect(rows().find((l) => l.includes('/ zzz'))).not.toContain('No key matches');
+    await m.press(ENTER);
+    expect(rows().some((l) => l.includes('No key matches.'))).toBe(true);
+    expect(rows().find((l) => l.includes('/ zzz'))).not.toContain('No key matches');
+    m.unmount();
+  });
+
+  it('keeps the cursor in view for a wide-character query', async () => {
+    const m = mount();
+    await loaded(m);
+    await m.press('2');
+    await m.press('/');
+    await m.press('界'.repeat(30));
+    const line = m.screen().split('\n').find((l) => l.includes('/ ')) ?? '';
+    expect(line).toContain('…');
+    expect(line.endsWith('│')).toBe(true);
+    m.unmount();
+  });
+
+  it('names the most urgent risk of a key, with its own glyph', async () => {
+    const client = fakeClient();
+    client.keys[0] = {
+      ...client.keys[0]!,
+      expires_at: new Date(Date.parse('2026-11-17T12:30:00Z') + 4 * 86_400_000).toISOString(),
+      spend: {
+        today: { period: 'd', cost_micro: 5_250_000, requests: 9, cap_micro: 5_000_000 },
+        month: { period: 'm', cost_micro: 5_250_000, requests: 9, cap_micro: 50_000_000 },
+      },
+    };
+    const m = mount(client);
+    await loaded(m);
+    await m.press('2');
+    const row = m.screen().split('\n').find((l) => /^[│┃] checkout/.test(l)) ?? '';
+    expect(row).toContain('✖ at cap');
+    expect(row).not.toContain('expiring');
+    m.unmount();
+  });
+
+  it('keeps the whole of a long note and the last policy values reachable at 80x24', async () => {
+    const client = fakeClient();
+    const note = 'first part of the note then ' + 'word '.repeat(30) + 'THE-END';
+    client.keys[0]!.note = note;
+    client.keys[0]!.policy = { allowed_models: ['gpt-a', 'gpt-b'], allowed_paths: ['POST /v1/last-path'], rpm_limit: 30 };
+    client.keys[0]!.tags = ['prod'];
+    const m = mount(client, SMALL);
+    await loaded(m);
+    await m.press('2');
+    const seen = new Set<string>();
+    for (let i = 0; i < 8; i++) {
+      for (const w of ['gpt-b', 'POST /v1/last-path', '30 requests/min', 'prod', 'created', 'THE-END', 'id k_checkout']) {
+        if (m.screen().includes(w)) seen.add(w);
+      }
+      await m.press('J');
+    }
+    expect([...seen].sort()).toEqual(['30 requests/min', 'POST /v1/last-path', 'THE-END', 'created', 'gpt-b', 'id k_checkout', 'prod'].sort());
+    m.unmount();
+  });
+
+  it('keeps an upstream warning on its row when the name is long', async () => {
+    const client = fakeClient();
+    client.listUpstreams = async () => [
+      { ...(await fakeClient().listUpstreams())[0]!, name: 'test-upstream-with-a-long-name', credentials: [] },
+    ];
+    const m = mount(client);
+    await loaded(m);
+    await m.press('3');
+    const row = m.screen().split('\n').find((l) => /^[│┃] test-upstream/.test(l)) ?? '';
+    expect(row).toContain('▲ no credential');
+    m.unmount();
+  });
+
+  it('keeps the stale price warning on the collapsed Status line while another panel has focus', async () => {
+    for (const size of [{ columns: 100, rows: 24 }, SIZE, { columns: 120, rows: 40 }]) {
+      const client = fakeClient();
+      client.priceStatus = async () => ({ age_days: 70, generated_at: '2026-09-01T00:00:00Z', stale: true });
+      const m = mount(client, size);
+      await loaded(m);
+      await m.press('2');
+      expect(m.screen()).toContain('▲ price stale');
+      m.unmount();
+    }
+  });
+
+  it('keeps a key warning on its row beside a long name, ahead of the spend', async () => {
+    const client = fakeClient();
+    const name = 'checkout-service-with-a-fairly-long-name';
+    client.keys[0] = {
+      ...client.keys[0]!,
+      name,
+      spend: {
+        today: { period: 'd', cost_micro: 108_000, requests: 3, cap_micro: 5_000_000, unmetered_requests: 2 },
+        month: { period: 'm', cost_micro: 108_000, requests: 3, cap_micro: 50_000_000 },
+      },
+    };
+    const m = mount(client);
+    await loaded(m);
+    await m.press('2');
+    const row = m.screen().split('\n').find((l) => /^[│┃] checkout-/.test(l)) ?? '';
+    expect(row).toContain('● active');
+    expect(row).toContain('▲ unmetered');
+    m.unmount();
+  });
+
+  it('shows the full name of a key in its detail, even when two names differ only at the end', async () => {
+    const client = fakeClient();
+    const base = 'service-with-a-very-long-name-that-goes-on-and-on-and-on-and-on';
+    client.keys[0]!.name = `${base}-a`;
+    client.keys[1]!.name = `${base}-b`;
+    const m = mount(client, { columns: 100, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    // Only the main panel, which starts after the 38-column sidebar.
+    const flat = () => m.screen().split('\n').map((l) => l.slice(38)).join('').replace(/[\s│┃]/g, '');
+    expect(flat()).toContain(`${base}-a`);
+    await m.press('j');
+    expect(flat()).toContain(`${base}-b`);
+    m.unmount();
+  });
+
+  it('stops offering J/K when a filter leaves no key to show', async () => {
+    const m = mount(fakeClient(), SMALL);
+    await loaded(m);
+    await m.press('2');
+    expect(m.screen()).toContain('J/K scroll');
+    await m.press('/');
+    await m.press('zzz');
+    await m.press(ENTER);
+    expect(m.screen()).toContain('No key selected.');
+    expect(m.screen()).not.toContain('J/K scroll');
+    m.unmount();
+  });
+
+  it('keeps the account totals on a short screen with 0, 1 or many keys needing attention, and says the price is stale once', async () => {
+    for (const size of [SMALL, { columns: 100, rows: 24 }]) {
+      for (const extra of [0, 1, 12]) {
+        for (const stale of [false, true]) {
+          const client = fakeClient();
+          client.keys = [
+            key({ id: 'k_a', name: 'a', spend: { today: { period: 'd', cost_micro: 200_000, requests: 1, cap_micro: 5_000_000 }, month: { period: 'm', cost_micro: 12_340_000, requests: 1, cap_micro: 50_000_000 } } }),
+            key({ id: 'k_b', name: 'b', status: 'disabled', spend: undefined }),
+            key({ id: 'k_c', name: 'c', status: 'revoked', spend: undefined }),
+            // No spend cap: each one needs attention.
+            ...Array.from({ length: extra }, (_, i) => key({ id: `k_u${i}`, name: `uncapped-${i}`, spend: undefined })),
+          ];
+          client.priceStatus = async () => ({ age_days: stale ? 70 : 3, generated_at: '2026-09-01T00:00:00Z', stale });
+          const m = mount(client, size);
+          await loaded(m);
+          const s = m.screen();
+          const label = `${size.columns}x${size.rows} extra=${extra} stale=${stale}`;
+          expect(s, label).toContain('$12.34');
+          expect(s, label).toContain('1 disabled');
+          expect(s, label).toContain('1 revoked');
+          expect(s, label).toContain(stale ? '▲ price' : 'price');
+          expect(s.match(/▲ price/g) ?? [], label).toHaveLength(stale ? 1 : 0);
+          if (extra > 0) expect(s, label).toContain('need attention');
+          m.unmount();
+        }
+      }
+    }
+  });
+
+  it('prints a key name in full in the detail from the length where the title starts to clip', async () => {
+    for (const len of [50, 51, 52, 53, 54, 55]) {
+      const client = fakeClient();
+      const base = 'x'.repeat(len - 1);
+      client.keys[0]!.name = `${base}a`;
+      client.keys[1]!.name = `${base}b`;
+      const m = mount(client, { columns: 100, rows: 24 });
+      await loaded(m);
+      await m.press('2');
+      const flat = () => m.screen().split('\n').map((l) => l.slice(38)).join('').replace(/[\s│┃]/g, '');
+      expect(flat()).toContain(`Key:${base}a`.length > 0 ? `${base}a` : '');
+      // Either the title carries the whole name, or the body does.
+      const title = m.screen().split('\n')[0]!.slice(38);
+      expect(title.includes(`${base}a`) || flat().replace(/Key:[^╮]*/, '').includes(`${base}a`)).toBe(true);
+      m.unmount();
+    }
+  });
+
+  it('keeps / filter in the footer at 80 columns', async () => {
+    const m = mount(fakeClient(), SMALL);
+    await loaded(m);
+    await m.press('2');
+    expect(m.screen().split('\n').at(-1)).toContain('/ filter');
+    m.unmount();
+  });
+
+  it('leads the help with the focused panel\'s keys', async () => {
+    const m = mount(fakeClient(), SMALL);
+    await loaded(m);
+    await m.press('2');
+    await m.press('?');
+    const s = m.screen();
+    expect(s.indexOf('KEYS (this panel)')).toBeGreaterThan(-1);
+    expect(s.indexOf('KEYS (this panel)')).toBeLessThan(s.indexOf('GLOBAL'));
+    expect(s.split('\n').length).toBeLessThanOrEqual(24);
+    m.unmount();
+  });
+
+  it('stops offering J/K on a panel that does not scroll', async () => {
+    const client = fakeClient();
+    client.keys = client.keys.map((k) => ({ ...k, spend: { ...k.spend! } }));
+    client.keys.forEach((k) => (k.spend!.today = { ...k.spend!.today, cap_micro: 1_000_000_000 }));
+    client.keys.forEach((k) => (k.spend!.month = { ...k.spend!.month, cap_micro: 1_000_000_000 }));
+    const m = mount(client, SMALL);
+    await loaded(m);
+    await m.press('3');
+    expect(m.screen()).toContain('J/K scroll');
+    await m.press('1');
+    expect(m.screen()).not.toContain('J/K scroll');
+    m.unmount();
+  });
+
+  it('names the whole key in the disable confirmation, even when two names differ only at the end', async () => {
+    const client = fakeClient();
+    const base = 'service-with-a-very-long-name-that-goes-on-and-on-and-on-and-on';
+    client.keys[0]!.name = `${base}-a`;
+    client.keys[1]!.name = `${base}-b`;
+    const m = mount(client, SMALL);
+    await loaded(m);
+    await m.press('2');
+    await m.press('d');
+    const first = m.screen();
+    expect(first).toContain('Disable this key?');
+    expect(first.replace(/\s+/g, '')).toContain(`${base}-a`.replace(/\s+/g, ''));
+    await m.press('n');
+    await m.press('j');
+    await m.press('d');
+    expect(m.screen().replace(/\s+/g, '')).toContain(`${base}-b`.replace(/\s+/g, ''));
+    m.unmount();
+  });
+
+  it('pairs each status mark with its word in the Keys list', async () => {
+    const m = mount();
+    await loaded(m);
+    await m.press('2');
+    const rows = m.screen().split('\n');
+    expect(rows.find((l) => /^[│┃] checkout/.test(l))).toContain('● active');
+    expect(rows.find((l) => /^[│┃] ci-evals/.test(l))).toMatch(/▲ near cap/);
+    expect(rows.find((l) => /^[│┃] old-proto/.test(l))).toContain('◐ disabled');
+    m.unmount();
+  });
+
+  it('keeps the end of a long filter and its cursor in view', async () => {
+    const m = mount();
+    await loaded(m);
+    await m.press('2');
+    await m.press('/');
+    await m.press('abcdefghijklmnopqrstuvwxyz0123456789END');
+    const line = m.screen().split('\n').find((l) => l.includes('/ ')) ?? '';
+    expect(line).toContain('END');
+    expect(line).toContain('…');
+    m.unmount();
+  });
+
+  it('shows the keys each state really takes in the bottom bar', async () => {
+    const m = mount();
+    await loaded(m);
+    await m.press('n');
+    expect(m.screen()).toContain('Ctrl+S create');
+    expect(m.screen()).toContain('Esc cancel');
+    await m.press(ESC);
+    await m.press(ESC);
+    await m.press('2');
+    await m.press('x');
+    expect(m.screen()).toContain('Enter revoke');
+    m.unmount();
+
+    const client = fakeClient();
+    client.fail = new ApiError('unauthorized', 'the admin token is unknown or revoked', 401);
+    const denied = mount(client);
+    await until(() => denied.screen().includes('refused this token'), 'the refusal');
+    expect(denied.screen()).toContain('q quit');
+    expect(denied.screen()).not.toContain('r retry');
+    denied.unmount();
+  });
+
+  it('scrolls only when there is something to scroll, and starts again from the top for the next item', async () => {
+    const m = mount(fakeClient(), SMALL);
+    await loaded(m);
+    await m.press('3');
+    await m.press('J');
+    expect(m.screen()).toContain('↑ K back');
+    await m.press('4');
+    expect(m.screen()).not.toContain('↑ K back');
+    m.unmount();
+  });
+});
+
 describe('NO_COLOR', () => {
   it('removes every colour from the theme and leaves the rest of the styling to the app', async () => {
     const { vi } = await import('vitest');
@@ -539,7 +915,7 @@ describe('NO_COLOR', () => {
     process.env.NO_COLOR = '1';
     try {
       const { color, ratioColor } = await import('../src/ui/theme.js');
-      expect(Object.values(color)).toEqual([undefined, undefined, undefined, undefined]);
+      expect(Object.values(color).every((v) => v === undefined)).toBe(true);
       expect(ratioColor(1.2)).toBeUndefined();
     } finally {
       delete process.env.NO_COLOR;

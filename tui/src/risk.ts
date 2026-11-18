@@ -9,6 +9,8 @@ export type Severity = 'danger' | 'warn' | 'info';
 export interface Risk {
   severity: Severity;
   label: string;
+  /** Two words at most, for a list row: "near cap", "expiring". */
+  short: string;
   /** How pressing it is among risks of one severity: higher is sooner. */
   weight: number;
 }
@@ -37,29 +39,35 @@ export function keyRisks(key: Key, now: number): Risk[] {
   const risks: Risk[] = [];
 
   if (key.expired) {
-    risks.push({ severity: 'danger', label: 'expired', weight: 2000 });
+    risks.push({ severity: 'danger', label: 'expired', short: 'expired', weight: 2000 });
   } else if (daysLeft(key.expires_at, now) < EXPIRING_DAYS) {
     const d = daysLeft(key.expires_at, now);
     const hours = Math.max(0, (Date.parse(key.expires_at) - now) / 3_600_000);
     risks.push({
       severity: 'warn',
       label: d < 1 ? 'expires within a day' : `expires in ${daysCeil(key.expires_at, now)} days`,
+      short: 'expiring',
       weight: 1000 - hours, // fewer hours left, sooner
     });
   }
 
   const cap = tightestCap(key);
   if (!cap) {
-    risks.push({ severity: 'info', label: 'no spend cap', weight: 0 });
+    risks.push({ severity: 'info', label: 'no spend cap', short: 'no cap', weight: 0 });
   } else if (cap.ratio >= 1) {
-    risks.push({ severity: 'danger', label: `at its ${cap.period} cap`, weight: 1500 });
+    risks.push({ severity: 'danger', label: `at its ${cap.period} cap`, short: 'at cap', weight: 1500 });
   } else if (cap.ratio >= NEAR_CAP) {
-    risks.push({ severity: 'warn', label: `${Math.round(cap.ratio * 100)}% of its ${cap.period} cap`, weight: cap.ratio * 1000 });
+    risks.push({ severity: 'warn', label: `${Math.round(cap.ratio * 100)}% of its ${cap.period} cap`, short: 'near cap', weight: cap.ratio * 1000 });
   }
 
   const unmetered = key.spend?.today.unmetered_requests ?? 0;
   if (unmetered > 0) {
-    risks.push({ severity: 'warn', label: `${unmetered} unmetered ${unmetered === 1 ? 'request' : 'requests'} today`, weight: 500 });
+    risks.push({
+      severity: 'warn',
+      label: `${unmetered} unmetered ${unmetered === 1 ? 'request' : 'requests'} today`,
+      short: 'unmetered',
+      weight: 500,
+    });
   }
   return risks;
 }
@@ -68,6 +76,11 @@ const order: Record<Severity, number> = { danger: 0, warn: 1, info: 2 };
 
 export function worst(risks: Risk[]): Severity | undefined {
   return risks.map((r) => r.severity).sort((a, b) => order[a] - order[b])[0];
+}
+
+/** The one risk to name for a key: the worst severity, and within it the most pressing. */
+export function topRisk(risks: Risk[]): Risk | undefined {
+  return [...risks].sort((a, b) => order[a.severity] - order[b.severity] || b.weight - a.weight)[0];
 }
 
 export interface Attention {

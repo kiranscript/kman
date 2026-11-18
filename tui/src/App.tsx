@@ -7,16 +7,16 @@ import { RevokeDialog } from './dialogs/RevokeDialog.js';
 import { SecretDialog } from './dialogs/SecretDialog.js';
 import { keyLabel, visibleKeys } from './keys.js';
 import { attention } from './risk.js';
-import { Footer, Header, TABS, Tabs } from './ui/chrome.js';
+import { layout } from './layout.js';
+import { Footer, TABS } from './ui/chrome.js';
 import type { HintItem, Notice, Tab } from './ui/chrome.js';
-import { Panel } from './ui/parts.js';
+import { Hint, Panel } from './ui/parts.js';
 import { editText } from './ui/TextField.js';
 import { color } from './ui/theme.js';
 import { useAdmin } from './useAdmin.js';
-import { AuditView } from './views/AuditView.js';
-import { KeysView } from './views/KeysView.js';
-import { OverviewView } from './views/OverviewView.js';
-import { UpstreamsView } from './views/UpstreamsView.js';
+import { AuditMain, KeyMain, StatusMain, UpstreamMain } from './views/detail.js';
+import type { Scroll } from './views/detail.js';
+import { AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
 
 export interface AppProps {
   client: AdminClient;
@@ -43,8 +43,8 @@ type Mode =
 // The classic terminal size. Every view and dialog fits it.
 export const MIN_COLUMNS = 80;
 export const MIN_ROWS = 24;
-// Header, tabs and their rule, notice and hints.
-const CHROME_ROWS = 5;
+// The notice row and the options bar under the panels.
+const CHROME_ROWS = 2;
 
 export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: AppProps) {
   const { exit } = useApp();
@@ -52,7 +52,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
   const { columns, rows } = size ?? win;
   const { data, link, now, fresh, refresh } = useAdmin(client, intervalMs);
 
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tab, setTab] = useState<Tab>('status');
   const [mode, setMode] = useState<Mode>({ kind: 'none' });
   const [filter, setFilter] = useState('');
   const [keySel, setKeySel] = useState<string | undefined>();
@@ -62,6 +62,10 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | undefined>();
   const [notice, setNotice] = useState<Notice | undefined>();
+  // How far the main panel is scrolled, and how far it can be. It starts from the top
+  // again whenever something else is selected.
+  const [scrollTop, setScrollTop] = useState(0);
+  const [scrollMax, setScrollMax] = useState(0);
 
   // A success fades. A failure stays until the next key press: someone who looks away
   // must not come back believing a key was disabled when it was not.
@@ -75,6 +79,13 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
   const selectedId = visible.some((k) => k.id === keySel) ? keySel : visible[0]?.id;
   const selectedKey = visible.find((k) => k.id === selectedId);
   const needs = useMemo(() => attention(data.keys, now), [data.keys, now]);
+  const attnSelKey = needs[Math.min(attentionSel, Math.max(0, needs.length - 1))]?.key.id;
+  const watching = `${tab}:${tab === 'keys' ? selectedId : tab === 'status' ? attnSelKey : tab === 'upstreams' ? upstreamSel : auditSel}`;
+  useEffect(() => setScrollTop(0), [watching]);
+  const scroll: Scroll = {
+    offset: scrollTop,
+    onMax: (m) => setScrollMax((c) => (c === m ? c : m)),
+  };
   const tooSmall = columns < MIN_COLUMNS || rows < MIN_ROWS;
   const loaded = link.state === 'ok' || data.keys.length > 0 || data.upstreams.length > 0 || data.audit.length > 0;
   const usable = loaded && link.state !== 'denied';
@@ -93,7 +104,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
     if (tab === 'keys') {
       const cur = Math.max(0, visible.findIndex((k) => k.id === selectedId));
       setKeySel(visible[step(cur, visible.length)]?.id);
-    } else if (tab === 'overview') {
+    } else if (tab === 'status') {
       setAttentionSel((c) => step(c, needs.length));
     } else if (tab === 'upstreams') {
       setUpstreamSel((c) => step(c, data.upstreams.length));
@@ -214,8 +225,8 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
       if (n >= 1 && n <= TABS.length) return goTab(TABS[n - 1]!.id);
       const at = TABS.findIndex((t) => t.id === tab);
       if (key.tab) return goTab(TABS[(at + (key.shift ? TABS.length - 1 : 1)) % TABS.length]!.id);
-      if (key.rightArrow) return goTab(TABS[(at + 1) % TABS.length]!.id);
-      if (key.leftArrow) return goTab(TABS[(at + TABS.length - 1) % TABS.length]!.id);
+      if (key.rightArrow || input === 'l') return goTab(TABS[(at + 1) % TABS.length]!.id);
+      if (key.leftArrow || input === 'h') return goTab(TABS[(at + TABS.length - 1) % TABS.length]!.id);
 
       if (key.upArrow || input === 'k') return move(-1);
       if (key.downArrow || input === 'j') return move(1);
@@ -224,8 +235,11 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
       if (key.home || input === 'g') return move('first');
       if (key.end || input === 'G') return move('last');
 
+      if (input === 'J') return setScrollTop((t) => Math.min(scrollMax, t + 3));
+      if (input === 'K') return setScrollTop((t) => Math.max(0, t - 3));
+
       if (input === 'n') return setMode({ kind: 'create' });
-      if (tab === 'overview' && key.return) {
+      if (tab === 'status' && key.return) {
         const target = needs[Math.min(attentionSel, needs.length - 1)];
         if (!target) return;
         setFilter('');
@@ -255,13 +269,22 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
     );
   }
 
-  const width = columns - 2;
-  const height = rows - CHROME_ROWS;
+  const width = columns;
+  const bodyRows = rows - CHROME_ROWS;
+  const want =
+    tab === 'status'
+      ? 7 + needs.length
+      : tab === 'keys'
+        ? Math.max(1, visible.length) + (filter !== '' || mode.kind === 'filter' ? 1 : 0)
+        : tab === 'upstreams'
+          ? data.upstreams.length
+          : data.audit.length;
+  const lay = layout(columns, bodyRows, tab, want);
 
   let body;
   if (link.state === 'denied') {
     body = (
-      <Centered width={width} height={height}>
+      <Centered width={width} height={bodyRows}>
         <Panel title="The admin API refused this token" width={66} tone={color.danger}>
           <Box flexDirection="column" marginTop={1}>
             <Text>{link.error}</Text>
@@ -273,7 +296,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
     );
   } else if (!loaded) {
     body = (
-      <Centered width={width} height={height}>
+      <Centered width={width} height={bodyRows}>
         {link.state === 'down' ? (
           <Panel title="Cannot reach kman" width={66} tone={color.warn}>
             <Box flexDirection="column" marginTop={1}>
@@ -289,7 +312,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
     );
   } else if (mode.kind === 'create') {
     body = (
-      <Centered width={width} height={height}>
+      <Centered width={width} height={bodyRows}>
         <CreateKeyDialog
           upstreams={data.upstreams}
           defaultDays={data.settings ? Math.round(data.settings.default_key_ttl_seconds / 86_400) : undefined}
@@ -302,7 +325,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
     );
   } else if (mode.kind === 'revoke') {
     body = (
-      <Centered width={width} height={height}>
+      <Centered width={width} height={bodyRows}>
         <RevokeDialog
           keyData={mode.key}
           maxWidth={width}
@@ -315,91 +338,134 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
     );
   } else if (mode.kind === 'secret') {
     body = (
-      <Centered width={width} height={height}>
+      <Centered width={width} height={bodyRows}>
         <SecretDialog created={mode.created} width={width} onCopy={copy} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'help') {
     body = (
-      <Centered width={width} height={height}>
-        <HelpDialog onClose={() => setMode({ kind: 'none' })} />
+      <Centered width={width} height={bodyRows}>
+        <HelpDialog focus={tab} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
-  } else if (tab === 'overview') {
+  } else if (mode.kind === 'confirm') {
     body = (
-      <OverviewView
-        keys={data.keys}
-        upstreams={data.upstreams}
-        audit={data.audit}
-        price={data.price}
-        needs={needs}
-        selected={attentionSel}
-        width={width}
-        height={height}
-        now={now}
-      />
+      <Centered width={width} height={bodyRows}>
+        <Panel title={`${mode.action === 'disable' ? 'Disable' : 'Enable'} this key?`} width={Math.min(70, width)} tone={color.warn}>
+          <Box flexDirection="column" marginTop={1}>
+            {/* Never cut: two names can differ only at the end. */}
+            <Text bold wrap="wrap">
+              {keyLabel(mode.key)}
+            </Text>
+            <Text dimColor wrap="wrap">
+              id {mode.key.id} · {mode.key.upstream ?? 'no upstream'}
+            </Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text wrap="wrap">
+              {mode.action === 'disable'
+                ? 'It is refused from its next request, and you can enable it again.'
+                : 'It works again from its next request.'}
+            </Text>
+          </Box>
+          <Box marginTop={1}>
+            <Hint k="y">yes</Hint>
+            <Text>{'   '}</Text>
+            <Hint k="n">cancel</Hint>
+          </Box>
+        </Panel>
+      </Centered>
     );
-  } else if (tab === 'keys') {
-    body = (
-      <KeysView
-        keys={visible}
-        total={data.keys.length}
-        selectedId={selectedId}
-        filter={filter}
-        filtering={mode.kind === 'filter'}
-        width={width}
-        height={height}
-        now={now}
-      />
-    );
-  } else if (tab === 'upstreams') {
-    body = <UpstreamsView upstreams={data.upstreams} keys={data.keys} selected={upstreamSel} width={width} height={height} />;
   } else {
-    body = <AuditView audit={data.audit} names={{ keys: data.keys, upstreams: data.upstreams }} fresh={fresh} selected={auditSel} width={width} height={height} now={now} />;
+    const h = lay.heights;
+    const names = { keys: data.keys, upstreams: data.upstreams };
+    const upSel = Math.min(upstreamSel, Math.max(0, data.upstreams.length - 1));
+    const auSel = Math.min(auditSel, Math.max(0, data.audit.length - 1));
+    const left = (
+      <Box flexDirection="column" width={lay.leftW} height={lay.wide ? bodyRows : undefined} flexShrink={0}>
+        <StatusPanel
+          width={lay.leftW}
+          height={h.status}
+          focused={tab === 'status'}
+          link={link}
+          url={url}
+          actor={data.actor}
+          keys={data.keys}
+          needs={needs}
+          selected={attentionSel}
+          price={data.price}
+        />
+        <KeysPanel
+          width={lay.leftW}
+          height={h.keys}
+          focused={tab === 'keys'}
+          keys={visible}
+          total={data.keys.length}
+          selectedId={selectedId}
+          filter={filter}
+          filtering={mode.kind === 'filter'}
+          now={now}
+        />
+        <UpstreamsPanel
+          width={lay.leftW}
+          height={h.upstreams}
+          focused={tab === 'upstreams'}
+          upstreams={data.upstreams}
+          keys={data.keys}
+          selected={upstreamSel}
+        />
+        <AuditPanel
+          width={lay.leftW}
+          height={h.audit}
+          focused={tab === 'audit'}
+          audit={data.audit}
+          names={names}
+          fresh={fresh}
+          selected={auditSel}
+          now={now}
+        />
+      </Box>
+    );
+    const attn = needs[Math.min(attentionSel, Math.max(0, needs.length - 1))]?.key;
+    const main =
+      tab === 'status' ? (
+        attn ? (
+          <KeyMain key={attn.id} keyData={attn} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} />
+        ) : (
+          <StatusMain width={lay.mainW} height={lay.mainH} audit={data.audit} names={names} now={now} scroll={scroll} />
+        )
+      ) : tab === 'keys' ? (
+        <KeyMain keyData={selectedKey} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} />
+      ) : tab === 'upstreams' ? (
+        <UpstreamMain upstream={data.upstreams[upSel]} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} />
+      ) : (
+        <AuditMain entry={data.audit[auSel]} names={names} width={lay.mainW} height={lay.mainH} scroll={scroll} />
+      );
+    body = (
+      <Box width={width} height={bodyRows} flexDirection={lay.wide ? 'row' : 'column'}>
+        {left}
+        {main}
+      </Box>
+    );
   }
 
   return (
-    <Box flexDirection="column" width={columns} height={rows} paddingX={1}>
-      <Header link={link} url={url} actor={data.actor} width={width} />
-      <Tabs
-        active={tab}
-        width={width}
-        warnings={needs.filter((n) => n.top !== 'info').length}
-        infos={needs.filter((n) => n.top === 'info').length}
-        counts={loaded ? { keys: data.keys.length, upstreams: data.upstreams.length } : {}}
-      />
-      <Box height={height} width={width}>
+    <Box flexDirection="column" width={columns} height={rows}>
+      <Box width={width} height={bodyRows}>
         {body}
       </Box>
-      {mode.kind === 'confirm' ? (
-        <Box flexDirection="column">
-          <Text color={color.warn} wrap="truncate-end">
-            {mode.action === 'disable'
-              ? `Disable ${keyLabel(mode.key)}? It is refused from its next request, and you can enable it again.`
-              : `Enable ${keyLabel(mode.key)}? It works again from its next request.`}
-          </Text>
-          <Text>
-            <Text bold color={color.accent}>
-              y
-            </Text>
-            <Text dimColor> yes   </Text>
-            <Text bold color={color.accent}>
-              n
-            </Text>
-            <Text dimColor> cancel</Text>
-          </Text>
-        </Box>
-      ) : (
-        <Footer
-          notice={notice}
-          hints={
-            loaded && link.state !== 'denied'
-              ? hintsFor(tab, mode.kind, selectedKey, filter !== '', needs.length > 0)
+      <Footer
+        notice={notice}
+        link={link}
+        hints={
+          loaded && link.state !== 'denied'
+            ? hintsFor(tab, mode.kind, selectedKey, filter !== '', needs.length > 0, scrollMax > 0)
+            : link.state === 'denied'
+              ? [{ k: 'q', label: 'quit' }]
               : [{ k: 'r', label: 'retry' }, { k: 'q', label: 'quit' }]
-          }
-          width={width}
-        />
-      )}
+        }
+        width={width}
+      />
     </Box>
   );
 }
@@ -412,7 +478,15 @@ function Centered({ width, height, children }: { width: number; height: number; 
   );
 }
 
-function hintsFor(tab: Tab, mode: Mode['kind'], key: Key | undefined, filtered: boolean, anyAttention: boolean): HintItem[] {
+function hintsFor(
+  tab: Tab,
+  mode: Mode['kind'],
+  key: Key | undefined,
+  filtered: boolean,
+  anyAttention: boolean,
+  scrollable: boolean,
+): HintItem[] {
+  if (mode === 'confirm') return [{ k: 'y', label: 'yes' }, { k: 'n', label: 'cancel' }];
   if (mode === 'filter') {
     return [
       { k: 'Enter', label: 'keep filter' },
@@ -420,11 +494,19 @@ function hintsFor(tab: Tab, mode: Mode['kind'], key: Key | undefined, filtered: 
       { k: '↑↓', label: 'select' },
     ];
   }
-  // Each dialog shows its own keys.
-  if (mode === 'secret' || mode === 'revoke' || mode === 'create') return [];
+  if (mode === 'create') {
+    return [
+      { k: 'Tab', label: 'next field' },
+      { k: 'Ctrl+S', label: 'create', always: true },
+      { k: 'Esc', label: 'cancel', always: true },
+    ];
+  }
+  if (mode === 'revoke') return [{ k: 'Enter', label: 'revoke', always: true }, { k: 'Esc', label: 'cancel', always: true }];
+  if (mode === 'secret') return [{ k: 'c', label: 'copy' }, { k: 'Enter', label: 'done', always: true }];
   if (mode !== 'none') return [{ k: 'Esc', label: 'close' }];
   const common: HintItem[] = [
-    { k: '1-4', label: 'views' },
+    ...(scrollable ? [{ k: 'J/K', label: 'scroll', always: true }] : []),
+    { k: '1-4', label: 'panels' },
     { k: 'r', label: 'refresh' },
     { k: '?', label: 'help', always: true },
     { k: 'q', label: 'quit', always: true },
@@ -441,11 +523,11 @@ function hintsFor(tab: Tab, mode: Mode['kind'], key: Key | undefined, filtered: 
       { k: 'n', label: 'new key' },
       ...act,
       ...(key && key.status !== 'revoked' ? [{ k: 'x', label: 'revoke' }] : []),
-      ...(filtered ? [{ k: 'Esc', label: 'clear filter' }] : [{ k: '/', label: 'filter' }]),
+      ...(filtered ? [{ k: 'Esc', label: 'clear filter', always: true }] : [{ k: '/', label: 'filter', always: true }]),
       ...common,
     ];
   }
-  if (tab === 'overview') {
+  if (tab === 'status') {
     return [
       ...(anyAttention ? [{ k: '↑↓', label: 'select', always: true }, { k: 'Enter', label: 'open key' }] : []),
       { k: 'n', label: 'new key' },
