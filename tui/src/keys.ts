@@ -18,6 +18,6 @@ export function visibleKeys(keys: Key[], filter: string): Key[] {
     .sort(
       (a, b) =>
         statusOrder[a.status] - statusOrder[b.status] ||
-        keyLabel(a).localeCompare(keyLabel(b)),
+        keyLabel(a).localeCompare(keyLabel(b), undefined, { numeric: true }),
     );
 }
