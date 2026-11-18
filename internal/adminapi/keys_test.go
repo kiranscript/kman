@@ -174,3 +174,32 @@ func TestTheAPIListsTheExposedKeysWithTheirFixes(t *testing.T) {
 		t.Error("the exposure report holds a key's secret")
 	}
 }
+
+func TestTheAPIGivesOutClientAddressesOnlyWhenTheSettingIsOn(t *testing.T) {
+	s := newServer(t)
+	withUpstreamAndCredential(t, s)
+	created := createKey(t, s, `{"name":"my-app","upstream":"openai"}`)
+	path := "/admin/v1/keys/" + created.Key.ID + "/clients"
+
+	// Off, the default: a conflict that says how to turn it on, with no address in it.
+	r := s.do(t, s.owner, "GET", path, "")
+	if r.status != http.StatusConflict || !strings.Contains(string(r.body), "kman settings set expose_client_addresses true") {
+		t.Fatalf("GET clients with the setting off: %d %s", r.status, r.body)
+	}
+	// It needs an admin token like everything else.
+	if r := s.do(t, "", "GET", path, ""); r.status != http.StatusUnauthorized {
+		t.Errorf("GET clients with no token: %d", r.status)
+	}
+
+	if r := s.do(t, s.owner, "PATCH", "/admin/v1/settings", `{"expose_client_addresses":true}`); r.status != http.StatusOK {
+		t.Fatalf("PATCH settings: %d %s", r.status, r.body)
+	}
+	r = s.do(t, s.owner, "GET", path, "")
+	var got admin.KeyClients
+	if err := json.Unmarshal(r.body, &got); err != nil || r.status != http.StatusOK || got.KeyID != created.Key.ID || got.Clients == nil || len(got.Clients) != 0 {
+		t.Errorf("GET clients with the setting on: %d %s (%v)", r.status, r.body, err)
+	}
+	if r := s.do(t, s.owner, "GET", "/admin/v1/keys/k_nothing/clients", ""); r.status != http.StatusNotFound {
+		t.Errorf("GET clients of an unknown key: %d", r.status)
+	}
+}

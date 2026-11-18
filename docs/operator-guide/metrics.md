@@ -52,3 +52,15 @@ metrics_listen: 127.0.0.1:9090
 ```
 
 That listener serves `/metrics` and nothing else, **with no authentication**, over plain HTTP. Keep it on loopback or a private network; kman logs a warning if it is not on loopback. The metrics hold key ids and spend, which tell a reader which keys are busy. Restart kman after editing `kman.yaml`.
+
+## Which addresses used a key
+
+The events hold each request's client address, and `kman key clients <key>` groups them: one row per address, newest first, with its requests, how many kman refused, when it was first and last seen, its country and ASN when a GeoIP database knows it, and what its requests cost. The dashboard and the terminal UI show the same table on a key's detail.
+
+A client address is personal data, so the admin API does not give them out by default. Turn it on, and off again, with
+
+```sh
+kman settings set expose_client_addresses on
+```
+
+Each change is audited. While it is off, `kman key clients` and `GET /admin/v1/keys/{id}/clients` are refused and say how to turn it on, and the dashboards show that message in place of the table. The table covers the events kman still keeps (30 days unless `retention` says otherwise), and does not count a request that came in on a Unix socket, which has no address.

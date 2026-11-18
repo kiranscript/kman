@@ -276,6 +276,11 @@ func (c *client) GetKey(ctx context.Context, req admin.KeyRef) (admin.Key, error
 	return out, c.do(ctx, "GET", "/keys/"+url.PathEscape(req.ID), nil, nil, &out)
 }
 
+func (c *client) KeyClients(ctx context.Context, req admin.KeyRef) (admin.KeyClients, error) {
+	var out admin.KeyClients
+	return out, c.do(ctx, "GET", "/keys/"+url.PathEscape(req.ID)+"/clients", nil, nil, &out)
+}
+
 func (c *client) DisableKey(ctx context.Context, req admin.KeyRef) (admin.Key, error) {
 	return c.keyAction(ctx, req, "disable")
 }

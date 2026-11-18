@@ -142,6 +142,10 @@ A virtual key's old secret after its grace period has ended. It no longer works,
 The record of one request or realtime session through kman: which key sent it, from where, what it was allowed to do, and what it cost. Never its content.
 _Avoid_: Log line, request log
 
+**Client address**:
+The IP address a request came from: the connection's, or `X-Forwarded-For` only through `trusted_proxies`. It is stored on each event, and it is personal data, so the admin API shows which addresses used a key only when the `expose_client_addresses` setting is on.
+_Avoid_: Caller IP, source IP
+
 **Baseline**:
 What normal use of one virtual key looks like: its usual request rate, spend, and the places it is used from.
 

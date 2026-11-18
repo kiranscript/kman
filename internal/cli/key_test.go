@@ -291,3 +291,51 @@ func TestKeyLifecycleCommandsNeedOneKeyAndKnowIt(t *testing.T) {
 		}
 	}
 }
+
+// sawKey records requests by the key from addresses, straight into the events table.
+func (in *install) sawKey(t *testing.T, keyID, ip, kind string, tsMilli int64, costMicro int64) {
+	t.Helper()
+	cost := any(costMicro)
+	if kind != "request" {
+		cost = nil
+	}
+	in.sqlExec(t, `INSERT INTO events (ts, key_id, kind, client_ip, country, asn, status, latency_ms, req_bytes, resp_bytes, tokens_in, tokens_out, tokens_cached, tokens_cache_write, tokens_audio_in, tokens_audio_out, cost_micro, cost_estimated)
+		VALUES (?, ?, ?, ?, 'DE', 3320, 200, 1, 1, 1, 0, 0, 0, 0, 0, 0, ?, 0)`, tsMilli, keyID, kind, ip, cost)
+}
+
+func TestKeyClientsIsRefusedUntilClientAddressesAreOnAndThenListsThemByAddress(t *testing.T) {
+	in := withOpenAI(t)
+	var created admin.CreatedKey
+	in.kmanJSON(t, &created, "key", "create", "my-app", "--upstream", "openai")
+	id := created.Key.ID
+	in.sawKey(t, id, "203.0.113.7", "request", 1_700_000_000_000, 2_500_000)
+	in.sawKey(t, id, "203.0.113.7", "request", 1_700_000_060_000, 500_000)
+	in.sawKey(t, id, "203.0.113.7", "blocked", 1_700_000_120_000, 0)
+	in.sawKey(t, id, "198.51.100.9", "request", 1_700_001_000_000, 1_000_000)
+
+	// Off by default: the API refuses, and the CLI says how to turn it on.
+	r := in.run(t, nil, "", "key", "clients", "my-app")
+	if r.code == 0 || !strings.Contains(r.stderr, "kman settings set expose_client_addresses true") || strings.Contains(r.stdout+r.stderr, "203.0.113.7") {
+		t.Fatalf("key clients with the setting off: exit %d\n%s%s", r.code, r.stdout, r.stderr)
+	}
+
+	in.kman(t, "settings", "set", "expose_client_addresses", "on")
+	out := in.kman(t, "key", "clients", "my-app")
+	for _, want := range []string{"ADDRESS", "REQUESTS", "198.51.100.9", "203.0.113.7", "AS3320", "DE", "$3"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("key clients lacks %q:\n%s", want, out)
+		}
+	}
+	// The more recently seen address comes first.
+	if strings.Index(out, "198.51.100.9") > strings.Index(out, "203.0.113.7") {
+		t.Errorf("the addresses are not newest first:\n%s", out)
+	}
+	var got admin.KeyClients
+	in.kmanJSON(t, &got, "key", "clients", id, "--json")
+	if got.Total != 2 || len(got.Clients) != 2 || got.Clients[1].Requests != 2 || got.Clients[1].Blocked != 1 {
+		t.Errorf("key clients --json = %+v", got)
+	}
+	if r := in.run(t, nil, "", "key", "clients", "nobody"); r.code != 1 || !strings.Contains(r.stderr, "nobody") {
+		t.Errorf("an unknown key: exit %d, %s", r.code, r.stderr)
+	}
+}

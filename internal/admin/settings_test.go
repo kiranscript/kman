@@ -111,5 +111,6 @@ func TestUpdateSettingsRefusesBadValues(t *testing.T) {
 
 func equalSettings(a, b admin.Settings) bool {
 	return a.MaxKeyLifetimeSeconds == b.MaxKeyLifetimeSeconds && a.DefaultKeyTTLSeconds == b.DefaultKeyTTLSeconds &&
-		a.SpendTimezone == b.SpendTimezone && slices.Equal(a.SoftBudgetPercents, b.SoftBudgetPercents)
+		a.SpendTimezone == b.SpendTimezone && slices.Equal(a.SoftBudgetPercents, b.SoftBudgetPercents) &&
+		a.ExposeClientAddresses == b.ExposeClientAddresses
 }

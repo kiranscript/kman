@@ -16,6 +16,7 @@ type Settings struct {
 	MaxKeyLifetimeSeconds int64  `json:"max_key_lifetime_seconds" doc:"The longest any virtual key may stay valid. No key is created or extended past it. Default 365 days."`
 	DefaultKeyTTLSeconds  int64  `json:"default_key_ttl_seconds" doc:"How long a new virtual key stays valid unless told otherwise. At most the maximum key lifetime. Default 90 days."`
 	SpendTimezone         string `json:"spend_timezone" doc:"The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC. A change takes effect when kman restarts."`
+	ExposeClientAddresses bool   `json:"expose_client_addresses" doc:"Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited."`
 	SoftBudgetPercents    []int  `json:"soft_budget_defaults" doc:"The percentages of each spend cap or soft budget that raise a warning when crossed, rising, for keys whose policy sets none (soft_budget_percents). Each warns once per day or month. Default 50, 80, 100; an empty list warns for no key that sets none. A change takes effect at the next check, within a minute."`
 }
 
@@ -26,6 +27,7 @@ type SettingsUpdate struct {
 	DefaultKeyTTLSeconds  *int64  `json:"default_key_ttl_seconds,omitempty"`
 	SpendTimezone         *string `json:"spend_timezone,omitempty"`
 	SoftBudgetPercents    *[]int  `json:"soft_budget_defaults,omitempty"`
+	ExposeClientAddresses *bool   `json:"expose_client_addresses,omitempty"`
 }
 
 // The settings' keys, in the settings table and the audit log.
@@ -34,6 +36,7 @@ const (
 	settingDefaultKeyTTL  = "default_key_ttl"
 	settingSpendTimezone  = "spend_timezone"
 	settingSoftBudgets    = "soft_budget_defaults"
+	settingExposeClients  = "expose_client_addresses"
 )
 
 const day = 24 * 60 * 60
@@ -69,6 +72,7 @@ func (s Settings) list() []setting {
 		{settingDefaultKeyTTL, s.DefaultKeyTTLSeconds},
 		{settingSpendTimezone, s.SpendTimezone},
 		{settingSoftBudgets, s.SoftBudgetPercents},
+		{settingExposeClients, s.ExposeClientAddresses},
 	}
 }
 
@@ -85,6 +89,8 @@ func (s *Settings) load(key string, raw []byte) error {
 		dst = &s.SpendTimezone
 	case settingSoftBudgets:
 		dst = &s.SoftBudgetPercents
+	case settingExposeClients:
+		dst = &s.ExposeClientAddresses
 	default:
 		return nil
 	}
@@ -105,6 +111,9 @@ func (s Settings) apply(u SettingsUpdate) (Settings, bool) {
 	}
 	if u.SoftBudgetPercents != nil {
 		s.SoftBudgetPercents, named = slices.Clone(*u.SoftBudgetPercents), true
+	}
+	if u.ExposeClientAddresses != nil {
+		s.ExposeClientAddresses, named = *u.ExposeClientAddresses, true
 	}
 	return s, named
 }

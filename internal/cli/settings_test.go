@@ -11,10 +11,11 @@ func TestSettingsGetShowsTheDefaults(t *testing.T) {
 	in := newInstall(t).loggedIn(t)
 	out := in.kman(t, "settings", "get")
 	for _, line := range []string{
-		"max_key_lifetime      365d",
-		"default_key_ttl       90d",
-		"spend_timezone        UTC",
-		"soft_budget_defaults  50,80,100",
+		"max_key_lifetime         365d",
+		"default_key_ttl          90d",
+		"spend_timezone           UTC",
+		"expose_client_addresses  off",
+		"soft_budget_defaults     50,80,100",
 	} {
 		if !strings.Contains(out, line+"\n") {
 			t.Errorf("settings get lacks %q:\n%s", line, out)
@@ -35,7 +36,7 @@ func TestSettingsSetChangesSeveralAtOnce(t *testing.T) {
 	in.kman(t, "settings", "set", "max_key_lifetime", "30d", "default_key_ttl", "36h",
 		"spend_timezone", "Europe/Berlin", "soft_budget_defaults", "75,100")
 	out := in.kman(t, "settings", "get")
-	for _, line := range []string{"max_key_lifetime      30d", "default_key_ttl       36h", "spend_timezone        Europe/Berlin", "soft_budget_defaults  75,100"} {
+	for _, line := range []string{"max_key_lifetime         30d", "default_key_ttl          36h", "spend_timezone           Europe/Berlin", "soft_budget_defaults     75,100"} {
 		if !strings.Contains(out, line+"\n") {
 			t.Errorf("settings get lacks %q:\n%s", line, out)
 		}
@@ -66,5 +67,23 @@ func TestSettingsSetRefusesBadInput(t *testing.T) {
 	}
 	if got := in.kman(t, "settings", "get", "default_key_ttl"); got != "90d\n" {
 		t.Errorf("default_key_ttl is %q after refused sets, want 90d", got)
+	}
+}
+
+func TestSettingsSetTurnsClientAddressesOnAndOff(t *testing.T) {
+	in := newInstall(t).loggedIn(t)
+	if got := in.kman(t, "settings", "get", "expose_client_addresses"); got != "off\n" {
+		t.Errorf("client addresses are %q by default, want off", got)
+	}
+	in.kman(t, "settings", "set", "expose_client_addresses", "on")
+	if got := in.kman(t, "settings", "get", "expose_client_addresses"); got != "on\n" {
+		t.Errorf("after turning them on: %q", got)
+	}
+	in.kman(t, "settings", "set", "expose_client_addresses", "false")
+	if got := in.kman(t, "settings", "get", "expose_client_addresses"); got != "off\n" {
+		t.Errorf("after turning them off: %q", got)
+	}
+	if r := in.run(t, nil, "", "settings", "set", "expose_client_addresses", "maybe"); r.code != 1 || !strings.Contains(r.stderr, "on or off") {
+		t.Errorf("a bad value: exit %d, %s", r.code, r.stderr)
 	}
 }
