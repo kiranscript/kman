@@ -35,6 +35,7 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `POST /admin/v1/keys` | Create a virtual key on an upstream; its secret is returned only this once |
 | `GET /admin/v1/keys/{id}` | Read one virtual key, by key id |
 | `PATCH /admin/v1/keys/{id}` | Change a virtual key's name, note, tags, expiry or policy |
+| `GET /admin/v1/keys/{id}/clients` | List the client addresses a virtual key was used from, grouped, from the events kept; refused unless the expose_client_addresses setting is on |
 | `POST /admin/v1/keys/{id}/disable` | Stop a virtual key from the next request until it is enabled again |
 | `POST /admin/v1/keys/{id}/enable` | Let a disabled virtual key work again; a revoked key cannot be enabled |
 | `POST /admin/v1/keys/{id}/revoke` | End a virtual key for good, from the next request; it cannot be undone |
@@ -231,6 +232,16 @@ Change a virtual key's name, note, tags, expiry or policy. Operation id `updateK
 Request body: [KeyUpdate](#keyupdate).
 
 Response 200: [Key](#key).
+
+### `GET /admin/v1/keys/{id}/clients`
+
+List the client addresses a virtual key was used from, grouped, from the events kept; refused unless the expose_client_addresses setting is on. Operation id `getKeyClients`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | The key id. |
+
+Response 200: [KeyClients](#keyclients).
 
 ### `POST /admin/v1/keys/{id}/disable`
 
@@ -666,6 +677,28 @@ Response 200: [Whoami](#whoami).
 | `upstream` | string | no | The upstream's name. Absent once a revoked key's upstream is deleted. |
 | `upstream_id` | string | no |  |
 
+### `KeyClient`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `address` | string | yes | The client address: the connection's, or X-Forwarded-For only through trusted_proxies. |
+| `asn` | integer | no | The autonomous system number, from the ASN database, when there is one that knows the address. |
+| `blocked` | integer | yes | Requests kman refused: a locked address, a refused key, a policy. |
+| `cost_micro` | integer | yes | The known cost of its requests, in microdollars. |
+| `country` | string | no | ISO 3166-1 code, from the country database, when there is one that knows the address. |
+| `first_seen` | string | yes |  |
+| `last_seen` | string | yes |  |
+| `requests` | integer | yes | Forwarded requests and realtime sessions. |
+| `unmetered_requests` | integer | no | Forwarded requests whose cost is not known, which cost_micro does not include. |
+
+### `KeyClients`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `clients` | list of [KeyClient](#keyclient) | yes | The addresses the key was used from, the most recently seen first, at most 50. A request that came in on a Unix socket has no address and is not counted. |
+| `key_id` | string | yes |  |
+| `total` | integer | yes | How many distinct addresses the key was used from. More than the length of clients when the list was cut. |
+
 ### `KeyList`
 
 | Field | Type | Required | Description |
@@ -838,6 +871,7 @@ Response 200: [Whoami](#whoami).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `default_key_ttl_seconds` | integer | yes | How long a new virtual key stays valid unless told otherwise. At most the maximum key lifetime. Default 90 days. |
+| `expose_client_addresses` | boolean | yes | Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited. |
 | `max_key_lifetime_seconds` | integer | yes | The longest any virtual key may stay valid. No key is created or extended past it. Default 365 days. |
 | `soft_budget_defaults` | list of integer | yes | The percentages of each spend cap or soft budget that raise a warning when crossed, rising, for keys whose policy sets none (soft_budget_percents). Each warns once per day or month. Default 50, 80, 100; an empty list warns for no key that sets none. A change takes effect at the next check, within a minute. |
 | `spend_timezone` | string | yes | The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC. A change takes effect when kman restarts. |
@@ -847,6 +881,7 @@ Response 200: [Whoami](#whoami).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `default_key_ttl_seconds` | integer | no |  |
+| `expose_client_addresses` | boolean | no |  |
 | `max_key_lifetime_seconds` | integer | no |  |
 | `soft_budget_defaults` | list of integer | no |  |
 | `spend_timezone` | string | no |  |

@@ -52,6 +52,7 @@ type API interface {
 	EnableKey(ctx context.Context, req KeyRef) (Key, error)
 	RevokeKey(ctx context.Context, req KeyRef) (Key, error)
 	RotateKey(ctx context.Context, req RotateKeyRequest) (RotatedKey, error)
+	KeyClients(ctx context.Context, req KeyRef) (KeyClients, error)
 
 	ListPrices(ctx context.Context, req PriceQuery) (PriceList, error)
 	PriceDataStatus(ctx context.Context) (PriceDataStatus, error)

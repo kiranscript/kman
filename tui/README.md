@@ -35,6 +35,7 @@ The screen follows [lazygit](https://github.com/jesseduffield/lazygit): numbered
 | `n` | create a key |
 | `d`, `e` | disable, enable the selected key (asks y/n) |
 | `x` | revoke the selected key (asks for its name to be typed) |
+| `c` | the addresses the selected key was used from, grouped, newest first (see below) |
 | `r` | refresh now (it also refreshes every 3 seconds) |
 | `?` | help |
 | `q`, `Ctrl+C` | quit |
@@ -42,6 +43,18 @@ The screen follows [lazygit](https://github.com/jesseduffield/lazygit): numbered
 A created key's secret is shown once, on a screen of its own. Only Enter closes it, `c` asks the terminal to copy it (OSC 52, which not every terminal allows), and it is gone from memory when it is closed.
 
 Colour uses the terminal's own 16 colours. `NO_COLOR` turns it off and keeps bold and inverse. Every status has a glyph and a word as well as a colour.
+
+## Which addresses used a key
+
+`c` on a key opens a table of the client addresses it was used from: requests, refused requests, when each was last seen, country and ASN (when kman has GeoIP databases), and cost, from the events kman keeps (30 days by default). It is a read, so it works while a change is running, but not while kman is unreachable.
+
+A client address is personal data, so the admin API gives them out only when the install turns them on. Until then the dialog says so and shows the command:
+
+```sh
+kman settings set expose_client_addresses on
+```
+
+Each change of that setting is audited. See [ADR 0010](../docs/adr/0010-client-addresses-are-opt-in-on-the-admin-api.md).
 
 ## Test it
 

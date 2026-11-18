@@ -13,7 +13,7 @@ import (
 )
 
 func cmdKey(ctx context.Context, c *call) error {
-	sub, err := c.sub("<create|list|show|update|disable|enable|revoke|rotate> ...", "create", "list", "show", "update", "disable", "enable", "revoke", "rotate")
+	sub, err := c.sub("<create|list|show|clients|update|disable|enable|revoke|rotate> ...", "create", "list", "show", "clients", "update", "disable", "enable", "revoke", "rotate")
 	if err != nil {
 		return err
 	}
@@ -24,6 +24,8 @@ func cmdKey(ctx context.Context, c *call) error {
 		return keyList(ctx, c)
 	case "show":
 		return keyShow(ctx, c)
+	case "clients":
+		return keyClients(ctx, c)
 	case "disable", "enable", "revoke":
 		return keyLifecycle(ctx, c, sub)
 	case "rotate":
@@ -236,6 +238,67 @@ func keyShow(ctx context.Context, c *call) error {
 	}
 	printKey(c, k)
 	return nil
+}
+
+// keyClients is key clients: the addresses a key was used from, grouped, from the
+// events kman keeps. The admin API gives them out only when the install turned
+// expose_client_addresses on, and says so when it has not.
+func keyClients(ctx context.Context, c *call) error {
+	fs := c.flags("key clients <name or key id> [--json]\n\n"+
+		"Lists the client addresses a key was used from, the most recently seen first, with what each did. "+
+		"It needs the expose_client_addresses setting: kman settings set expose_client_addresses true.", true)
+	pos, err := c.parse(fs, 1, 1)
+	if err != nil {
+		return err
+	}
+	cl, l, err := c.connect()
+	if err != nil {
+		return err
+	}
+	k, err := resolveKey(ctx, cl, pos[0])
+	if err != nil {
+		return c.explain(err, l)
+	}
+	got, err := cl.KeyClients(ctx, admin.KeyRef{ID: k.ID})
+	if err != nil {
+		return c.explain(err, l)
+	}
+	if c.json {
+		return c.printJSON(got)
+	}
+	printClients(c, k, got)
+	return nil
+}
+
+// printClients is the table of addresses a key was used from.
+func printClients(c *call, k admin.Key, got admin.KeyClients) {
+	if len(got.Clients) == 0 {
+		fmt.Fprintf(c.env.Stdout, "%s has no client addresses in the events kman keeps.\n", orDash(k.Name))
+		return
+	}
+	w := tabwriter.NewWriter(c.env.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ADDRESS\tREQUESTS\tBLOCKED\tLAST SEEN\tFIRST SEEN\tCOUNTRY\tASN\tCOST")
+	unmetered := false
+	for _, cl := range got.Clients {
+		cost := dollars(cl.CostMicro)
+		if cl.UnmeteredRequests > 0 {
+			cost += "+"
+			unmetered = true
+		}
+		asn := "-"
+		if cl.ASN != 0 {
+			asn = fmt.Sprintf("AS%d", cl.ASN)
+		}
+		fmt.Fprintf(w, "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n", cl.Address, cl.Requests, cl.Blocked,
+			when(&cl.LastSeen), when(&cl.FirstSeen), orDash(cl.Country), asn, cost)
+	}
+	w.Flush()
+	if got.Total > len(got.Clients) {
+		fmt.Fprintf(c.env.Stdout, "\nThe %d most recently seen of %d addresses.\n", len(got.Clients), got.Total)
+	}
+	if unmetered {
+		fmt.Fprintln(c.env.Stdout, "\n+ some of its requests have no known cost, which the total leaves out.")
+	}
 }
 
 func printKey(c *call, k admin.Key) {

@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
 import { useEffect, useState } from 'react';
+import { fit, wrapLines } from '../format.js';
 import { Hint } from './parts.js';
 import { color } from './theme.js';
 import type { Link } from '../useAdmin.js';
@@ -19,11 +20,11 @@ export function linkBadge(link: Link): { glyph: string; word: string; color?: st
     case 'ok':
       return { glyph: '●', word: 'live', color: color.ok };
     case 'down':
-      return { glyph: '○', word: link.lastOk ? 'offline' : 'cannot connect', color: color.warn };
+      return { glyph: '◌', word: link.lastOk ? 'offline' : 'cannot connect', color: color.warn };
     case 'denied':
       return { glyph: '✖', word: 'token refused', color: color.danger };
     default:
-      return { glyph: '○', word: 'connecting' };
+      return { glyph: '◌', word: 'connecting' };
   }
 }
 
@@ -64,20 +65,42 @@ export function fitHints(hints: HintItem[], width: number): HintItem[] {
   return kept;
 }
 
+const noticeMark = (n: Notice) => `${n.tone === 'ok' ? '✔' : n.tone === 'error' ? '✖' : '·'} `;
+const NOTICE_LINES = 3;
+
+/** The lines of a notice: one for most, and up to three, hanging under the mark, for a failure. */
+function noticeLines(n: Notice, width: number): string[] {
+  const mark = ` ${noticeMark(n)}`;
+  if (n.tone !== 'error') return [fit(mark + n.text, width)];
+  return wrapLines(n.text, width - mark.length, NOTICE_LINES).map((l, i) => (i === 0 ? mark : ' '.repeat(mark.length)) + l);
+}
+
 /**
- * The two rows under the panels, as in lazygit: a notice row, then the options bar
- * with the keys that work right now and, at the right, the connection.
+ * Rows a notice takes. A failure keeps the reason on screen until a key is pressed, so
+ * it gets more rows rather than being cut; everything else is one row.
+ */
+export function noticeRows(notice: Notice | undefined, width: number): number {
+  if (!notice || notice.tone !== 'error') return 1;
+  return Math.max(1, noticeLines(notice, width).length);
+}
+
+/**
+ * The rows under the panels, as in lazygit: the notice, then the options bar with the
+ * keys that work right now and, at the right, the connection.
  */
 export function Footer({ notice, hints, link, width }: { notice?: Notice; hints: HintItem[]; link: Link; width: number }) {
   const badge = linkBadge(link);
   const tail = ` ${badge.glyph} ${badge.word} `;
   const shown = fitHints(hints, width - [...tail].length - 1);
   const tone = notice?.tone === 'ok' ? color.ok : notice?.tone === 'error' ? color.danger : undefined;
+  const lines = notice ? noticeLines(notice, width) : [' '];
   return (
     <Box flexDirection="column" width={width}>
-      <Text color={tone} wrap="truncate-end">
-        {notice ? ` ${notice.tone === 'ok' ? '✔' : notice.tone === 'error' ? '✖' : '·'} ${notice.text}` : ' '}
-      </Text>
+      {lines.map((line, i) => (
+        <Text key={i} color={tone} wrap="truncate-end">
+          {line}
+        </Text>
+      ))}
       <Box width={width} justifyContent="space-between">
         <Box paddingLeft={1}>
           {shown.map((h, i) => (

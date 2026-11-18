@@ -4,13 +4,14 @@ import { Box, Text, measureElement } from 'ink';
 import type { DOMElement } from 'ink';
 import { useEffect, useRef, useState } from 'react';
 import type { AuditEntry, Key, Upstream } from '../api.js';
-import { capMoney, clock, dateTime, fit, money, padEnd, plural, until } from '../format.js';
+import { capMoney, clock, dateTime, fit, money, padEnd, plural, requestsText, until } from '../format.js';
 import { keyLabel } from '../keys.js';
 import { keyRisks } from '../risk.js';
 import { Frame, titleFits } from '../ui/frame.js';
 import { Field, Meter, RiskLine, SectionTitle, StatusBadge } from '../ui/parts.js';
-import { severityColor, severityGlyph } from '../ui/theme.js';
-import { actionColor, targetText } from './audit.js';
+import { color, severityColor, severityGlyph } from '../ui/theme.js';
+import { AUDIT_LIMIT } from '../useAdmin.js';
+import { actionColor, targetName, targetText } from './audit.js';
 import type { Names } from './audit.js';
 
 interface Size {
@@ -57,7 +58,8 @@ export function StatusMain({
         <Text key={e.id} wrap="truncate-end">
           <Text dimColor> {padEnd(clock(e.time, now), 12)}</Text>
           <Text color={actionColor(e.action)}>{padEnd(e.action, 18)}</Text>
-          <Text> {fit(targetText(e, names), targetW)}</Text>
+          {/* "key.create" already says it is a key, so only the name follows. */}
+          <Text> {fit(e.action.startsWith(`${e.target_kind}.`) ? targetName(e, names) : targetText(e, names), targetW)}</Text>
         </Text>
       ))}
     </Frame>
@@ -113,12 +115,12 @@ function SpendRow({ which, k, barW, roomy }: { which: 'today' | 'month'; k: Key;
   const s = k.spend?.[which];
   if (!s) return null;
   const amount = s.cap_micro ? `${money(s.cost_micro)} / ${capMoney(s.cap_micro)}` : `${money(s.cost_micro)}, no cap`;
-  const requests = `${plural(s.requests, 'request')}${s.unmetered_requests ? `, ${s.unmetered_requests} unmetered` : ''}`;
+  const requests = `${requestsText(s.requests)}${s.unmetered_requests ? `, ${s.unmetered_requests} unmetered` : ''}`;
   return (
     <Box flexDirection="column">
       <Box>
         <Text dimColor>{padEnd(which, 6)}</Text>
-        <Meter period={s} width={barW} />
+        <Meter period={s} width={barW} muted={k.status === 'revoked'} />
         <Text wrap="truncate-end">
           {' '}
           {amount}
@@ -146,7 +148,8 @@ export function KeyMain({
   now,
   compact,
   scroll,
-}: Size & { keyData: Key | undefined; now: number; compact: boolean; scroll: Scroll }) {
+  none = 'No key selected.',
+}: Size & { keyData: Key | undefined; now: number; compact: boolean; scroll: Scroll; none?: string }) {
   const { onMax } = scroll;
   useEffect(() => {
     if (!k) onMax(0);
@@ -154,11 +157,15 @@ export function KeyMain({
   if (!k) {
     return (
       <Frame title="Key" width={width} height={height}>
-        <Text dimColor> No key selected.</Text>
+        <Text dimColor wrap="wrap">
+          {' '}
+          {none}
+        </Text>
       </Frame>
     );
   }
-  const risks = keyRisks(k, now);
+  // The badge already says "expired", so that risk is not said twice.
+  const risks = keyRisks(k, now).filter((r) => !(k.expired && k.status === 'active' && r.label === 'expired'));
   const p = k.policy;
   const gap = compact ? 0 : 1;
   // The title is cut at the panel's width; two names can differ only at the end.
@@ -177,7 +184,9 @@ export function KeyMain({
         <Text wrap="wrap">
           <StatusBadge status={k.status} expired={k.expired} />
           <Text dimColor>
-            {'  '}id {k.id} · {k.upstream ?? 'no upstream'}
+            {'  '}
+            {label === k.id ? '' : `id ${k.id} · `}
+            {k.upstream ?? 'no upstream'}
             {compact ? ` · ${expires}` : ''}
           </Text>
         </Text>
@@ -238,7 +247,8 @@ export function UpstreamMain({
   width,
   height,
   scroll,
-}: Size & { upstream: Upstream | undefined; keys: Key[]; scroll: Scroll }) {
+  none = 'No upstream selected.',
+}: Size & { upstream: Upstream | undefined; keys: Key[]; scroll: Scroll; none?: string }) {
   const { onMax } = scroll;
   useEffect(() => {
     if (!u) onMax(0);
@@ -246,7 +256,10 @@ export function UpstreamMain({
   if (!u) {
     return (
       <Frame title="Upstream" width={width} height={height}>
-        <Text dimColor> No upstream selected.</Text>
+        <Text dimColor wrap="wrap">
+          {' '}
+          {none}
+        </Text>
       </Frame>
     );
   }
@@ -260,14 +273,26 @@ export function UpstreamMain({
             {u.name}
           </Text>
         )}
-        <Field label="address">{`${u.host}:${u.port}${u.tls === false ? ' (http)' : ''}`}</Field>
+        <Field label="address">
+          {u.tls === false ? <Text color={color.warn}>▲ plain http </Text> : null}
+          {`${u.host}:${u.port}`}
+        </Field>
         <Field label="profile">{u.profile}</Field>
         <Field label="preset">
-          {u.preset ? `${u.preset} v${u.preset_version ?? '?'}` : 'custom'}
-          {u.update_available ? '  ▲ update available' : ''}
+          {u.update_available ? (
+            <Text color={color.warn}>▲ {u.preset ? `${u.preset} v${u.preset_version ?? '?'}` : 'custom'}: a newer version exists</Text>
+          ) : u.preset ? (
+            `${u.preset} v${u.preset_version ?? '?'}`
+          ) : (
+            'custom'
+          )}
         </Field>
         <Field label={u.credentials.length === 1 ? 'credential' : 'credentials'}>
-          {u.credentials.length ? u.credentials.map((c) => `${c.name} ····${c.last4 ?? ''}`).join('   ') : 'none: add one before creating keys'}
+          {u.credentials.length ? (
+            u.credentials.map((c) => `${c.name} ····${c.last4 ?? ''}`).join('   ')
+          ) : (
+            <Text color={color.warn}>▲ none: add one before creating keys</Text>
+          )}
         </Field>
         <Field label="sdk env">{u.sdk_env ?? '—'}</Field>
         <Field label="keys">
@@ -289,10 +314,12 @@ export function UpstreamMain({
 export function AuditMain({
   entry: e,
   names,
+  limited,
   width,
   height,
   scroll,
-}: Size & { entry: AuditEntry | undefined; names: Names; scroll: Scroll }) {
+  none = 'No entry selected.',
+}: Size & { entry: AuditEntry | undefined; names: Names; limited: boolean; scroll: Scroll; none?: string }) {
   const { onMax } = scroll;
   useEffect(() => {
     if (!e) onMax(0);
@@ -300,7 +327,10 @@ export function AuditMain({
   if (!e) {
     return (
       <Frame title="Entry" width={width} height={height}>
-        <Text dimColor> No entry selected.</Text>
+        <Text dimColor wrap="wrap">
+          {' '}
+          {none}
+        </Text>
       </Frame>
     );
   }
@@ -315,6 +345,11 @@ export function AuditMain({
         <Field label="target">{targetText(e, names)}</Field>
         <Field label="target id">{e.target_id}</Field>
         {e.client_ip ? <Field label="from">{e.client_ip}</Field> : null}
+        {limited ? (
+          <Text dimColor wrap="wrap">
+            The latest {AUDIT_LIMIT} entries; older ones are not loaded.
+          </Text>
+        ) : null}
       </Body>
     </ScrollFrame>
   );

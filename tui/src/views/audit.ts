@@ -15,8 +15,16 @@ export interface Names {
   upstreams: Upstream[];
 }
 
+/** A target kind as words: price_override -> price override. */
+export const kindName = (kind: string) => kind.replaceAll('_', ' ');
+
 /** "key leaked-demo": the target's name where kman still knows it, else its id. */
-export function targetText(e: AuditEntry, { keys, upstreams }: Names): string {
+export function targetText(e: AuditEntry, names: Names): string {
+  return `${kindName(e.target_kind)} ${targetName(e, names)}`;
+}
+
+/** Just the target's name, or its id. */
+export function targetName(e: AuditEntry, { keys, upstreams }: Names): string {
   let name: string | undefined;
   if (e.target_kind === 'key') {
     const k = keys.find((x) => x.id === e.target_id);
@@ -26,5 +34,5 @@ export function targetText(e: AuditEntry, { keys, upstreams }: Names): string {
   } else if (e.target_kind === 'credential') {
     name = upstreams.flatMap((u) => u.credentials).find((c) => c.id === e.target_id)?.name;
   }
-  return `${e.target_kind.replace('_', ' ')} ${name ?? e.target_id}`;
+  return name ?? e.target_id;
 }

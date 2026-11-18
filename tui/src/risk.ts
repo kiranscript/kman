@@ -64,7 +64,7 @@ export function keyRisks(key: Key, now: number): Risk[] {
   if (unmetered > 0) {
     risks.push({
       severity: 'warn',
-      label: `${unmetered} unmetered ${unmetered === 1 ? 'request' : 'requests'} today`,
+      label: `${unmetered} unmetered today`,
       short: 'unmetered',
       weight: 500,
     });

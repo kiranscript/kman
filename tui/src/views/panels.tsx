@@ -3,7 +3,7 @@
 // blue bar; the others shrink until only their selected line shows.
 import { Text } from 'ink';
 import type { AuditEntry, Key, PriceDataStatus, Upstream } from '../api.js';
-import { clock, money, padEnd, since, tailCells } from '../format.js';
+import { clock, fitMiddle, money, padEnd, since, tailCells } from '../format.js';
 import { keyLabel } from '../keys.js';
 import { keyRisks, topRisk } from '../risk.js';
 import type { Attention } from '../risk.js';
@@ -65,6 +65,7 @@ export function StatusPanel({
   needs,
   selected,
   price,
+  upstreamCount,
 }: PanelProps & {
   link: Link;
   url: string;
@@ -73,6 +74,7 @@ export function StatusPanel({
   needs: Attention[];
   selected: number;
   price?: PriceDataStatus;
+  upstreamCount: number;
 }) {
   useTick(1000);
   const badge = linkBadge(link);
@@ -195,7 +197,9 @@ export function StatusPanel({
             keys.some((k) => k.status === 'active') ? (
               <Text color={color.ok}> ✔ every key is capped and current</Text>
             ) : (
-              <Text dimColor> no active keys</Text>
+              <Text dimColor wrap="truncate-end">
+                {keys.length > 0 ? ' no active keys: n creates one' : upstreamCount === 0 ? ' no upstream yet: kman upstream add' : ' no keys yet: n creates one'}
+              </Text>
             )
           ) : (
             shown.map(({ key, risks, top }, i) => (
@@ -233,8 +237,17 @@ export function KeysPanel({
   selectedId,
   filter,
   filtering,
+  hasUpstreams,
   now,
-}: PanelProps & { keys: Key[]; total: number; selectedId?: string; filter: string; filtering: boolean; now: number }) {
+}: PanelProps & {
+  keys: Key[];
+  total: number;
+  selectedId?: string;
+  filter: string;
+  filtering: boolean;
+  hasUpstreams: boolean;
+  now: number;
+}) {
   const inner = width - 2;
   const sel = Math.max(0, keys.findIndex((k) => k.id === selectedId));
   const showFilter = focused && (filtering || filter !== '');
@@ -255,7 +268,7 @@ export function KeysPanel({
       {keys.length === 0 && rows > 0 ? (
         <Text dimColor wrap="truncate-end">
           {' '}
-          {total === 0 ? 'No keys yet. n creates one.' : 'No key matches.'}
+          {total > 0 ? 'No key matches.' : hasUpstreams ? 'No keys yet. n creates one.' : 'No keys: add an upstream first'}
         </Text>
       ) : null}
       {(rows > 0 ? shown : []).map((k) => {
@@ -271,7 +284,7 @@ export function KeysPanel({
         // The mark and its word come first and are never dropped for the spend.
         const word = lapsed ? 'expired' : k.status;
         const statusPart: Seg[] = [
-          { t: s.glyph, color: lapsed ? color.danger : s.color, dim: s.dim },
+          { t: lapsed ? '✖' : s.glyph, color: lapsed ? color.danger : s.color, dim: s.dim },
           { t: ` ${word}`, color: lapsed ? color.danger : undefined, dim: !lapsed },
         ];
         const riskPart: Seg[][] = risk && top ? [[{ t: `${severityGlyph[top]} ${risk.short}`, color: severityColor[top], dim: top === 'info' }]] : [];
@@ -291,7 +304,7 @@ export function KeysPanel({
         return (
           <Row
             key={k.id}
-            left={[{ t: ' ' }, { t: label, dim: k.status === 'revoked' }]}
+            left={[{ t: ' ' }, { t: fitMiddle(label, Math.max(6, inner - 2 - segLen(right) - 2)), dim: k.status === 'revoked' }]}
             right={[...right, { t: ' ' }]}
             width={inner}
             selected={k.id === selectedId}
@@ -351,6 +364,7 @@ export function UpstreamsPanel({
             ...fitParts(
               [
                 ...(u.credentials.length === 0 ? [[{ t: '▲ no credential', color: color.warn }]] : []),
+                ...(u.tls === false ? [[{ t: '▲ http', color: color.warn }]] : []),
                 ...(u.update_available ? [[{ t: '▲ update', color: color.warn }]] : []),
                 [{ t: `${live(u)} active`, dim: true }],
               ],
@@ -392,7 +406,7 @@ export function AuditPanel({
       {audit.length === 0 ? (
         <Text dimColor wrap="truncate-end">
           {' '}
-          The audit log is empty.
+          The audit log is empty: nothing yet.
         </Text>
       ) : null}
       {shown.map((e) => (
@@ -402,7 +416,7 @@ export function AuditPanel({
           selected={e === audit[sel]}
           focused={focused}
           left={[
-            { t: fresh.has(e.id) ? '●' : ' ', color: color.accent },
+            { t: fresh.has(e.id) ? '◆' : ' ', color: color.accent },
             { t: padEnd(clock(e.time, now), 12), dim: true },
             { t: padEnd(e.action, 17), color: actionColor(e.action) },
             { t: targetText(e, names), dim: true },

@@ -8,23 +8,24 @@ const groups: { title: string; rows: [string, string][] }[] = [
   {
     title: 'GLOBAL',
     rows: [
-      ['1-4  ← →  h l  Tab', 'jump to, or cycle, the panels'],
+      ['1-4  ← →  h l  Tab  ⇧Tab', 'jump to, or cycle, the panels'],
       ['↑ ↓  j k  PgUp PgDn', 'move in the focused panel'],
       ['g  G  Home  End', 'first, last'],
       ['J  K', 'scroll the detail panel'],
       ['Enter', 'on Status: open the selected key'],
-      ['n', 'new key'],
-      ['r', 'refresh now'],
-      ['q  Ctrl+C', 'quit'],
+      ['n  r', 'new key; refresh now'],
+      ['q  Ctrl+C', 'quit (this help: Esc or ? closes)'],
     ],
   },
   {
     title: 'KEYS',
     rows: [
       ['/   Esc', 'filter by name, id, tag or upstream; clear it'],
-      ['d  e', 'disable, enable the key'],
+      ['d  e', 'disable, enable the key (y confirms, n cancels)'],
+      ['c', 'the addresses a key was used from'],
       ['x', 'revoke the key (type its name to confirm)'],
       ['Ctrl+S', 'in the new-key form: create now'],
+      ['c  Enter', 'on the new key screen: copy it, then done'],
     ],
   },
 ];
@@ -33,7 +34,7 @@ const groups: { title: string; rows: [string, string][] }[] = [
 export function HelpDialog({ onClose, focus }: { onClose: () => void; focus?: Tab }) {
   const ordered = focus === 'keys' ? [groups[1]!, groups[0]!] : groups;
   useInput((_i, key) => {
-    if (key.escape || key.return || _i === '?' || _i === 'q') onClose();
+    if (key.escape || key.return || _i === '?') onClose();
   });
   return (
     <Panel title="Keybindings" width={76} tone={color.accent}>
@@ -52,8 +53,7 @@ export function HelpDialog({ onClose, focus }: { onClose: () => void; focus?: Ta
       ))}
       <Box marginTop={1} flexDirection="column">
         <SectionTitle>MARKS</SectionTitle>
-        <Text dimColor>● active  ◐ disabled  ✖ revoked or danger  ▲ warning  ○ note</Text>
-        <Text dimColor>Every change is one admin API call, audited under your token.</Text>
+        <Text dimColor>● active  ◐ disabled  ✖ revoked or danger  ▲ warning  ○ note  ◆ new entry  ◌ no link</Text>
       </Box>
     </Panel>
   );

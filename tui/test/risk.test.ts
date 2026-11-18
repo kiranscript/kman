@@ -53,7 +53,7 @@ describe('keyRisks', () => {
   it('flags unmetered requests', () => {
     const k = key();
     k.spend!.today.unmetered_requests = 2;
-    expect(keyRisks(k, now).map((r) => r.label)).toContain('2 unmetered requests today');
+    expect(keyRisks(k, now).map((r) => r.label)).toContain('2 unmetered today');
   });
   it('has none for a key that is already disabled or revoked', () => {
     expect(keyRisks(key({ status: 'disabled', expired: true }), now)).toEqual([]);

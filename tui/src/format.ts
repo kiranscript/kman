@@ -7,6 +7,8 @@ const MICRO = 1_000_000;
 export function money(micro: number): string {
   const dollars = micro / MICRO;
   if (micro === 0) return '$0';
+  // Under a tenth of a cent there is nothing to show but that it is not nothing.
+  if (dollars < 0.001) return '<$0.001';
   if (dollars < 1) return `$${dollars.toFixed(3)}`;
   if (dollars < 1000) return `$${dollars.toFixed(2)}`;
   return `$${Math.round(dollars).toLocaleString('en-US')}`;
@@ -107,6 +109,53 @@ export function fit(text: string, width: number): string {
   return chars.slice(0, width - 1).join('') + '…';
 }
 
+/**
+ * Text wrapped on words into lines of at most `width`, with no leading spaces, in at most
+ * `maxLines`. When more would be needed, the last line ends in "…".
+ */
+export function wrapLines(text: string, width: number, maxLines: number): string[] {
+  if (width <= 0 || maxLines <= 0) return [];
+  const lines: string[] = [];
+  let cur = '';
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    let rest = [...word];
+    while (rest.length > width) {
+      if (cur) lines.push(cur);
+      cur = '';
+      lines.push(rest.slice(0, width).join(''));
+      rest = rest.slice(width);
+    }
+    const w = rest.join('');
+    if (!w) continue;
+    if (!cur) cur = w;
+    else if ([...cur].length + 1 + rest.length <= width) cur += ` ${w}`;
+    else {
+      lines.push(cur);
+      cur = w;
+    }
+  }
+  if (cur) lines.push(cur);
+  if (lines.length <= maxLines) return lines;
+  const kept = lines.slice(0, maxLines);
+  const chars = [...kept[maxLines - 1]!];
+  kept[maxLines - 1] = (chars.length >= width ? chars.slice(0, width - 1).join('') : chars.join('')) + '…';
+  return kept;
+}
+
+/**
+ * Fit text to a width by cutting the middle, so both ends stay: names that share a
+ * prefix ("billing-prod-eu", "billing-prod-us") still differ in what is left.
+ */
+export function fitMiddle(text: string, width: number): string {
+  if (width <= 0) return '';
+  const chars = [...text];
+  if (chars.length <= width) return text;
+  if (width <= 2) return fit(text, width);
+  const head = Math.ceil((width - 1) * 0.55);
+  const tail = width - 1 - head;
+  return chars.slice(0, head).join('') + '…' + chars.slice(chars.length - tail).join('');
+}
+
 export function padEnd(text: string, width: number): string {
   const t = fit(text, width);
   return t + ' '.repeat(Math.max(0, width - [...t].length));
@@ -117,12 +166,56 @@ export function padStart(text: string, width: number): string {
   return ' '.repeat(Math.max(0, width - [...t].length)) + t;
 }
 
+/**
+ * Items laid out in as many lines of `width` as it takes, up to `maxLines`. When some do not
+ * fit, the last line ends in "+N more" (dropping items from it until that fits).
+ */
+export function packLines(items: string[], width: number, maxLines: number, sep = '   '): string[] {
+  const lines: string[][] = [];
+  let used = 0;
+  for (const raw of items) {
+    const item = fit(raw, width);
+    const len = [...item].length;
+    const last = lines[lines.length - 1];
+    if (last && used + sep.length + len <= width) {
+      last.push(item);
+      used += sep.length + len;
+    } else {
+      lines.push([item]);
+      used = len;
+    }
+  }
+  if (lines.length <= maxLines) return lines.map((l) => l.join(sep));
+  const kept = lines.slice(0, Math.max(1, maxLines));
+  let hidden = lines.slice(kept.length).reduce((n, l) => n + l.length, 0);
+  const tail = kept[kept.length - 1]!;
+  const more = () => ` +${hidden} more`;
+  while (tail.length > 1 && [...tail.join(sep)].length + more().length > width) {
+    tail.pop();
+    hidden++;
+  }
+  return kept.map((l, i) => l.join(sep) + (i === kept.length - 1 ? more() : ''));
+}
+
 /** A horizontal bar for a ratio of 0..1: filled and empty cells. */
 export function bar(ratio: number, width: number): { filled: string; empty: string } {
   const r = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
   // Any spend at all shows at least one cell, so a small amount is not invisible.
   const cells = r > 0 ? Math.max(1, Math.round(r * width)) : 0;
   return { filled: '█'.repeat(cells), empty: '░'.repeat(width - cells) };
+}
+
+/** A count that fits a narrow card: 424, 1.2k, 35k, 1.2M. */
+export function shortCount(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 10_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+}
+
+/** "424 requests", or "12k reqs" once the count would not fit a card. */
+export function requestsText(n: number): string {
+  return n < 1000 ? plural(n, 'request') : `${shortCount(n)} reqs`;
 }
 
 export function plural(n: number, one: string, many = `${one}s`): string {

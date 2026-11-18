@@ -1,19 +1,21 @@
 import { Box, Text, useApp, useInput, useWindowSize } from 'ink';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AdminClient, CreatedKey, CreateKeyInput, Key } from './api.js';
+import { ClientsDialog } from './dialogs/ClientsDialog.js';
 import { CreateKeyDialog } from './dialogs/CreateKeyDialog.js';
 import { HelpDialog } from './dialogs/HelpDialog.js';
 import { RevokeDialog } from './dialogs/RevokeDialog.js';
 import { SecretDialog } from './dialogs/SecretDialog.js';
+import { fit } from './format.js';
 import { keyLabel, visibleKeys } from './keys.js';
 import { attention } from './risk.js';
 import { layout } from './layout.js';
-import { Footer, TABS } from './ui/chrome.js';
+import { Footer, noticeRows, TABS } from './ui/chrome.js';
 import type { HintItem, Notice, Tab } from './ui/chrome.js';
 import { Hint, Panel } from './ui/parts.js';
 import { editText } from './ui/TextField.js';
 import { color } from './ui/theme.js';
-import { useAdmin } from './useAdmin.js';
+import { AUDIT_LIMIT, useAdmin } from './useAdmin.js';
 import { AuditMain, KeyMain, StatusMain, UpstreamMain } from './views/detail.js';
 import type { Scroll } from './views/detail.js';
 import { AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
@@ -25,6 +27,8 @@ export interface AppProps {
   intervalMs?: number;
   /** How long a success notice stays, in milliseconds. */
   noticeMs?: number;
+  /** How long Enter is ignored on the one-time secret screen, in milliseconds. */
+  secretGuardMs?: number;
   /** Puts text on the clipboard; defaults to asking the terminal (OSC 52). */
   copy?: (text: string) => void;
   /** Fixes the size, instead of reading the terminal's. */
@@ -38,15 +42,17 @@ type Mode =
   | { kind: 'create' }
   | { kind: 'revoke'; key: Key }
   | { kind: 'secret'; created: CreatedKey }
+  /** The addresses a key was used from; the admin API gives them out only if the install allows it. */
+  | { kind: 'clients'; key: Key }
   | { kind: 'help' };
 
 // The classic terminal size. Every view and dialog fits it.
 export const MIN_COLUMNS = 80;
 export const MIN_ROWS = 24;
-// The notice row and the options bar under the panels.
+// The notice row (more for a long failure) and the options bar under the panels.
 const CHROME_ROWS = 2;
 
-export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: AppProps) {
+export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secretGuardMs }: AppProps) {
   const { exit } = useApp();
   const win = useWindowSize();
   const { columns, rows } = size ?? win;
@@ -59,7 +65,12 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
   const [attentionSel, setAttentionSel] = useState(0);
   const [upstreamSel, setUpstreamSel] = useState(0);
   const [auditSel, setAuditSel] = useState(0);
-  const [busy, setBusy] = useState(false);
+  // What is being sent right now, so only the dialog that sent it shows "working".
+  const [working, setWorking] = useState<'toggle' | 'revoke' | 'create' | undefined>();
+  const doing = useRef('');
+  // State is only read on the next render, so two quick key presses would both see
+  // "not busy". This is read at once.
+  const acting = useRef(false);
   const [dialogError, setDialogError] = useState<string | undefined>();
   const [notice, setNotice] = useState<Notice | undefined>();
   // How far the main panel is scrolled, and how far it can be. It starts from the top
@@ -70,10 +81,11 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
   // A success fades. A failure stays until the next key press: someone who looks away
   // must not come back believing a key was disabled when it was not.
   useEffect(() => {
-    if (!notice || notice.tone === 'error') return;
+    // A notice about a change under way stays while it is: it is replaced by its result.
+    if (!notice || notice.tone === 'error' || working !== undefined) return;
     const t = setTimeout(() => setNotice(undefined), noticeMs);
     return () => clearTimeout(t);
-  }, [notice, noticeMs]);
+  }, [notice, noticeMs, working]);
 
   const visible = useMemo(() => visibleKeys(data.keys, filter), [data.keys, filter]);
   const selectedId = visible.some((k) => k.id === keySel) ? keySel : visible[0]?.id;
@@ -86,6 +98,9 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
     offset: scrollTop,
     onMax: (m) => setScrollMax((c) => (c === m ? c : m)),
   };
+  // A long failure takes more rows, which the body gives up.
+  const shownNotice = link.state === 'denied' ? undefined : notice;
+  const bodyRows = rows - 1 - noticeRows(shownNotice, columns);
   const tooSmall = columns < MIN_COLUMNS || rows < MIN_ROWS;
   const loaded = link.state === 'ok' || data.keys.length > 0 || data.upstreams.length > 0 || data.audit.length > 0;
   const usable = loaded && link.state !== 'denied';
@@ -97,6 +112,13 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
   useEffect(() => {
     if (selectedId) setKeySel((cur) => cur ?? selectedId);
   }, [selectedId]);
+
+  /** Rows of the focused list on screen at once, so a page moves by what was shown. */
+  function pageRows(): number {
+    const own = layout(columns, rows - CHROME_ROWS, tab).heights[tab];
+    // Status carries its summary above the list; Keys a filter row under it.
+    return Math.max(1, own - 2 - (tab === 'status' ? 3 : 0) - (tab === 'keys' && filter !== '' ? 1 : 0));
+  }
 
   function move(to: number | 'first' | 'last') {
     const step = (cur: number, count: number) =>
@@ -118,21 +140,28 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
   }
 
   /** Runs one admin API call; resolves to the error message, or undefined on success. */
-  async function call(fn: () => Promise<unknown>): Promise<string | undefined> {
-    setBusy(true);
+  async function call(kind: 'toggle' | 'revoke' | 'create', what: string, fn: () => Promise<unknown>): Promise<string | undefined> {
+    acting.current = true;
+    doing.current = what;
+    setWorking(kind);
     try {
       await fn();
       return undefined;
     } catch (err) {
       return err instanceof Error ? err.message : String(err);
     } finally {
-      setBusy(false);
+      acting.current = false;
+      setWorking(undefined);
     }
   }
 
   async function confirmToggle(action: 'disable' | 'enable', key: Key) {
+    if (acting.current) return;
     setMode({ kind: 'none' });
-    const err = await call(() => (action === 'disable' ? client.disableKey(key.id) : client.enableKey(key.id)));
+    setNotice({ tone: 'info', text: `${action === 'disable' ? 'Disabling' : 'Enabling'} ${keyLabel(key)}…` });
+    const err = await call('toggle', `${action === 'disable' ? 'disabling' : 'enabling'} ${keyLabel(key)}`, () =>
+      action === 'disable' ? client.disableKey(key.id) : client.enableKey(key.id),
+    );
     if (err) setNotice({ tone: 'error', text: `Could not ${action} ${keyLabel(key)}: ${err}` });
     else
       setNotice({
@@ -146,8 +175,9 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
   }
 
   async function revoke(key: Key) {
+    if (acting.current) return;
     setDialogError(undefined);
-    const err = await call(() => client.revokeKey(key.id));
+    const err = await call('revoke', `revoking ${keyLabel(key)}`, () => client.revokeKey(key.id));
     if (err) return setDialogError(err);
     setMode({ kind: 'none' });
     setNotice({ tone: 'ok', text: `Revoked ${keyLabel(key)}. It cannot be used again.` });
@@ -155,9 +185,10 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
   }
 
   async function create(input: CreateKeyInput) {
+    if (acting.current) return;
     setDialogError(undefined);
     let created: CreatedKey | undefined;
-    const err = await call(async () => {
+    const err = await call('create', 'creating a key', async () => {
       created = await client.createKey(input);
     });
     if (err || !created) return setDialogError(err ?? 'kman did not return the key');
@@ -167,9 +198,24 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
     void refresh();
   }
 
+  /** One change at a time: a second would race the first, and its dialog would claim work that is not its own. */
+  function busyNow(): boolean {
+    if (!acting.current) return false;
+    setNotice({ tone: 'info', text: `Wait: still ${doing.current}…` });
+    return true;
+  }
+
+  /** Changes need kman to answer, so while it does not, say so instead of opening a dialog that must fail. */
+  function offline(): boolean {
+    if (link.state !== 'down') return false;
+    setNotice({ tone: 'error', text: 'kman is not answering, so nothing can be changed now. r tries again.' });
+    return true;
+  }
+
   function request(action: 'disable' | 'enable' | 'revoke') {
     const k = selectedKey;
     if (!k) return;
+    if (offline() || busyNow()) return;
     if (k.status === 'revoked') return setNotice({ tone: 'info', text: `${keyLabel(k)} is revoked for good.` });
     if (action === 'disable' && k.status === 'disabled') return setNotice({ tone: 'info', text: `${keyLabel(k)} is already disabled.` });
     if (action === 'enable' && k.status === 'active') return setNotice({ tone: 'info', text: `${keyLabel(k)} is already enabled.` });
@@ -189,8 +235,9 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
         else if (input === 'r' && !tooSmall) void refresh();
         return;
       }
+      if ((mode.kind === 'help' || mode.kind === 'clients') && input === 'q') return exit();
       // The dialogs read their own keys.
-      if (mode.kind === 'create' || mode.kind === 'revoke' || mode.kind === 'secret' || mode.kind === 'help') return;
+      if (mode.kind === 'create' || mode.kind === 'revoke' || mode.kind === 'secret' || mode.kind === 'help' || mode.kind === 'clients') return;
       if (mode.kind === 'filter') {
         // Leaving the filter keeps whichever key it left selected.
         if (key.escape) {
@@ -230,15 +277,16 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
 
       if (key.upArrow || input === 'k') return move(-1);
       if (key.downArrow || input === 'j') return move(1);
-      if (key.pageUp) return move(-10);
-      if (key.pageDown) return move(10);
+      // A page is what the list shows, less one row, so one row of the old page is still in view.
+      if (key.pageUp) return move(-Math.max(1, pageRows() - 1));
+      if (key.pageDown) return move(Math.max(1, pageRows() - 1));
       if (key.home || input === 'g') return move('first');
       if (key.end || input === 'G') return move('last');
 
       if (input === 'J') return setScrollTop((t) => Math.min(scrollMax, t + 3));
       if (input === 'K') return setScrollTop((t) => Math.max(0, t - 3));
 
-      if (input === 'n') return setMode({ kind: 'create' });
+      if (input === 'n') return offline() || busyNow() ? undefined : setMode({ kind: 'create' });
       if (tab === 'status' && key.return) {
         const target = needs[Math.min(attentionSel, needs.length - 1)];
         if (!target) return;
@@ -255,22 +303,27 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
         if (input === 'd') return request('disable');
         if (input === 'e') return request('enable');
         if (input === 'x') return request('revoke');
+        // Reading addresses needs the server, but is not a change, so a running change does not stop it.
+        if (input === 'c') return selectedKey && !offline() ? setMode({ kind: 'clients', key: selectedKey }) : undefined;
       }
     },
   );
 
   if (tooSmall) {
     return (
-      <Box width={columns} height={rows} alignItems="center" justifyContent="center">
+      <Box width={columns} height={rows} alignItems="center" justifyContent="center" flexDirection="column">
+        <Text color={color.warn}>Terminal too small</Text>
         <Text color={color.warn}>
-          Terminal too small: kman needs {MIN_COLUMNS}×{MIN_ROWS}, this is {columns}×{rows}. (q quits)
+          kman needs {MIN_COLUMNS}×{MIN_ROWS}; this is {columns}×{rows}.
         </Text>
+        <Text dimColor>q quits</Text>
       </Box>
     );
   }
 
   const width = columns;
-  const bodyRows = rows - CHROME_ROWS;
+  const selectable =
+    tab === 'status' ? needs.length > 0 : tab === 'keys' ? visible.length > 0 : tab === 'upstreams' ? data.upstreams.length > 0 : data.audit.length > 0;
   const want =
     tab === 'status'
       ? 7 + needs.length
@@ -288,8 +341,9 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
         <Panel title="The admin API refused this token" width={66} tone={color.danger}>
           <Box flexDirection="column" marginTop={1}>
             <Text>{link.error}</Text>
-            <Text dimColor>The token may be revoked or rotated. Save a current one with: kman login</Text>
-            <Text dimColor>Or set KMAN_ADMIN_TOKEN, then start this again.</Text>
+            <Text dimColor>The token may be revoked or rotated.</Text>
+            <Text dimColor>Save a current one with kman login, or set KMAN_ADMIN_TOKEN,</Text>
+            <Text dimColor>then start this again.</Text>
           </Box>
         </Panel>
       </Centered>
@@ -316,7 +370,9 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
         <CreateKeyDialog
           upstreams={data.upstreams}
           defaultDays={data.settings ? Math.round(data.settings.default_key_ttl_seconds / 86_400) : undefined}
-          busy={busy}
+          busy={working === 'create'}
+          // The form is 12 rows without its error; whatever the body has left is for the error.
+          errorLines={Math.max(3, bodyRows - 12)}
           error={dialogError}
           onSubmit={(i) => void create(i)}
           onCancel={() => setMode({ kind: 'none' })}
@@ -329,7 +385,9 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
         <RevokeDialog
           keyData={mode.key}
           maxWidth={width}
-          busy={busy}
+          busy={working === 'revoke'}
+          // The dialog is at most 14 rows without its error (its hint line included).
+          errorLines={Math.max(3, bodyRows - 14)}
           error={dialogError}
           onConfirm={() => void revoke(mode.key)}
           onCancel={() => setMode({ kind: 'none' })}
@@ -339,7 +397,13 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
   } else if (mode.kind === 'secret') {
     body = (
       <Centered width={width} height={bodyRows}>
-        <SecretDialog created={mode.created} width={width} onCopy={copy} onClose={() => setMode({ kind: 'none' })} />
+        <SecretDialog created={mode.created} width={width} onCopy={copy} armMs={secretGuardMs} onClose={() => setMode({ kind: 'none' })} />
+      </Centered>
+    );
+  } else if (mode.kind === 'clients') {
+    body = (
+      <Centered width={width} height={bodyRows}>
+        <ClientsDialog client={client} keyData={mode.key} width={width} height={bodyRows} now={now} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'help') {
@@ -394,6 +458,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
           needs={needs}
           selected={attentionSel}
           price={data.price}
+          upstreamCount={data.upstreams.length}
         />
         <KeysPanel
           width={lay.leftW}
@@ -404,6 +469,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
           selectedId={selectedId}
           filter={filter}
           filtering={mode.kind === 'filter'}
+          hasUpstreams={data.upstreams.length > 0}
           now={now}
         />
         <UpstreamsPanel
@@ -435,11 +501,30 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
           <StatusMain width={lay.mainW} height={lay.mainH} audit={data.audit} names={names} now={now} scroll={scroll} />
         )
       ) : tab === 'keys' ? (
-        <KeyMain keyData={selectedKey} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} />
+        <KeyMain
+          keyData={selectedKey}
+          width={lay.mainW}
+          height={lay.mainH}
+          now={now}
+          compact={!lay.wide}
+          scroll={scroll}
+          none={data.keys.length === 0 ? 'No keys yet.' : `No key matches "${filter}".`}
+        />
       ) : tab === 'upstreams' ? (
-        <UpstreamMain upstream={data.upstreams[upSel]} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} />
+        <UpstreamMain
+          upstream={data.upstreams[upSel]}
+          keys={data.keys}
+          width={lay.mainW}
+          height={lay.mainH}
+          scroll={scroll}
+          none="No upstreams yet. An upstream is an API kman sits in front of. Add one with: kman upstream add openai --preset openai"
+        />
       ) : (
-        <AuditMain entry={data.audit[auSel]} names={names} width={lay.mainW} height={lay.mainH} scroll={scroll} />
+        <AuditMain
+          entry={data.audit[auSel]}
+          none="The audit log is empty: nothing has changed yet."
+          names={names}
+          limited={data.audit.length >= AUDIT_LIMIT} width={lay.mainW} height={lay.mainH} scroll={scroll} />
       );
     body = (
       <Box width={width} height={bodyRows} flexDirection={lay.wide ? 'row' : 'column'}>
@@ -455,13 +540,24 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000 }: Ap
         {body}
       </Box>
       <Footer
-        notice={notice}
+        notice={shownNotice}
         link={link}
         hints={
-          loaded && link.state !== 'denied'
-            ? hintsFor(tab, mode.kind, selectedKey, filter !== '', needs.length > 0, scrollMax > 0)
-            : link.state === 'denied'
-              ? [{ k: 'q', label: 'quit' }]
+          link.state === 'denied'
+            ? [{ k: 'q', label: 'quit' }]
+            : loaded
+              ? hintsFor({
+                  tab,
+                  mode: mode.kind,
+                  key: selectedKey,
+                  filtered: filter !== '',
+                  selectable,
+                  offline: link.state === 'down',
+                  working: working !== undefined,
+                  canCreate: data.upstreams.length > 0,
+                  hasKeys: data.keys.length > 0,
+                  scrollable: scrollMax > 0,
+                })
               : [{ k: 'r', label: 'retry' }, { k: 'q', label: 'quit' }]
         }
         width={width}
@@ -478,14 +574,26 @@ function Centered({ width, height, children }: { width: number; height: number; 
   );
 }
 
-function hintsFor(
-  tab: Tab,
-  mode: Mode['kind'],
-  key: Key | undefined,
-  filtered: boolean,
-  anyAttention: boolean,
-  scrollable: boolean,
-): HintItem[] {
+interface HintState {
+  tab: Tab;
+  mode: Mode['kind'];
+  key: Key | undefined;
+  filtered: boolean;
+  /** Whether the panel has rows to move over. */
+  selectable: boolean;
+  offline: boolean;
+  /** A change is being sent: another cannot start. */
+  working: boolean;
+  /** An upstream exists, so a key can be made. */
+  canCreate: boolean;
+  hasKeys: boolean;
+  /** The detail panel has more than it shows. */
+  scrollable: boolean;
+}
+
+/** Only keys that would do something are offered. */
+function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canCreate, hasKeys, scrollable }: HintState): HintItem[] {
+  const canChange = !offline && !working;
   if (mode === 'confirm') return [{ k: 'y', label: 'yes' }, { k: 'n', label: 'cancel' }];
   if (mode === 'filter') {
     return [
@@ -503,14 +611,16 @@ function hintsFor(
   }
   if (mode === 'revoke') return [{ k: 'Enter', label: 'revoke', always: true }, { k: 'Esc', label: 'cancel', always: true }];
   if (mode === 'secret') return [{ k: 'c', label: 'copy' }, { k: 'Enter', label: 'done', always: true }];
+  if (mode === 'clients') return [{ k: 'Esc', label: 'close' }];
   if (mode !== 'none') return [{ k: 'Esc', label: 'close' }];
   const common: HintItem[] = [
+    { k: 'r', label: offline ? 'retry' : 'refresh', always: true },
     ...(scrollable ? [{ k: 'J/K', label: 'scroll', always: true }] : []),
     { k: '1-4', label: 'panels' },
-    { k: 'r', label: 'refresh' },
     { k: '?', label: 'help', always: true },
     { k: 'q', label: 'quit', always: true },
   ];
+  const create = canChange && canCreate ? [{ k: 'n', label: 'new key' }] : [];
   if (tab === 'keys') {
     const act =
       key?.status === 'active'
@@ -519,20 +629,15 @@ function hintsFor(
           ? [{ k: 'e', label: 'enable' }]
           : [];
     return [
-      { k: '↑↓', label: 'select', always: true },
-      { k: 'n', label: 'new key' },
-      ...act,
-      ...(key && key.status !== 'revoked' ? [{ k: 'x', label: 'revoke' }] : []),
-      ...(filtered ? [{ k: 'Esc', label: 'clear filter', always: true }] : [{ k: '/', label: 'filter', always: true }]),
+      ...(selectable ? [{ k: '↑↓', label: 'select', always: true }] : []),
+      ...(canChange ? [...create, ...act, ...(key && key.status !== 'revoked' ? [{ k: 'x', label: 'revoke' }] : [])] : []),
+      ...(key && !offline ? [{ k: 'c', label: 'IPs' }] : []),
+      ...(filtered ? [{ k: 'Esc', label: 'clear filter', always: true }] : hasKeys ? [{ k: '/', label: 'filter', always: true }] : []),
       ...common,
     ];
   }
   if (tab === 'status') {
-    return [
-      ...(anyAttention ? [{ k: '↑↓', label: 'select', always: true }, { k: 'Enter', label: 'open key' }] : []),
-      { k: 'n', label: 'new key' },
-      ...common,
-    ];
+    return [...(selectable ? [{ k: '↑↓', label: 'select', always: true }, { k: 'Enter', label: 'open key' }] : []), ...create, ...common];
   }
-  return [{ k: '↑↓', label: 'select' }, { k: 'n', label: 'new key' }, ...common];
+  return [...(selectable ? [{ k: '↑↓', label: 'select' }] : []), ...create, ...common];
 }

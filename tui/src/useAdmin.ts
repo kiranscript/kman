@@ -29,16 +29,15 @@ export function useAdmin(client: AdminClient, intervalMs = 3000) {
   const [link, setLink] = useState<Link>({ state: 'connecting' });
   const [now, setNow] = useState(() => Date.now());
   const [fresh, setFresh] = useState<ReadonlySet<number>>(new Set());
-  const inFlight = useRef(false);
-  const denied = useRef(false);
+  const running = useRef<Promise<string | undefined> | undefined>(undefined);
+  const queued = useRef<Promise<string | undefined> | undefined>(undefined);
+  const denied = useRef<string | undefined>(undefined);
   const lastOk = useRef<number | undefined>(undefined);
   const maxAudit = useRef<number | undefined>(undefined);
   const actor = useRef<string | undefined>(undefined);
 
-  /** Resolves to why it failed, or undefined when the data is fresh (or a refresh is already running). */
-  const refresh = useCallback(async (): Promise<string | undefined> => {
-    if (inFlight.current || denied.current) return undefined;
-    inFlight.current = true;
+  const load = useCallback(async (): Promise<string | undefined> => {
+    if (denied.current) return denied.current;
     try {
       const [keys, upstreams, audit, price, settings] = await Promise.all([
         client.listKeys(),
@@ -60,21 +59,44 @@ export function useAdmin(client: AdminClient, intervalMs = 3000) {
       return undefined;
     } catch (err) {
       if (err instanceof ApiError && err.code === 'unauthorized') {
-        denied.current = true;
+        denied.current = err.message;
         setLink({ state: 'denied', error: err.message });
         return err.message;
       }
       const message = err instanceof Error ? err.message : String(err);
       setLink({ state: 'down', error: message, lastOk: lastOk.current });
       return message;
-    } finally {
-      inFlight.current = false;
     }
   }, [client]);
 
+  /**
+   * Fetches everything and resolves to why it failed, or undefined when the data is
+   * fresh. A fetch already under way may have been asked for before the caller's
+   * change, so it is not reused: one more starts when it ends (and callers who ask
+   * meanwhile share that one).
+   */
+  const refresh = useCallback((): Promise<string | undefined> => {
+    const current = running.current;
+    if (!current) {
+      const p = load().finally(() => {
+        if (running.current === p) running.current = undefined;
+      });
+      running.current = p;
+      return p;
+    }
+    queued.current ??= current.then(() => {
+      queued.current = undefined;
+      return refresh();
+    });
+    return queued.current;
+  }, [load]);
+
   useEffect(() => {
     void refresh();
-    const t = setInterval(() => void refresh(), intervalMs);
+    // A poll never queues behind another fetch: the next tick comes soon enough.
+    const t = setInterval(() => {
+      if (!running.current) void refresh();
+    }, intervalMs);
     return () => clearInterval(t);
   }, [refresh, intervalMs]);
 

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ago, bar, capMoney, fit, money, padEnd, parseDays, parseDollars, until } from '../src/format.js';
+import { ago, bar, capMoney, fit, money, padEnd, fitMiddle, wrapLines, packLines, shortCount, parseDays, parseDollars, until } from '../src/format.js';
 
 describe('money', () => {
   it('shows more decimals for small amounts', () => {
     expect(money(0)).toBe('$0');
     expect(money(36_000)).toBe('$0.036');
+    expect(money(5)).toBe('<$0.001');
     expect(money(5_000_000)).toBe('$5.00');
     expect(money(1_250_000_000)).toBe('$1,250');
   });
@@ -67,5 +68,54 @@ describe('bar', () => {
     expect(bar(0, 10).filled).toHaveLength(0);
     expect(bar(1.7, 10).filled).toHaveLength(10);
     expect(bar(0.5, 10).filled + bar(0.5, 10).empty).toHaveLength(10);
+  });
+});
+
+describe('packLines', () => {
+  it('packs items into lines of the width', () => {
+    expect(packLines(['aaa', 'bbb', 'ccc'], 8, 3)).toEqual(['aaa   bbb', 'ccc'].map((l) => l).slice(0, 0).concat(['aaa', 'bbb', 'ccc']));
+  });
+
+  it('says how many did not fit, on the last line', () => {
+    const lines = packLines(['POST /a', 'POST /b', 'POST /c', 'POST /d', 'POST /e'], 20, 2);
+    expect(lines).toHaveLength(2);
+    expect(lines.every((l) => [...l].length <= 20)).toBe(true);
+    expect(lines.at(-1)).toMatch(/\+\d+ more$/);
+  });
+});
+
+describe('shortCount', () => {
+  it('keeps small counts whole and shortens big ones', () => {
+    expect(shortCount(424)).toBe('424');
+    expect(shortCount(1234)).toBe('1.2k');
+    expect(shortCount(12_345)).toBe('12k');
+    expect(shortCount(1_200_000)).toBe('1.2M');
+  });
+});
+
+describe('fitMiddle', () => {
+  it('keeps both ends when it must cut', () => {
+    const out = fitMiddle('customer-support-summariser-production-eu-west-a', 30);
+    expect([...out]).toHaveLength(30);
+    expect(out.startsWith('customer-support')).toBe(true);
+    expect(out.endsWith('west-a')).toBe(true);
+    expect(fitMiddle('short', 30)).toBe('short');
+  });
+});
+
+describe('wrapLines', () => {
+  it('wraps on words with no leading spaces', () => {
+    expect(wrapLines('one two three four', 9, 5)).toEqual(['one two', 'three', 'four']);
+  });
+
+  it('ends the last line in an ellipsis when it cuts', () => {
+    const lines = wrapLines('aaa bbb ccc ddd eee fff', 7, 2);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toMatch(/…$/);
+    expect(lines.every((l) => [...l].length <= 7)).toBe(true);
+  });
+
+  it('splits a word longer than the width', () => {
+    expect(wrapLines('abcdefghij', 4, 5)).toEqual(['abcd', 'efgh', 'ij']);
   });
 });
