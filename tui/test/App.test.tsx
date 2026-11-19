@@ -598,7 +598,10 @@ describe('App', () => {
     });
 
     it('does not wrap a Keys row at 106 columns', async () => {
-      const m = mount(fakeClient(), { columns: 106, rows: 30 });
+      const client = fakeClient();
+      const expiresAt = new Date(Date.now() + 60 * 86_400_000).toISOString();
+      for (const key of client.keys) key.expires_at = expiresAt;
+      const m = mount(client, { columns: 106, rows: 30 });
       await loaded(m);
       await m.press('2');
       const row = lines(m).find((l) => l.includes('checkout'))!;
