@@ -221,3 +221,35 @@ export function requestsText(n: number): string {
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
+
+/** How many terminal cells a character takes: 2 for the wide East Asian and emoji ranges, else 1. */
+export function cellWidth(ch: string): number {
+  const cp = ch.codePointAt(0) ?? 0;
+  const wide =
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2e80 && cp <= 0xa4cf) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe30 && cp <= 0xfe6f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x1f000 && cp <= 0x1faff) ||
+    (cp >= 0x20000 && cp <= 0x3fffd);
+  return wide ? 2 : 1;
+}
+
+/** The end of `text` that fits in `max` cells, with a leading ellipsis when the start was cut. */
+export function tailCells(text: string, max: number): string {
+  const chars = [...text];
+  const total = chars.reduce((n, c) => n + cellWidth(c), 0);
+  if (total <= max) return text;
+  let used = 1; // the ellipsis
+  const kept: string[] = [];
+  for (let i = chars.length - 1; i >= 0; i--) {
+    const w = cellWidth(chars[i]!);
+    if (used + w > max) break;
+    kept.unshift(chars[i]!);
+    used += w;
+  }
+  return '…' + kept.join('');
+}

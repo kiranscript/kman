@@ -136,7 +136,7 @@ export function Field({ label, children, labelWidth = 12 }: { label: string; chi
         <Text dimColor>{label}</Text>
       </Box>
       <Box flexGrow={1} flexShrink={1} minWidth={0}>
-        <Text wrap="truncate-end">{children}</Text>
+        <Text wrap="wrap">{children}</Text>
       </Box>
     </Box>
   );
@@ -146,7 +146,7 @@ export function Field({ label, children, labelWidth = 12 }: { label: string; chi
 export function Hint({ k, children }: { k: string; children: string }) {
   return (
     <Text>
-      <Text bold color={color.accent}>
+      <Text bold color={color.key}>
         {k}
       </Text>
       <Text dimColor> {children}</Text>
