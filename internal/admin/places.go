@@ -17,6 +17,10 @@ type PlaceQuery struct {
 type KeyPlaces struct {
 	KeyID  string  `json:"key_id"`
 	Places []Place `json:"places" doc:"Most recently seen first."`
+	// NetworksWithheld says network places were left out: a network is a
+	// client's /24 or /64, which identifies a person or an office, so the admin
+	// API gives them out only with expose_client_addresses on.
+	NetworksWithheld bool `json:"networks_withheld,omitempty" doc:"Network places were left out because expose_client_addresses is off."`
 }
 
 // Place is one place a key has been used from: a country, an autonomous system,
@@ -45,6 +49,13 @@ func (s *Service) Places(ctx context.Context, req PlaceQuery) (KeyPlaces, error)
 	}
 	out := KeyPlaces{KeyID: req.ID, Places: []Place{}}
 	err := s.read(ctx, func(tx *store.Tx) error {
+		settings, err := loadSettings(tx)
+		if err != nil {
+			return err
+		}
+		if req.Kind == store.PlaceNetwork && !settings.ExposeClientAddresses {
+			return errorf(CodeConflict, "the admin API does not give out networks until you turn client addresses on: kman settings set expose_client_addresses true")
+		}
 		if _, err := tx.Key(req.ID); err != nil {
 			return fromStore(err, "key "+req.ID)
 		}
@@ -53,6 +64,10 @@ func (s *Service) Places(ctx context.Context, req PlaceQuery) (KeyPlaces, error)
 			return err
 		}
 		for _, p := range rows {
+			if p.Kind == store.PlaceNetwork && !settings.ExposeClientAddresses {
+				out.NetworksWithheld = true
+				continue
+			}
 			out.Places = append(out.Places, Place{
 				Kind: p.Kind, Value: p.Value, Other: p.Value == store.PlaceOther, Label: p.Label,
 				FirstSeen: p.FirstSeen, LastSeen: p.LastSeen, Requests: p.Count, Refused: p.Blocked,

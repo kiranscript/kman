@@ -179,6 +179,12 @@ func TestTheAPIListsAKeysPlacesAndTakesAKind(t *testing.T) {
 	s := newServer(t)
 	withUpstreamAndCredential(t, s)
 	created := createKey(t, s, `{"upstream":"openai"}`)
+	if r := s.do(t, s.owner, "GET", "/admin/v1/keys/"+created.Key.ID+"/places?kind=network", ""); r.status != http.StatusConflict {
+		t.Errorf("networks with client addresses off: %d %s, want 409", r.status, r.body)
+	}
+	if r := s.do(t, s.owner, "PATCH", "/admin/v1/settings", `{"expose_client_addresses":true}`); r.status != http.StatusOK {
+		t.Fatalf("PATCH settings: %d %s", r.status, r.body)
+	}
 	r := s.do(t, s.owner, "GET", "/admin/v1/keys/"+created.Key.ID+"/places?kind=network", "")
 	var got admin.KeyPlaces
 	if err := json.Unmarshal(r.body, &got); err != nil || r.status != http.StatusOK || got.KeyID != created.Key.ID || got.Places == nil {

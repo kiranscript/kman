@@ -281,7 +281,7 @@ From [realtime](https://github.com/kirank55/kman/issues/13), [ADR 0005](docs/adr
   - Install: `init`, `keygen`, `rekey`, `serve`, `login`, `logout`, `dashboard`, `demo`, `version [--check]`, `geoip update`, `backup`, `restore`, `prune`, `settings get|set`, plain `kman` (status summary).
   - Admin tokens: `admin-token create|list|rotate|revoke`. Rotating or revoking a token ends its dashboard sessions.
   - Upstreams and credentials: `upstream add|list|show|update|rm|sync`, `credential add|update|rm|compromise`.
-  - Keys: `key create|list|show|clients|update|disable|enable|revoke|rotate [--grace]`, `canary create|list|reset`. `key clients` (`GET /admin/v1/keys/{id}/clients`) groups a key's events by client address and works only with `expose_client_addresses` on.
+  - Keys: `key create|list|show|places|clients|update|disable|enable|revoke|rotate [--grace]`, `canary create|list|reset`. `key clients` (`GET /admin/v1/keys/{id}/clients`) groups a key's events by client address and works only with `expose_client_addresses` on. `key places` (`GET /admin/v1/keys/{id}/places`) lists the countries, ASNs and networks a key was used from; its networks (a client's /24 or /64) are left out unless `expose_client_addresses` is on.
   - Spend: `price set|rm|list|import`.
   - Detection (M2): `incidents`, `incident …`, `known-source …`, `detections --follow`, `detection test`.
   - Alerts: `channel add|list|test|rm`.

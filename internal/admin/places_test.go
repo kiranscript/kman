@@ -3,6 +3,7 @@ package admin_test
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,11 +25,28 @@ func TestPlacesSaysWhereAKeyHasBeenUsedFromForwardedAndRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Networks are a client's /24 or /64: they stay out until the install turns
+	// client addresses on.
+	hidden, err := in.svc.Places(as("owner"), admin.PlaceQuery{ID: k.ID})
+	if err != nil || len(hidden.Places) != 3 || !hidden.NetworksWithheld {
+		t.Fatalf("Places with client addresses off = %+v, %v; want the 3 non-network places and networks_withheld", hidden, err)
+	}
+	for _, p := range hidden.Places {
+		if p.Kind == "network" {
+			t.Errorf("a network got out with the setting off: %+v", p)
+		}
+	}
+	var ae *admin.Error
+	if _, err := in.svc.Places(as("owner"), admin.PlaceQuery{ID: k.ID, Kind: "network"}); !errors.As(err, &ae) || ae.Code != admin.CodeConflict || !strings.Contains(ae.Message, "expose_client_addresses") {
+		t.Errorf("Places(network) with the setting off = %v, want a conflict that says how to turn it on", err)
+	}
+
+	in.exposeClients(t, true)
 	got, err := in.svc.Places(as("owner"), admin.PlaceQuery{ID: k.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.KeyID != k.ID || len(got.Places) != 5 {
+	if got.KeyID != k.ID || len(got.Places) != 5 || got.NetworksWithheld {
 		t.Fatalf("Places = %+v, want the key's 5 places", got)
 	}
 	first := got.Places[0]
@@ -79,6 +97,7 @@ func TestThePlacesPastTheLimitAreOneOtherRow(t *testing.T) {
 	if err := in.store.Do(t.Context(), func(tx *store.Tx) error { return tx.AddEvents(batch) }); err != nil {
 		t.Fatal(err)
 	}
+	in.exposeClients(t, true)
 	got, err := in.svc.Places(as("owner"), admin.PlaceQuery{ID: k.ID})
 	if err != nil {
 		t.Fatal(err)

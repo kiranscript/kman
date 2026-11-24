@@ -822,6 +822,10 @@
           "key_id": {
             "type": "string"
           },
+          "networks_withheld": {
+            "description": "Network places were left out because expose_client_addresses is off.",
+            "type": "boolean"
+          },
           "places": {
             "description": "Most recently seen first.",
             "items": {

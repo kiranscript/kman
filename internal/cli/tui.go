@@ -380,10 +380,10 @@ func (m dashboard) update(msg tea.Msg) (dashboard, tea.Cmd) {
 		case "r":
 			m, cmd = m.refresh()
 		case "esc":
-			m.detail, m.clientsFor = false, ""
+			m.detail, m.clientsFor, m.placesFor = false, "", ""
 		case "enter":
 			if m.detail {
-				m.detail, m.clientsFor = false, ""
+				m.detail, m.clientsFor, m.placesFor = false, "", ""
 			} else if m.ready() {
 				m, cmd = m.open()
 			}

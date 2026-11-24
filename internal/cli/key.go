@@ -267,8 +267,13 @@ func keyPlaces(ctx context.Context, c *call) error {
 	if c.json {
 		return c.printJSON(got)
 	}
+	const withheld = "Networks are not shown: a network is a client's /24 or /64, which identifies a person or an office. kman settings set expose_client_addresses true shows them."
 	if len(got.Places) == 0 {
-		fmt.Fprintf(c.env.Stdout, "Key %s has not been used yet.\n", keyLabel(k))
+		if got.NetworksWithheld {
+			fmt.Fprintln(c.env.Stdout, withheld)
+		} else {
+			fmt.Fprintf(c.env.Stdout, "Key %s has not been used yet.\n", keyLabel(k))
+		}
 		return nil
 	}
 	w := tabwriter.NewWriter(c.env.Stdout, 0, 0, 2, ' ', 0)
@@ -277,7 +282,13 @@ func keyPlaces(ctx context.Context, c *call) error {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%d\n", p.Kind, placeValue(p), orDash(cleanDashboard(p.Label)),
 			when(&p.FirstSeen), when(&p.LastSeen), p.Requests, p.Refused)
 	}
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	if got.NetworksWithheld {
+		fmt.Fprintln(c.env.Stdout, "\n"+withheld)
+	}
+	return nil
 }
 
 // placeValue is how a place reads: an AS as AS3320, and the row that counts

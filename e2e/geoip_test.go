@@ -193,6 +193,8 @@ func TestKeyPlacesSaysWhereAKeyWasUsedFromThroughTheRealBinary(t *testing.T) {
 	resp, body := p.send("POST", "/v1/things", strings.NewReader(`{"name":"x"}`))
 	wantError(t, resp, body, http.StatusForbidden, "address_not_allowed")
 
+	h.mustRun(t, "settings", "set", "expose_client_addresses", "on")
+
 	// Events reach the store in batches, every 5 seconds.
 	type place struct {
 		Kind, Value, Label string

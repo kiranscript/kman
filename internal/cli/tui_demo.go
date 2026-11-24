@@ -54,6 +54,9 @@ func newDemoData(now time.Time) *demoData {
 			client("10.0.4.18", 205, 0, 3*time.Hour, "", 0),
 			client("203.0.113.44", 15, 15, 26*time.Hour, "DE", 3320),
 		}},
+		"k_0a44f9": {KeyID: "k_0a44f9", Total: 1, Clients: []admin.KeyClient{
+			client("185.220.101.9", 0, 57, 40*time.Minute, "DE", 60729),
+		}},
 		"k_3b7d40": {KeyID: "k_3b7d40", Total: 2, Clients: []admin.KeyClient{
 			client("198.51.100.23", 8800, 0, time.Minute, "US", 16509),
 			client("2001:db8:85a3::8a2e:370:7334", 510, 2, 5*time.Hour, "NL", 1136),
@@ -90,9 +93,10 @@ func newDemoData(now time.Time) *demoData {
 	}
 	d.places = map[string][]admin.Place{
 		"k_9f2a1c": {
-			place("network", "10.20.4.0/24", "", 29*day, 3*time.Minute, 2140, 0),
-			place("asn", "16509", "Amazon.com, Inc.", 29*day, 3*time.Minute, 2140, 0),
-			place("country", "US", "", 29*day, 3*time.Minute, 2140, 0),
+			place("network", "10.0.4.0/24", "", 29*day, 2*time.Minute, 2125, 0),
+			place("network", "203.0.113.0/24", "", 29*day, 26*time.Hour, 0, 15),
+			place("asn", "3320", "Deutsche Telekom AG", 29*day, 26*time.Hour, 0, 15),
+			place("country", "DE", "", 29*day, 26*time.Hour, 0, 15),
 		},
 		"k_0a44f9": {
 			place("network", "185.220.101.0/24", "", 2*day, 40*time.Minute, 0, 57),

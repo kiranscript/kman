@@ -303,6 +303,16 @@ func TestKeyPlacesSaysWhereAKeyWasUsedFromByNameOrKeyId(t *testing.T) {
 	in.sqlExec(t, seed, id, "network", "198.51.100.0/24", nil, t0.Add(2*time.Hour).UnixMilli(), t0.Add(2*time.Hour).UnixMilli(), 0, 3)
 	in.sqlExec(t, seed, id, "network", "", nil, t0.UnixMilli(), t0.UnixMilli(), 5, 0)
 
+	// A network is a client's /24 or /64, so it stays out until client addresses are on.
+	out := in.kman(t, "key", "places", "my-app")
+	if strings.Contains(out, "198.51.100.0/24") || strings.Contains(out, "other") || !strings.Contains(out, "AS3320") || !strings.Contains(out, "expose_client_addresses") {
+		t.Errorf("key places with client addresses off:\n%s", out)
+	}
+	if r := in.run(t, nil, "", "key", "places", "my-app", "--kind", "network"); r.code != 1 || !strings.Contains(r.stderr, "kman settings set expose_client_addresses true") {
+		t.Errorf("--kind network with them off: exit %d, %s", r.code, r.stderr)
+	}
+	in.kman(t, "settings", "set", "expose_client_addresses", "on")
+
 	for _, ref := range []string{"my-app", id} {
 		out := in.kman(t, "key", "places", ref)
 		lines := strings.Split(strings.TrimSpace(out), "\n")

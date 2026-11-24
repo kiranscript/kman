@@ -722,6 +722,7 @@ Response 200: [Whoami](#whoami).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `key_id` | string | yes |  |
+| `networks_withheld` | boolean | no | Network places were left out because expose_client_addresses is off. |
 | `places` | list of [Place](#place) | yes | Most recently seen first. |
 
 ### `KeySpend`
