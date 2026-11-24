@@ -314,7 +314,7 @@ The full table-by-table schema is in [the schema ticket](https://github.com/kira
 - One migration per milestone (`0001` M1 core, `0002` detection, `0003` dashboard sessions, `0004` realtime session columns), tracked by `user_version`, forward-only.
 - Spend is `spend_daily`, written only as increments. `usage_hourly` is incremented with each event batch. The audit log is append-only, enforced by a trigger.
 - **Never persisted:** reservations, limiter windows, child keys, live sessions, login links, plaintext secrets. **Rebuilt at startup:** the registry snapshot, detection's rolling windows (from the last 24 h of events), and month-to-date spend.
-- **Retention defaults:** events 30 days, hourly usage 400 days, daily spend, incidents, and the audit log forever, the alert outbox 30 days after delivery. `retention: keep_everything` disables pruning. `kman prune --before <date>` is always available and audited, including a guarded prune of the audit log.
+- **Retention defaults:** events 30 days, hourly usage 400 days, daily spend, key places (`baseline_places`), incidents, and the audit log forever, the alert outbox 30 days after delivery. `retention: keep_everything` disables pruning. `kman prune --before <date>` is always available and audited, including a guarded prune of the audit log.
 - **Known gap:** the `budget_alerts` table (the periods a budget warning has already been sent for) has no retention and grows by a few rows per key per period.
 - **Fixtures:** each release tag commits `internal/store/fixtures/<tag>.db` from a deterministic generator. A migration test upgrades every past fixture.
 
@@ -395,7 +395,8 @@ Put real keys behind kman and kill a leak.
 
 Notice a leak before the bill does.
 
-**Build order:**
+**Build order** is reordered by [#83](https://github.com/kirank55/kman/issues/83), which puts seeing who uses a key and where first: key places (`baseline_places` and `kman key places`, landed), the live event feed, the calling client, canary keys, incidents, and the location rules, then the rest of the list below. Its tickets add to migration `0002` until `v0.2.0` is tagged.
+
 1. **Baselines and rules:** migration `0002`, `detect` with baselines, the learning period, the 9 rules, configurable thresholds and per-key overrides, the replay fixtures and golden files.
 2. **Incidents:** incidents and detections, quiet and expiry, the response actions, `--incident` on containment commands, baseline hold-out, the incident CLI.
 2. **Known sources and canaries:** `known-source` commands; canary keys with the four plant formats, the ignore list, and reset.

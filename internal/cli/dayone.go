@@ -62,7 +62,7 @@ func backupFile(ctx context.Context, c *call) error {
 // pruneData is prune: delete what is older than a date.
 func pruneData(ctx context.Context, c *call) error {
 	fs := c.flags("prune --before <date> [--audit-log] [--json]\n\n"+
-		"Deletes the events, the hourly usage and the alerts delivered before the date. Daily spend and incidents are kept forever. "+
+		"Deletes the events, the hourly usage and the alerts delivered before the date. Daily spend, key places and incidents are kept forever. "+
 		"With --audit-log it also deletes the audit log's entries before the date, the one thing that ever deletes from the log; "+
 		"the prune itself is recorded in the log, and that record stays. Retention does the same for events, hourly usage and alerts by itself "+
 		"(see retention in kman.yaml); this is for a date you choose.", true)
@@ -97,7 +97,7 @@ func pruneData(ctx context.Context, c *call) error {
 	if *auditLog {
 		fmt.Fprintf(w, "  %d audit log %s deleted; the prune is recorded in the log\n", res.AuditEntries, plural(res.AuditEntries, "entry", "entries"))
 	} else {
-		fmt.Fprintln(w, "The audit log is untouched (kman prune --audit-log prunes it too). Daily spend and incidents are kept forever.")
+		fmt.Fprintln(w, "The audit log is untouched (kman prune --audit-log prunes it too). Daily spend, key places and incidents are kept forever.")
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -41,6 +42,12 @@ type dashboard struct {
 	audit     []admin.AuditEntry
 	upstreams []admin.Upstream
 	err       error
+
+	// The open key's places: placesFor is the key they were asked for, and
+	// places is nil until they arrive.
+	placesFor string
+	places    []admin.Place
+	placesErr error
 }
 
 var dashboardTabs = []string{"keys", "exposure", "audit", "upstreams"}
@@ -107,6 +114,35 @@ func (m dashboard) loadView() tea.Cmd {
 }
 
 func (m dashboard) Init() tea.Cmd { return m.loadView() }
+
+// dashboardPlaces is the answer to a key's places.
+type dashboardPlaces struct {
+	keyID  string
+	places []admin.Place
+	err    error
+}
+
+// loadPlaces asks for where a key has been used from.
+func (m dashboard) loadPlaces(keyID string) tea.Cmd {
+	cl, ctx, demo := m.client, m.ctx, m.demo
+	return func() tea.Msg {
+		if demo != nil {
+			return dashboardPlaces{keyID: keyID, places: demo.places[keyID]}
+		}
+		got, err := cl.Places(ctx, admin.PlaceQuery{ID: keyID})
+		return dashboardPlaces{keyID: keyID, places: got.Places, err: err}
+	}
+}
+
+// wantPlaces asks for the open key's places, once for each time it is opened
+// or refreshed.
+func (m dashboard) wantPlaces() (dashboard, tea.Cmd) {
+	if m.tab != 0 || !m.detail || m.openID == "" || m.placesFor == m.openID {
+		return m, nil
+	}
+	m.placesFor, m.places, m.placesErr = m.openID, nil, nil
+	return m, m.loadPlaces(m.openID)
+}
 
 func (m dashboard) count() int {
 	switch m.tab {
@@ -225,6 +261,7 @@ func (m dashboard) refresh() (dashboard, tea.Cmd) {
 	m.generation++
 	m.loading = true
 	m.err = nil
+	m.placesFor = ""
 	return m, m.loadView()
 }
 
@@ -248,7 +285,20 @@ func (m dashboard) openKey(id string) (dashboard, tea.Cmd) {
 }
 
 func (m dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	m, places := next.wantPlaces()
+	return m, tea.Batch(cmd, places)
+}
+
+func (m dashboard) update(msg tea.Msg) (dashboard, tea.Cmd) {
 	switch v := msg.(type) {
+	case dashboardPlaces:
+		if v.keyID == m.placesFor {
+			m.places, m.placesErr = v.places, v.err
+			if m.places == nil && v.err == nil {
+				m.places = []admin.Place{}
+			}
+		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = v.Width, v.Height
 	case dashboardBanner:
@@ -560,7 +610,7 @@ func (m dashboard) detailLines() []string {
 				lines = append(lines, "", "! "+cleanDashboard(f.Message), "  Fix: "+cleanDashboard(f.Fix))
 			}
 		}
-		return lines
+		return append(lines, m.placeLines(k)...)
 	case 1:
 		f := m.findings[m.cursor]
 		return []string{"EXPOSURE", "", cleanDashboard(f.Message), "Key: " + cleanDashboard(f.KeyID), "Fix: " + cleanDashboard(f.Fix)}
@@ -571,6 +621,37 @@ func (m dashboard) detailLines() []string {
 		u := m.upstreams[m.cursor]
 		return []string{"UPSTREAM  " + cleanDashboard(u.Name), "", "Profile: " + cleanDashboard(u.Profile), fmt.Sprintf("Host: %s:%d", cleanDashboard(u.Host), u.Port), fmt.Sprintf("TLS: %t", u.TLS), "Paths: " + cleanDashboard(strings.Join(u.Paths, ", "))}
 	}
+}
+
+// placesShown is how many of a key's places its detail lists; kman key places
+// lists them all.
+const placesShown = 10
+
+// placeLines is where the open key has been used from, most recent first.
+func (m dashboard) placeLines(k admin.Key) []string {
+	lines := []string{"", "WHERE IT IS USED FROM"}
+	switch {
+	case m.placesFor != k.ID:
+		return nil
+	case m.placesErr != nil:
+		return append(lines, "  Could not load: "+cleanDashboard(m.placesErr.Error()))
+	case m.places == nil:
+		return append(lines, "  Loading...")
+	case len(m.places) == 0:
+		return append(lines, "  Not used yet.")
+	}
+	for i, p := range m.places {
+		if i == placesShown {
+			lines = append(lines, fmt.Sprintf("  ...and %d more: kman key places %s", len(m.places)-placesShown, cleanDashboard(cmp.Or(k.Name, k.ID))))
+			break
+		}
+		value := placeValue(p)
+		if p.Label != "" {
+			value += " " + cleanDashboard(p.Label)
+		}
+		lines = append(lines, fmt.Sprintf("  %-8s %s  (last %s, %d forwarded, %d refused)", p.Kind, value, when(&p.LastSeen), p.Requests, p.Refused))
+	}
+	return lines
 }
 
 // checkTerminal fails unless both ends are terminals: the program reads keys

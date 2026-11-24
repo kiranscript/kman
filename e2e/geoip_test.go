@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -178,5 +179,54 @@ func TestGeoIPUpdateGoesWhereItIsToldAndNoWhereElse(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	if got := requests.Load(); got != n {
 		t.Errorf("serve made %d download requests", got-n)
+	}
+}
+
+// A key's places come from its requests, forwarded and refused, through the real
+// binary: the GeoIP lookup, the event writer and kman key places (#84).
+func TestKeyPlacesSaysWhereAKeyWasUsedFromThroughTheRealBinary(t *testing.T) {
+	p, h := geoipProxied(t)
+	if resp, body := p.send("POST", "/v1/things", strings.NewReader(`{"name":"x"}`)); resp.StatusCode != 201 {
+		t.Fatalf("= %d %s", resp.StatusCode, body)
+	}
+	p.setPolicy(`{"allowed_countries":["DE"]}`)
+	resp, body := p.send("POST", "/v1/things", strings.NewReader(`{"name":"x"}`))
+	wantError(t, resp, body, http.StatusForbidden, "address_not_allowed")
+
+	// Events reach the store in batches, every 5 seconds.
+	type place struct {
+		Kind, Value, Label string
+		Requests, Refused  int64
+	}
+	var got struct{ Places []place }
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		out, _ := h.mustRun(t, "key", "places", "my-app", "--json")
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("key places --json printed %q: %v", out, err)
+		}
+		if len(got.Places) == 3 && got.Places[0].Requests+got.Places[0].Refused == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("places never arrived: %+v", got)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	byKind := map[string]place{}
+	for _, pl := range got.Places {
+		byKind[pl.Kind] = pl
+	}
+	if c := byKind["country"]; c.Value != "US" || c.Requests != 1 || c.Refused != 1 {
+		t.Errorf("country = %+v, want US, 1 forwarded and 1 refused", c)
+	}
+	if a := byKind["asn"]; a.Value != "64500" || a.Label != "Test Network" {
+		t.Errorf("asn = %+v, want AS64500 labelled Test Network", a)
+	}
+	if n := byKind["network"]; n.Value != "127.0.0.0/24" && n.Value != "::/64" {
+		t.Errorf("network = %+v, want the loopback network", n)
+	}
+	if out, _ := h.mustRun(t, "key", "places", "my-app"); !strings.Contains(out, "AS64500") || !strings.Contains(out, "Test Network") {
+		t.Errorf("key places:\n%s", out)
 	}
 }

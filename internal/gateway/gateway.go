@@ -115,8 +115,10 @@ type exchange struct {
 	// ip is where the request came from, by the connection or a trusted proxy.
 	ip netip.Addr
 	// geo is where the address is, when a GeoIP database says. It is what the
-	// request's event carries as its country and ASN.
-	geo geoip.Info
+	// request's event carries as its country and ASN. placed is whether it has
+	// been looked up.
+	geo    geoip.Info
+	placed bool
 	// usage reads usage from the response as it passes. It is nil before there's a
 	// response, and for one that can't be read or isn't metered. What it holds
 	// stands after a broken response too, when abort is also set.
@@ -228,6 +230,7 @@ const maxOperationPath = 256
 // never waits: Emit drops the event when the queue is full. The event holds what
 // happened, never what was said.
 func (g *Gateway) emit(x *exchange) {
+	g.place(x)
 	if g.opts.observe != nil {
 		g.opts.observe(x.ip, x.geo)
 	}
@@ -266,6 +269,6 @@ func (g *Gateway) emit(x *exchange) {
 	if e.Kind != events.KindBlocked && x.res != nil && !x.charge.Unknown {
 		e.CostKnown, e.CostMicro, e.CostEstimated = true, x.charge.Micro, x.charge.Estimated
 	}
-	e.Country, e.ASN = x.geo.Country, int64(x.geo.ASN)
+	e.Country, e.ASN, e.ASOrg = x.geo.Country, int64(x.geo.ASN), x.geo.ASOrg
 	g.opts.Events.Emit(e)
 }

@@ -17,6 +17,9 @@ type EventRow struct {
 	ClientIP string
 	Country  string
 	ASN      int64
+	// ASOrg is the organisation the ASN belongs to. It is not kept in the events
+	// table: it labels the key's place for the ASN, and reads back empty.
+	ASOrg string
 
 	UpstreamID, Model, Operation string
 
@@ -51,9 +54,10 @@ type UsageRow struct {
 
 const hourMS = int64(time.Hour / time.Millisecond)
 
-// AddEvents stores the events and adds what they used to usage_hourly, in this
-// transaction, so a batch is kept whole or not at all. An event with no key is
-// stored but counts toward no key's usage.
+// AddEvents stores the events, adds what they used to usage_hourly, and adds
+// where they came from to their keys' places, in this transaction, so a batch is
+// kept whole or not at all. An event with no key is stored but counts toward no
+// key's usage or places.
 func (tx *Tx) AddEvents(rows []EventRow) error {
 	insert, err := tx.tx.PrepareContext(tx.ctx, `INSERT INTO events (ts, key_id, kind, client_ip, country, asn, upstream_id, model, operation,
 		status, blocked_code, latency_ms, req_bytes, resp_bytes, tokens_in, tokens_out, tokens_cached, tokens_cache_write,
@@ -66,7 +70,9 @@ func (tx *Tx) AddEvents(rows []EventRow) error {
 	defer insert.Close()
 	usage := map[usageKey]*UsageRow{}
 	var order []usageKey
+	places := newPlaceTally()
 	for _, r := range rows {
+		places.add(r)
 		var cost any // NULL when the cost is unknown
 		if r.CostKnown {
 			cost = r.CostMicro
@@ -122,7 +128,7 @@ func (tx *Tx) AddEvents(rows []EventRow) error {
 			return typed(err, "add usage of key "+k.key)
 		}
 	}
-	return nil
+	return places.write(tx.ctx, tx.tx)
 }
 
 type usageKey struct {

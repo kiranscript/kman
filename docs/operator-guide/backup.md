@@ -45,6 +45,7 @@ kman prunes old data by itself, at startup and then once a day:
 | Hourly usage | 400 days |
 | The alert outbox | 30 days after delivery; an alert not yet delivered, or given up on, is kept |
 | Daily spend | forever |
+| Key places (`kman key places`) | forever |
 | Incidents | forever |
 | The audit log | forever |
 
@@ -65,7 +66,7 @@ kman prune --before 2026-01-01                 # events, hourly usage and delive
 kman prune --before 2026-01-01 --audit-log     # ... and the audit log's entries older than the date
 ```
 
-`kman prune --before <date>` deletes what is older than the date (`2026-01-01` is midnight UTC; a full RFC 3339 time works too) and prints the counts. It works with `retention: keep_everything`, and it is always audited (`data.prune`, with the counts and whether the audit log was included). It refuses a date in the future. Daily spend and incidents are never pruned.
+`kman prune --before <date>` deletes what is older than the date (`2026-01-01` is midnight UTC; a full RFC 3339 time works too) and prints the counts. It works with `retention: keep_everything`, and it is always audited (`data.prune`, with the counts and whether the audit log was included). It refuses a date in the future. Daily spend, key places and incidents are never pruned.
 
 **The audit log is the exception that needs asking.** It is append-only, enforced by a trigger in the database, and `--audit-log` is the one path that ever deletes from it: the prune opens a guard (`meta.audit_prune_before`) in its own transaction, deletes the entries older than the date, closes the guard, and appends its record, all or nothing. The record of the prune is newer than the date, so it stays: a pruned log always says that it was pruned, when, by whom, and how many entries went. Think before you do it; there is no undo except a [backup](#back-up).
 

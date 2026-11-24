@@ -736,6 +736,26 @@
         ],
         "type": "object"
       },
+      "KeyPlaces": {
+        "additionalProperties": false,
+        "properties": {
+          "key_id": {
+            "type": "string"
+          },
+          "places": {
+            "description": "Most recently seen first.",
+            "items": {
+              "$ref": "#/components/schemas/Place"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "key_id",
+          "places"
+        ],
+        "type": "object"
+      },
       "KeySpend": {
         "additionalProperties": false,
         "properties": {
@@ -796,6 +816,54 @@
         },
         "required": [
           "secret"
+        ],
+        "type": "object"
+      },
+      "Place": {
+        "additionalProperties": false,
+        "properties": {
+          "first_seen": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "kind": {
+            "description": "country, asn or network.",
+            "type": "string"
+          },
+          "label": {
+            "description": "A name for the value, when kman has one: an AS's organisation, from the ASN database.",
+            "type": "string"
+          },
+          "last_seen": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "other": {
+            "description": "This row counts every place of its kind past the first 1,000 the key was seen from.",
+            "type": "boolean"
+          },
+          "refused": {
+            "description": "Requests kman refused from here.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "requests": {
+            "description": "Requests kman forwarded from here, and realtime sessions.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "value": {
+            "description": "An ISO 3166-1 alpha-2 country code, an AS number, or an IPv4 /24 or IPv6 /64 network. Empty for the other row.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value",
+          "first_seen",
+          "last_seen",
+          "requests",
+          "refused"
         ],
         "type": "object"
       },
@@ -2524,6 +2592,54 @@
           }
         },
         "summary": "Let a disabled virtual key work again; a revoked key cannot be enabled"
+      }
+    },
+    "/admin/v1/keys/{id}/places": {
+      "get": {
+        "operationId": "listKeyPlaces",
+        "parameters": [
+          {
+            "description": "The key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only places of this kind: country, asn or network.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyPlaces"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List where a virtual key has been used from: each country, AS and network, with when it was first and last seen and how many requests were forwarded and refused"
       }
     },
     "/admin/v1/keys/{id}/revoke": {

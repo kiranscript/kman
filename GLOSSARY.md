@@ -83,7 +83,7 @@ Replacing the database with a backup, offline. Everything written after the back
 _Avoid_: Import, recover
 
 **Retention**:
-How long kman keeps the data that grows: events, hourly usage and delivered alerts are pruned past their windows, and daily spend, incidents and the audit log are kept forever. `kman prune --before` prunes by a date of the operator's own.
+How long kman keeps the data that grows: events, hourly usage and delivered alerts are pruned past their windows, and daily spend, key places, incidents and the audit log are kept forever. `kman prune --before` prunes by a date of the operator's own.
 _Avoid_: Cleanup, expiry (that is a key's)
 
 ### Upstreams and credentials
@@ -141,6 +141,10 @@ A virtual key's old secret after its grace period has ended. It no longer works,
 **Event**:
 The record of one request or realtime session through kman: which key sent it, from where, what it was allowed to do, and what it cost. Never its content.
 _Avoid_: Log line, request log
+
+**Place**:
+Where a virtual key has been used from, at one of three grains: a country, an autonomous system (ASN), or a network (an IPv4 /24 or an IPv6 /64). kman keeps each place a key turns up at, with when it was first and last seen and how many requests it forwarded and refused, forever. `kman key places` lists them.
+_Avoid_: Source (a known source is an operator's label for a place), location
 
 **Baseline**:
 What normal use of one virtual key looks like: its usual request rate, spend, and the places it is used from.
