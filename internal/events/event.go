@@ -20,7 +20,7 @@ const (
 
 // Event is the record of one request or one realtime session (SPEC §9). It
 // holds what happened and never what was said: no request or response content,
-// no header, no query string, and no secret.
+// no header but the one exception below, no query string, and no secret.
 type Event struct {
 	Time time.Time
 	Kind Kind
@@ -30,6 +30,12 @@ type Event struct {
 	ClientIP netip.Addr // the zero Addr for a Unix socket
 	Country  string     // ISO 3166-1 alpha-2, empty until a GeoIP database is configured
 	ASN      int64      // 0 when unknown
+	// Client is what called: the User-Agent reduced by ClientOf to a product and
+	// its major version, such as openai-python/3, or none. It is the one header an
+	// event keeps, and only as that reduction (ADR 0012): the header itself is
+	// never stored, logged or sent in an alert. It is set for a request that
+	// proved no key too, so that probing can be told apart by what it comes from.
+	Client string
 	// ASOrg is the organisation the ASN belongs to, when the database names one.
 	// It labels the key's place and is not kept with the event.
 	ASOrg string

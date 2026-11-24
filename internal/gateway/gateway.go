@@ -270,5 +270,9 @@ func (g *Gateway) emit(x *exchange) {
 		e.CostKnown, e.CostMicro, e.CostEstimated = true, x.charge.Micro, x.charge.Estimated
 	}
 	e.Country, e.ASN, e.ASOrg = x.geo.Country, int64(x.geo.ASN), x.geo.ASOrg
+	// The User-Agent is the one header an event keeps, and only as the client
+	// ClientOf reduces it to (ADR 0012). The reduction reads at most a few hundred
+	// bytes, so a flood of made-up keys costs next to nothing more.
+	e.Client = events.ClientOf(x.r.Header.Get("User-Agent"))
 	g.opts.Events.Emit(e)
 }

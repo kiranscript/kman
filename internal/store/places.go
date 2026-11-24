@@ -13,6 +13,7 @@ const (
 	PlaceCountry = "country" // an ISO 3166-1 alpha-2 code
 	PlaceASN     = "asn"     // an autonomous system number, in decimal
 	PlaceNetwork = "network" // an IPv4 /24 or an IPv6 /64
+	PlaceClient  = "client"  // a User-Agent reduced to a product and major version, or none (#86)
 )
 
 // MaxPlacesPerKind is how many places of one kind a key keeps. A key seen from
@@ -49,7 +50,8 @@ type placeTally struct {
 func newPlaceTally() *placeTally { return &placeTally{m: map[placeKey]*PlaceRow{}} }
 
 // add counts the places of one event. An event with no key belongs to no key,
-// and an event with no address (a Unix socket) has no network.
+// an event with no address (a Unix socket) has no network, and an event with no
+// client (stored before clients were recorded) has none.
 func (t *placeTally) add(r EventRow) {
 	if r.KeyID == "" {
 		return
@@ -62,6 +64,9 @@ func (t *placeTally) add(r EventRow) {
 	}
 	if n := networkOf(r.ClientIP); n != "" {
 		t.count(r, PlaceNetwork, n, "")
+	}
+	if r.Client != "" {
+		t.count(r, PlaceClient, r.Client, "")
 	}
 }
 

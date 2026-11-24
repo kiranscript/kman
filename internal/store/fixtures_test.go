@@ -53,6 +53,15 @@ func TestEveryFixtureMigrates(t *testing.T) {
 			if after := countRows(t, path); after != before {
 				t.Errorf("rows after migrating = %+v, want %+v", after, before)
 			}
+			// What migration 0002 adds to a database that holds events: the client
+			// column, empty for every event that was stored before it.
+			var withClient, events int
+			if err := rawOpen(t, path).QueryRow(`SELECT count(client), count(*) FROM events`).Scan(&withClient, &events); err != nil {
+				t.Fatalf("events.client: %v", err)
+			}
+			if withClient != 0 {
+				t.Errorf("%d of %d migrated events have a client, want none", withClient, events)
+			}
 		})
 	}
 }

@@ -255,9 +255,13 @@ func TestAnEventHoldsNoContentAndNoSecret(t *testing.T) {
 	s, secret, _, _ := eventsBehind(t, w, up, `{}`, true)
 	h := withBearer(secret)
 	h.Set("X-Request-Header", "REQUEST-HEADER-SENTINEL")
+	h.Set("User-Agent", "my-app/1.4 (REQUEST-UA-SENTINEL; "+secret+")")
 	body := `{"model":"m","messages":[{"role":"user","content":"REQUEST-SENTINEL"}]}`
 	s.send("POST", chatPath+"?q=QUERY-SENTINEL", body, h)
 	e := w.next(t)
+	if e.Client != "my-app/1" {
+		t.Errorf("client %q, want the User-Agent's product and major version and no more", e.Client)
+	}
 	dump := fmt.Sprintf("%+v %#v", e, e)
 	for _, leak := range []string{"SENTINEL", secret, credential} {
 		if strings.Contains(dump, leak) {
@@ -320,5 +324,52 @@ func TestAGatewayWithNoEventBusStillServes(t *testing.T) {
 	s, secret := behind(t, answering("application/json", `{}`))
 	if resp, _ := s.send("GET", "/v1/models", "", withBearer(secret)); resp.StatusCode != 200 {
 		t.Fatalf("status %d", resp.StatusCode)
+	}
+}
+
+func TestAnEventNamesTheClientThatMadeTheRequest(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		header http.Header // sent in place of the User-Agent the test client would add
+		want   string
+	}{
+		{"an official SDK", http.Header{"User-Agent": {"OpenAI/Python 3.49.0"}}, "openai-python/3"},
+		{"curl", http.Header{"User-Agent": {"curl/8.5.0"}}, "curl/8"},
+		{"no User-Agent", http.Header{"User-Agent": {""}}, "none"},
+		{"something that is not a product", http.Header{"User-Agent": {"alice@example.com"}}, "unknown"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			w := watch(t, events.Options{})
+			s, secret, _, _ := eventsBehind(t, w, answering("application/json", `{}`), `{}`, true)
+			h := withBearer(secret)
+			h["User-Agent"] = c.header["User-Agent"]
+			s.send("GET", "/v1/models", "", h)
+			if e := w.next(t); e.Client != c.want {
+				t.Errorf("client %q, want %q", e.Client, c.want)
+			}
+		})
+	}
+}
+
+func TestARefusalOfAKeyKmanDoesNotKnowStillNamesItsClient(t *testing.T) {
+	w := watch(t, events.Options{})
+	s, _, _, _ := eventsBehind(t, w, answering("application/json", `{}`), `{}`, true)
+	s.send("POST", chatPath, `{"model":"m"}`, http.Header{"Authorization": {"Bearer kmv_nope"}, "User-Agent": {"python-requests/2.31.0"}})
+	if e := w.next(t); e.KeyID != "" || e.Client != "python-requests/2" {
+		t.Errorf("event %+v, want a request with no key from python-requests/2: probing is worth seeing by its client", e)
+	}
+}
+
+func TestAUserAgentThatHoldsAKeyNeverReachesAnEvent(t *testing.T) {
+	w := watch(t, events.Options{})
+	s, secret, _, _ := eventsBehind(t, w, answering("application/json", `{}`), `{}`, true)
+	for _, ua := range []string{secret, "my-app/1 " + secret, "x-" + secret + "/2"} {
+		h := withBearer(secret)
+		h.Set("User-Agent", ua)
+		s.send("GET", "/v1/models", "", h)
+		e := w.next(t)
+		if dump := fmt.Sprintf("%+v %#v", e, e); strings.Contains(dump, secret) || strings.Contains(dump, "kmn_") {
+			t.Errorf("a User-Agent of %q reached the event: %s", ua, dump)
+		}
 	}
 }

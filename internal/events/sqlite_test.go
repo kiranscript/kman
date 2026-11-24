@@ -28,7 +28,7 @@ func TestEventsThroughTheBusLandInTheStoreWithHourlyUsage(t *testing.T) {
 	wg.Go(func() { w.Run(sub) })
 
 	b.Emit(events.Event{Time: now, Kind: events.KindRequest, KeyID: "abcd1234", UpstreamID: "up_1", Model: "gpt-5.4",
-		Method: "POST", Path: "/v1/chat/completions", ClientIP: netip.MustParseAddr("203.0.113.7"), Status: 200, Latency: 250 * time.Millisecond,
+		Method: "POST", Path: "/v1/chat/completions", ClientIP: netip.MustParseAddr("203.0.113.7"), Client: "openai-python/3", Status: 200, Latency: 250 * time.Millisecond,
 		TokensIn: 11, TokensOut: 22, CostMicro: 330, CostKnown: true})
 	b.Emit(events.Event{Time: now, Kind: events.KindBlocked, KeyID: "abcd1234", Status: 403, BlockedCode: "key_disabled", Priority: true})
 	cancel()
@@ -56,7 +56,7 @@ func TestEventsThroughTheBusLandInTheStoreWithHourlyUsage(t *testing.T) {
 			blocked = e
 		}
 	}
-	if req.Model != "gpt-5.4" || req.LatencyMS != 250 || req.CostMicro != 330 || req.Operation != "POST /v1/chat/completions" || req.ClientIP != "203.0.113.7" || !req.CostKnown || blocked.BlockedCode != "key_disabled" {
+	if req.Model != "gpt-5.4" || req.LatencyMS != 250 || req.CostMicro != 330 || req.Operation != "POST /v1/chat/completions" || req.ClientIP != "203.0.113.7" || req.Client != "openai-python/3" || !req.CostKnown || blocked.BlockedCode != "key_disabled" {
 		t.Errorf("stored %+v and %+v", req, blocked)
 	}
 	if len(use) != 1 || use[0].Requests != 1 || use[0].Blocked != 1 || use[0].TokensIn != 11 || use[0].CostMicro != 330 {

@@ -12,13 +12,13 @@ func TestEventsAreStoredWithEveryFieldAndReadBackBySince(t *testing.T) {
 	s := open(t)
 	ts := time.Date(2026, 11, 11, 10, 30, 15, 123_000_000, time.UTC)
 	want := store.EventRow{
-		Time: ts, Kind: "request", KeyID: "abcd1234", ClientIP: "203.0.113.7", Country: "DE", ASN: 3320,
+		Time: ts, Kind: "request", KeyID: "abcd1234", ClientIP: "203.0.113.7", Country: "DE", ASN: 3320, Client: "openai-python/3",
 		UpstreamID: "up_1", Model: "gpt-5.4", Operation: "POST /v1/chat/completions",
 		Status: 200, LatencyMS: 812, ReqBytes: 1200, RespBytes: 5400,
 		TokensIn: 10, TokensOut: 20, TokensCached: 3, TokensCacheWrite: 4, TokensAudioIn: 5, TokensAudioOut: 6,
 		CostMicro: 1234, CostKnown: true, CostEstimated: true,
 	}
-	blocked := store.EventRow{Time: ts.Add(time.Second), Kind: "blocked", ClientIP: "198.51.100.1", Status: 401, BlockedCode: "invalid_key"}
+	blocked := store.EventRow{Time: ts.Add(time.Second), Kind: "blocked", ClientIP: "198.51.100.1", Client: "curl/8", Status: 401, BlockedCode: "invalid_key"}
 	do(t, s, func(tx *store.Tx) error { return tx.AddEvents([]store.EventRow{want, blocked}) })
 
 	var got []store.EventRow
@@ -213,9 +213,9 @@ func listFixture(t *testing.T) (*store.Store, time.Time) {
 			return err
 		}
 		return tx.AddEvents([]store.EventRow{
-			{Time: t0, Kind: "request", KeyID: "kkkk1111", ClientIP: "203.0.113.7", Country: "DE", ASN: 3320, ASOrg: "Deutsche Telekom AG", Model: "gpt-5.4", Operation: "POST /v1/chat/completions", Status: 200},
-			{Time: t0.Add(time.Minute), Kind: "blocked", KeyID: "kkkk1111", ClientIP: "198.51.100.9", Country: "US", Operation: "POST /v1/chat/completions", Status: 403, BlockedCode: "address_not_allowed"},
-			{Time: t0.Add(2 * time.Minute), Kind: "blocked", ClientIP: "192.0.2.4", Status: 401, BlockedCode: "invalid_key", Operation: "GET /v1/models"},
+			{Time: t0, Kind: "request", KeyID: "kkkk1111", ClientIP: "203.0.113.7", Country: "DE", ASN: 3320, ASOrg: "Deutsche Telekom AG", Client: "openai-python/3", Model: "gpt-5.4", Operation: "POST /v1/chat/completions", Status: 200},
+			{Time: t0.Add(time.Minute), Kind: "blocked", KeyID: "kkkk1111", ClientIP: "198.51.100.9", Country: "US", Client: "curl/8", Operation: "POST /v1/chat/completions", Status: 403, BlockedCode: "address_not_allowed"},
+			{Time: t0.Add(2 * time.Minute), Kind: "blocked", ClientIP: "192.0.2.4", Client: "none", Status: 401, BlockedCode: "invalid_key", Operation: "GET /v1/models"},
 			{Time: t0.Add(3 * time.Minute), Kind: "session", KeyID: "kkkk2222", Status: 101, Operation: "GET /v1/realtime"},
 			{Time: t0.Add(4 * time.Minute), Kind: "request", KeyID: "kkkk1111", ClientIP: "203.0.113.8", Country: "DE", ASN: 3320, Status: 502, BlockedCode: "upstream_unavailable"},
 		})
@@ -246,7 +246,7 @@ func TestListEventsReturnsTheNewestFirstWithTheKeyNameAndAnASNLabel(t *testing.T
 	}
 	last := got[4]
 	if last.ID == 0 || !last.Time.Equal(t0) || last.KeyID != "kkkk1111" || last.KeyName != "my-app" || last.ASN != 3320 || last.ASOrg != "Deutsche Telekom AG" ||
-		last.ClientIP != "203.0.113.7" || last.Country != "DE" || last.Model != "gpt-5.4" || last.Operation != "POST /v1/chat/completions" || last.Status != 200 {
+		last.ClientIP != "203.0.113.7" || last.Client != "openai-python/3" || last.Country != "DE" || last.Model != "gpt-5.4" || last.Operation != "POST /v1/chat/completions" || last.Status != 200 {
 		t.Errorf("the oldest event = %+v", last)
 	}
 	// The ASN's label belongs to the key's place, so a later event from the same
@@ -255,7 +255,8 @@ func TestListEventsReturnsTheNewestFirstWithTheKeyNameAndAnASNLabel(t *testing.T
 		t.Errorf("a later event from AS3320 has the label %q, want the place's", got[0].ASOrg)
 	}
 	// An event that presented no key is listed, with no key.
-	if probe := got[2]; probe.KeyID != "" || probe.KeyName != "" || probe.BlockedCode != "invalid_key" {
+	// ... and the client it was made by, which is recorded with no key too.
+	if probe := got[2]; probe.KeyID != "" || probe.KeyName != "" || probe.BlockedCode != "invalid_key" || probe.Client != "none" {
 		t.Errorf("the event with no key = %+v", probe)
 	}
 }
@@ -298,5 +299,17 @@ func TestListEventsPagesBackwardsFromACursor(t *testing.T) {
 	}
 	if len(third) != 1 {
 		t.Errorf("last page has %d events, want the 1 left", len(third))
+	}
+}
+
+func TestAnEventStoredWithNoClientReadsBackEmpty(t *testing.T) {
+	s := open(t)
+	t0 := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	do(t, s, func(tx *store.Tx) error {
+		return tx.AddEvents([]store.EventRow{{Time: t0, Kind: "request", KeyID: "kkkk1111", Status: 200}})
+	})
+	got := listEvents(t, s, store.EventFilter{}, 10)
+	if len(got) != 1 || got[0].Client != "" {
+		t.Errorf("an event stored with no client reads back as %+v, want an empty client (an event from before clients were recorded)", got)
 	}
 }

@@ -139,3 +139,59 @@ func TestAKeyKeepsAtMostMaxPlacesPerKindAndCountsTheRestAsOther(t *testing.T) {
 		t.Errorf("the limit on networks touched countries: %+v", got)
 	}
 }
+
+func TestEventsRecordTheClientsOfTheirKeyAsPlaces(t *testing.T) {
+	s := open(t)
+	t0 := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	do(t, s, func(tx *store.Tx) error {
+		return tx.AddEvents([]store.EventRow{
+			{Time: t0, Kind: "request", KeyID: "kkkk1111", Client: "openai-python/3", Status: 200},
+			{Time: t0.Add(time.Minute), Kind: "request", KeyID: "kkkk1111", Client: "openai-python/3", Status: 200},
+			{Time: t0.Add(2 * time.Minute), Kind: "blocked", KeyID: "kkkk1111", Client: "curl/8", Status: 403, BlockedCode: "address_not_allowed"},
+			{Time: t0.Add(3 * time.Minute), Kind: "blocked", KeyID: "kkkk1111", Client: "none", Status: 403, BlockedCode: "key_disabled"},
+			{Time: t0.Add(4 * time.Minute), Kind: "blocked", Client: "curl/8", Status: 401, BlockedCode: "invalid_key"}, // no key: no place
+			{Time: t0.Add(5 * time.Minute), Kind: "request", KeyID: "kkkk1111", Status: 200},                            // from before clients were recorded
+		})
+	})
+	got := places(t, s, "kkkk1111", "client")
+	want := []store.PlaceRow{
+		{KeyID: "kkkk1111", Kind: "client", Value: "none", FirstSeen: t0.Add(3 * time.Minute), LastSeen: t0.Add(3 * time.Minute), Blocked: 1},
+		{KeyID: "kkkk1111", Kind: "client", Value: "curl/8", FirstSeen: t0.Add(2 * time.Minute), LastSeen: t0.Add(2 * time.Minute), Blocked: 1},
+		{KeyID: "kkkk1111", Kind: "client", Value: "openai-python/3", FirstSeen: t0, LastSeen: t0.Add(time.Minute), Count: 2},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Places(client) = %+v\nwant %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("place %d = %+v\nwant      %+v", i, got[i], want[i])
+		}
+	}
+	if all := places(t, s, "kkkk1111", ""); len(all) != 3 {
+		t.Errorf("an event with no client or no address made places: %+v", all)
+	}
+}
+
+func TestAKeyKeepsAtMostMaxPlacesPerKindOfClientsToo(t *testing.T) {
+	s := open(t)
+	t0 := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	var batch []store.EventRow
+	for i := range store.MaxPlacesPerKind + 5 {
+		batch = append(batch, store.EventRow{Time: t0.Add(time.Duration(i) * time.Second), Kind: "request", KeyID: "kkkk1111",
+			Client: fmt.Sprintf("app-%d/1", i), Status: 200})
+	}
+	do(t, s, func(tx *store.Tx) error { return tx.AddEvents(batch) })
+	got := places(t, s, "kkkk1111", "client")
+	if len(got) != store.MaxPlacesPerKind+1 {
+		t.Fatalf("%d clients, want %d kept and one other", len(got), store.MaxPlacesPerKind)
+	}
+	var other *store.PlaceRow
+	for i := range got {
+		if got[i].Value == store.PlaceOther {
+			other = &got[i]
+		}
+	}
+	if other == nil || other.Count != 5 {
+		t.Errorf("other = %+v, want the 5 clients past the limit", other)
+	}
+}
