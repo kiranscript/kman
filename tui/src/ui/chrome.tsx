@@ -20,6 +20,7 @@ export function linkBadge(link: Link): { glyph: string; word: string; color?: st
     case 'ok':
       return { glyph: '●', word: 'live', color: color.ok };
     case 'down':
+      if (link.answered) return { glyph: '✖', word: 'server error', color: color.danger };
       return { glyph: '◌', word: link.lastOk ? 'offline' : 'cannot connect', color: color.warn };
     case 'denied':
       return { glyph: '✖', word: 'token refused', color: color.danger };

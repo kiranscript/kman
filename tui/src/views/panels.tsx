@@ -74,6 +74,15 @@ const pad = (segs: Seg[], w: number): Seg[] => [...segs, { t: ' '.repeat(Math.ma
 /** The segments right-aligned in `w` columns. */
 const padStartSegs = (segs: Seg[], w: number): Seg[] => [{ t: ' '.repeat(Math.max(0, w - segLen(segs))) }, ...segs];
 
+/** The segments without a dot at the start, and the space after it: a line has no separator to open it. */
+function withoutLeadingDot(segs: Seg[]): Seg[] {
+  if (segs[0]?.t !== '·') return segs;
+  const rest = segs.slice(1);
+  while (rest[0] && rest[0].t.trim() === '') rest.shift();
+  if (rest[0]) rest[0] = { ...rest[0], t: rest[0].t.trimStart() };
+  return rest;
+}
+
 /** The parts that fit in `max` columns, in order of priority, one space between. */
 function fitParts(parts: Seg[][], max: number): Seg[] {
   const out: Seg[] = [];
@@ -191,6 +200,8 @@ export function StatusPanel({
         : [{ t: `price ${compact ? `${price.age_days}d` : `data ${price.age_days} days old`}`, dim: true }]
       : [{ t: 'price data unknown', dim: true }];
   const badgeSeg: Seg = { t: `${badge.glyph} ${badge.word}`, color: badge.color, dim: badge.color === undefined };
+  // The connection is in the footer: here it is only said when it is not simply live.
+  const badgePart: Seg[][] = link.state === 'ok' ? [] : [[badgeSeg]];
   const dot: Seg = { t: '·', dim: true };
   const whereSeg: Seg[] = [dot, { t: ' ' + where, dim: true }];
   const priceOk = price && !price.stale ? [[dot, { t: ' ' }, ...priceSeg(true)]] : [];
@@ -200,7 +211,7 @@ export function StatusPanel({
   // from the end.
   const compactLine: Seg[] = fitParts(
     [
-      [badgeSeg],
+      ...badgePart,
       ...priceStale,
       [dot, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
       [dot, { t: ` ${money(spend('today'))} today`, bold: true }],
@@ -216,7 +227,7 @@ export function StatusPanel({
     { t: ` · ${disabled} disabled · ${revoked} revoked`, dim: true },
   ];
   const fullLines: Seg[][] = [
-    [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }],
+    link.state === 'ok' ? [{ t: linkText, dim: true }] : [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }],
     ...(inBorder ? [] : [whereLine]),
     countsLine,
     [
@@ -232,14 +243,14 @@ export function StatusPanel({
   ];
   /** The connection, a stale price, and the count when `withCount`. */
   const head = (withCount: boolean): Seg[] =>
-    fitParts([[badgeSeg], ...priceStale, ...(withCount ? [activePart] : []), ...priceOk], inner - 1);
+    fitParts([...badgePart, ...priceStale, ...(withCount ? [activePart] : []), ...priceOk], inner - 1);
   /** The spend, with the price when the line above does not already carry it. */
   const money2 = (above: Seg[]): Seg[] =>
     fitParts(
       [
         [{ t: `${money(spend('today'))} today`, bold: true }],
         ...(above.some((x) => x.t.includes('price')) ? [] : price ? [[dot, { t: ' ' }, ...priceSeg(true)]] : []),
-        [dot, { t: ` ${money(spend('month'))} month`, dim: true }],
+        [dot, { t: ` ${money(spend('month'))} this month`, dim: true }],
       ],
       inner - 1,
     );
@@ -248,7 +259,7 @@ export function StatusPanel({
   const tierFor = (n: number): Seg[][] => {
     if (n <= 1) return [compactLine];
     if (n === 2) return [head(true), money2(head(true))];
-    return [head(false), money2(head(false)), countsLine, ...(inBorder ? [] : [whereLine])];
+    return [head(false), countsLine, money2(head(false)), ...(inBorder ? [] : [whereLine])];
   };
 
   const rows = Math.max(1, height - 2);
@@ -271,7 +282,16 @@ export function StatusPanel({
         { t: ` ${first.name} · ${topRisk(first.risks)!.short}` + (items.length > 1 ? ` · +${items.length - 1} more` : ''), dim: first.top === 'info' },
       ]
     : [{ t: 'Nothing to review.', dim: true }];
-  const lines = !focused && summaryRows > base.length && summaryRows >= fullLines.length ? [...base, attentionLine] : base;
+  // Unfocused, the last line of the summary is the first thing to look at, whatever it has to
+  // replace: a problem must not be hidden behind the price.
+  const lines =
+    !focused && !strip && items.length > 0 && summaryRows >= 3
+      ? summaryRows > base.length
+        ? [...base, attentionLine]
+        : [...base.slice(0, summaryRows - 1), attentionLine]
+      : !focused && summaryRows > base.length && summaryRows >= fullLines.length
+        ? [...base, attentionLine]
+        : base;
   const listRows = listArea - header;
   const sel = Math.min(selected, Math.max(0, items.length - 1));
   const start = windowStart(sel, items.length, Math.max(1, listRows));
@@ -291,13 +311,13 @@ export function StatusPanel({
       height={height}
     >
       {lines.slice(0, summaryRows).map((segs, i) => (
-        <Row key={i} left={[...lead, ...segs]} width={inner} />
+        <Row key={i} left={[...lead, ...withoutLeadingDot(segs)]} width={inner} />
       ))}
       {focused && listRows > 0 ? (
         <>
           {header > 0 ? (
             <Text dimColor bold wrap="truncate-end">
-              {' '}NEEDS ATTENTION ({items.length})
+              {' '}NEEDS ATTENTION
             </Text>
           ) : null}
           {items.length === 0 ? (
@@ -322,7 +342,7 @@ export function StatusPanel({
                 ]}
                 right={[
                   { t: topRisk(risks)!.short, color: severityColor[top], dim: top === 'info' },
-                  { t: risks.length > 1 ? ` +${risks.length - 1} ` : ' ', dim: true },
+                  { t: risks.length > 1 ? ` +${risks.length - 1} more ` : ' ', dim: true },
                 ]}
               />
             ))
@@ -404,9 +424,11 @@ export function KeysPanel({
     // A row is: a space, the name, a space, the columns and a space.
     const room = inner - 3 - Math.min(longest, 20);
     const base = cols.s + (cols.r ? 1 + cols.r : 0);
+    // The spend before the warning's words: an amount cannot be read from the detail at a glance,
+    // and the mark still says what kind of warning it is.
     if (base + (cols.c ? 1 + cols.c : 0) <= room) cols.mode = 'all';
-    else if (base <= inner - 3 - Math.min(longest, 12)) cols.mode = 'noSpend';
     else if (cols.s + (cols.r ? 2 : 0) + (cols.c ? 1 + cols.c : 0) <= inner - 3 - Math.min(longest, 12)) cols.mode = 'marksSpend';
+    else if (base <= inner - 3 - Math.min(longest, 12)) cols.mode = 'noSpend';
     else if (cols.s + (cols.r ? 2 : 0) <= inner - 3 - Math.min(longest, 12)) cols.mode = 'marks';
   }
   return (

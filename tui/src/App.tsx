@@ -16,7 +16,7 @@ import { Hint, Panel } from './ui/parts.js';
 import { editText } from './ui/TextField.js';
 import { color } from './ui/theme.js';
 import { AUDIT_LIMIT, useAdmin } from './useAdmin.js';
-import { AuditMain, KeyMain, StartMain, StatusMain, UpstreamMain } from './views/detail.js';
+import { AuditMain, KeyMain, StartMain, StatusMain, UPSTREAM_COMMAND, UpstreamMain } from './views/detail.js';
 import type { Scroll } from './views/detail.js';
 import { attentionItems, AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
 
@@ -539,7 +539,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
         attn ? (
           <KeyMain key={attn.id} keyData={attn} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} />
         ) : attnItem?.noUpstream ? (
-          <UpstreamMain upstream={undefined} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} none={NO_UPSTREAM} />
+          <UpstreamMain upstream={undefined} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} none={NO_UPSTREAM} command={UPSTREAM_COMMAND} />
         ) : attnUp ? (
           <UpstreamMain key={attnUp.id} upstream={attnUp} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} />
         ) : data.keys.length === 0 ? (
@@ -567,6 +567,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
           height={lay.mainH}
           scroll={scroll}
           none={NO_UPSTREAM}
+          command={UPSTREAM_COMMAND}
         />
       ) : (
         <AuditMain
@@ -626,7 +627,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   );
 }
 
-const NO_UPSTREAM = 'No upstreams yet. An upstream is an API kman sits in front of. Add one with: kman upstream add openai --preset openai';
+const NO_UPSTREAM = 'No upstreams yet. An upstream is an API kman sits in front of. Add one with:';
 
 function Centered({ width, height, children }: { width: number; height: number; children: React.ReactNode }) {
   return (
@@ -699,14 +700,15 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, offline, work
   const common: HintItem[] = [
     { k: 'r', label: offline ? 'retry' : 'refresh', always: offline, rank: 2 },
     ...(scrollable ? [{ k: 'J/K', label: 'scroll', rank: 3.5 }] : []),
-    { k: '1-4', label: 'panels', rank: 0 },
+    { k: '1-4', label: 'panels', rank: 3.2 },
     { k: '?', label: 'help', always: true },
     { k: 'q', label: 'quit', always: true },
   ];
   const create = canChange && canCreate ? [{ k: 'n', label: 'new key', rank: 4 }] : [];
   // Only offered when the detail has more than it shows: otherwise there is nothing to go to.
   const open = selectable && scrollable ? [{ k: 'Enter', label: 'details', rank: 3.6 }] : [];
-  const select = movable ? [{ k: '↑↓', label: 'select', rank: 1 }] : [];
+  // Moving over the rows and reaching the other panels outrank a secondary action like c IPs.
+  const select = movable ? [{ k: '↑↓', label: 'select', rank: 3.3 }] : [];
   if (tab === 'keys') {
     const act =
       key?.status === 'active'

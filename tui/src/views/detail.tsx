@@ -28,6 +28,22 @@ function Body({ children }: { children: React.ReactNode }) {
   );
 }
 
+export const UPSTREAM_COMMAND = 'kman upstream add openai --preset openai';
+
+/** The text of an empty panel, wrapped by words inside its border; a command under it stays whole on one line. */
+function Empty({ text, command, width }: { text: string; command?: string; width: number }) {
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Wrapped text={text} width={width - 4} maxLines={6} dim />
+      {command ? (
+        <Text bold wrap="truncate-end">
+          {command}
+        </Text>
+      ) : null}
+    </Box>
+  );
+}
+
 // ---- Status: what has just happened ---------------------------------------
 
 /** The main panel with Status focused and nothing needing attention to show. */
@@ -78,11 +94,12 @@ export function StartMain({ width, height, scroll, canCreate }: Size & { scroll:
         <Text>No keys yet.</Text>
         <Wrapped text="A virtual key is what an app uses in place of your real API key: kman checks it, applies its limits, and forwards the request." width={width - 4} maxLines={6} dim />
         <Box marginTop={1} flexDirection="column">
-          <Wrapped
-            text={canCreate ? 'Press n to create the first one.' : 'Add an upstream first: kman upstream add openai --preset openai'}
-            width={width - 4}
-            maxLines={3}
-          />
+          <Wrapped text={canCreate ? 'Press n to create the first one.' : 'Add an upstream first:'} width={width - 4} maxLines={3} />
+          {canCreate ? null : (
+            <Text bold wrap="truncate-end">
+              {UPSTREAM_COMMAND}
+            </Text>
+          )}
         </Box>
       </Box>
     </Frame>
@@ -196,11 +213,7 @@ export function KeyMain({
   if (!k) {
     return (
       <Frame title="Key" width={width} height={height}>
-        <Box paddingX={1}>
-          <Text dimColor wrap="wrap">
-            {none}
-          </Text>
-        </Box>
+        <Empty text={none} width={width} />
       </Frame>
     );
   }
@@ -288,7 +301,8 @@ export function UpstreamMain({
   height,
   scroll,
   none = 'No upstream selected.',
-}: Size & { upstream: Upstream | undefined; keys: Key[]; scroll: Scroll; none?: string }) {
+  command,
+}: Size & { upstream: Upstream | undefined; keys: Key[]; scroll: Scroll; none?: string; command?: string }) {
   const { onMax } = scroll;
   useEffect(() => {
     if (!u) onMax(0);
@@ -296,11 +310,7 @@ export function UpstreamMain({
   if (!u) {
     return (
       <Frame title="Upstream" width={width} height={height}>
-        <Box paddingX={1}>
-          <Text dimColor wrap="wrap">
-            {none}
-          </Text>
-        </Box>
+        <Empty text={none} command={command} width={width} />
       </Frame>
     );
   }
@@ -370,11 +380,7 @@ export function AuditMain({
   if (!e) {
     return (
       <Frame title="Entry" width={width} height={height}>
-        <Box paddingX={1}>
-          <Text dimColor wrap="wrap">
-            {none}
-          </Text>
-        </Box>
+        <Empty text={none} width={width} />
       </Frame>
     );
   }

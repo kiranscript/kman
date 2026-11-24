@@ -324,7 +324,7 @@ describe('App', () => {
       await loaded(m);
       const s = m.screen();
       // ci-evals (90% of its cap) and uncapped (no cap): two rows, so two everywhere.
-      expect(s).toContain('NEEDS ATTENTION (2)');
+      expect(s).toContain('NEEDS ATTENTION');
       expect(s).toContain('[1] Status ▲1');
       expect(s).toContain('1 of 2');
       expect(s).toContain('uncapped');
@@ -655,7 +655,7 @@ describe('App', () => {
       expect(s).toContain('Upstreams (14)');
       expect(s).toContain('1 of 14');
       expect(lines(m).find((l) => l.includes('a-very') && l.includes('…'))).toContain('○ update');
-      expect(lines(m).find((l) => l.includes('up-1 '))).toContain('▲ http');
+      expect(lines(m).find((l) => /^[│┃] up-1 /.test(l))).toContain('▲ http');
       expect(lines(m).every((l) => [...l].length <= 100)).toBe(true);
       m.unmount();
     });
@@ -686,7 +686,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('2');
       // What can be done to the selected key is dropped last; scrolling and selecting go first.
-      for (const hint of ['d disable', 'x revoke', 'c IPs', '/ filter', '? help', 'q quit']) expect(lines(m).at(-1)).toContain(hint);
+      for (const hint of ['↑↓ select', 'd disable', 'x revoke', '/ filter', '? help', 'q quit']) expect(lines(m).at(-1)).toContain(hint);
       await m.press('d');
       expect(m.screen()).toContain('Disable this key?');
       expect(m.screen()).toContain('you can enable it again');
@@ -1911,7 +1911,8 @@ describe('review round 1', () => {
     await m.press('2');
     const row = m.screen().split('\n').find((l) => /^[│┃] checkou/.test(l)) ?? '';
     expect(row).toContain('● active');
-    expect(row).toContain('▲ unmetered');
+    // Long name, narrow column: the warning keeps its mark and the spend stays, the words go.
+    expect(row).toMatch(/▲ +\$0\.108/);
     m.unmount();
   });
 
@@ -2605,6 +2606,64 @@ describe('review round 7', () => {
     await loaded(m);
     await m.press('2');
     expect(lines(m).find((l) => /^[│┃] checkout/.test(l))).toMatch(/\$0\.108/);
+    m.unmount();
+  });
+});
+
+describe('review round 8', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+
+  it('keeps the setup command whole on its own line in the empty install', async () => {
+    const client = fakeClient();
+    client.upstreams = [];
+    client.keys = [];
+    for (const columns of [100, 120]) {
+      const m = mount(client, { columns, rows: 30 });
+      await loaded(m);
+      expect(lines(m).some((l) => l.includes('kman upstream add openai --preset openai'))).toBe(true);
+      await m.press('3');
+      expect(lines(m).some((l) => l.includes('kman upstream add openai --preset openai'))).toBe(true);
+      expect(m.screen()).not.toMatch(/^[│┃] +\S* ?--preset/m);
+      m.unmount();
+    }
+  });
+
+  it('says a server error is not offline', async () => {
+    const client = fakeClient();
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    client.fail = new ApiError('internal', 'SQLITE_BUSY', 500);
+    await m.press('r');
+    await until(() => m.screen().includes('server error'), 'the server error flag');
+    expect(m.screen()).not.toContain('offline');
+    m.unmount();
+  });
+
+  it('ends an unfocused Status on the first thing to look at, not on the price', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).find((l) => /✖ ollama · no credential/.test(l))).toBeDefined();
+    m.unmount();
+  });
+
+  it('says the connection once, in the footer, when it is live', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(m.screen().match(/● live/g)).toHaveLength(1);
+    expect(lines(m).at(-1)).toContain('● live');
+    m.unmount();
+  });
+
+  it('keeps up and down and the panel keys in the footer at 80x24, ahead of c IPs', async () => {
+    const client = fakeClient();
+    client.keys.push(key({ id: 'k_x', name: 'x' }), key({ id: 'k_y', name: 'y' }));
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).at(-1)).toContain('select');
     m.unmount();
   });
 });
