@@ -277,7 +277,10 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
       }
 
       if (input === 'q') return exit();
-      if (input === '?') return setMode({ kind: 'help' });
+      if (input === '?') {
+        setNotice(undefined);
+        return setMode({ kind: 'help' });
+      }
       // With the detail panel focused the movement keys scroll it, a line or a page at a
       // time; panels, help, refresh and quit keep working.
       if (detail) {
@@ -443,7 +446,6 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
         <Panel title="The admin API refused this token" width={66} tone={color.danger}>
           <Box flexDirection="column">
             <Text>{link.error}</Text>
-            <Text dimColor>The token may be revoked or rotated.</Text>
             <Text dimColor>Save a current one with kman login, or set KMAN_ADMIN_TOKEN,</Text>
             <Text dimColor>then start this again.</Text>
           </Box>

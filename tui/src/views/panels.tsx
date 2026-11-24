@@ -123,7 +123,7 @@ export function attentionItems(needs: Attention[], ups: UpstreamAttention[], ups
           {
             id: 'setup:upstream',
             name: 'no upstream',
-            risks: [{ severity: 'danger', label: 'no upstream: add one with kman upstream add', short: 'kman upstream add', weight: 3000 }],
+            risks: [{ severity: 'danger', label: 'no upstream: add one with kman upstream add', short: 'add one', weight: 3000 }],
             top: 'danger',
             noUpstream: true,
           },
@@ -220,23 +220,29 @@ export function StatusPanel({
         { t: ` ${tailCells(topItem.name, 14)} · ${topRisk(topItem.risks)!.short}${items.length > 1 ? ` · +${items.length - 1} more` : ''}`, dim: topItem.top === 'info' },
       ]
     : undefined;
-  const compactLine: Seg[] = fitParts(
-    [
-      ...badgePart,
-      ...priceStale,
-      // The first thing to look at comes ahead of the counts: it cannot be seen from another panel.
-      ...(strip && attentionPart ? [attentionPart] : []),
-      ...(noKeys
-        ? []
-        : [
-            [dot, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
-            [dot, { t: ` ${money(spend('today'))} today`, bold: true }],
-          ]),
-      ...(inBorder ? [] : [whereSeg]),
-      ...priceOk,
-    ],
-    inner - 1,
-  );
+  const buildCompact = (whereAs?: Seg[]): Seg[] =>
+    fitParts(
+      [
+        ...badgePart,
+        ...priceStale,
+        // The first thing to look at comes ahead of the counts: it cannot be seen from another panel.
+        ...(strip && attentionPart ? [attentionPart] : []),
+        ...(noKeys
+          ? []
+          : [
+              [dot, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
+              [dot, { t: ` ${money(spend('today'))} today`, bold: true }],
+            ]),
+        ...(whereAs ? [whereAs] : []),
+        ...priceOk,
+      ],
+      inner - 1,
+    );
+  // Who and where, in full if it fits, else just the address, so the line never loses where it is.
+  const whereShort: Seg[] = [dot, { t: ' ' + urlOnly, dim: true }];
+  const withFullWhere = buildCompact(inBorder ? undefined : whereSeg);
+  const compactLine: Seg[] =
+    inBorder || withFullWhere.some((x) => x.t.includes(where)) ? withFullWhere : buildCompact(whereShort).some((x) => x.t.includes(urlOnly)) ? buildCompact(whereShort) : withFullWhere;
   // When the border carries the address the line says only who: not the address twice.
   const whereLine: Seg[] = [{ t: borderText === urlOnly && actor ? `signed in as ${actor}` : where, dim: true }];
   // Zeros tell nothing, and Keys and the detail already say there are no keys: no counts then.
@@ -350,8 +356,10 @@ export function StatusPanel({
           ? `${sel + 1} of ${items.length}`
           : // Who is signed in rides on the bottom border when no row has room for it.
             items.length > 0
-            ? `${actor ? `${actor} · ` : ''}${items.length} to review`
-            : actor
+            ? `${actor && !inBorder ? `${actor} · ` : ''}${items.length} to review`
+            : inBorder
+              ? undefined
+              : actor
       }
       focused={focused}
       width={width}
@@ -385,7 +393,7 @@ export function StatusPanel({
                 left={[
                   { t: ' ' },
                   { t: severityGlyph[top], color: severityColor[top], dim: top === 'info' },
-                  { t: ` ${padEnd(name, nameW)}` },
+                  { t: ` ${padEnd(fitMiddle(name, nameW), nameW)}` },
                 ]}
                 right={[
                   { t: topRisk(risks)!.short, color: severityColor[top], dim: top === 'info' },

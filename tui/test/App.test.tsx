@@ -2860,11 +2860,23 @@ describe('review round 13', () => {
     m.unmount();
   });
 
-  it('puts who is signed in on the bottom border of Status when it has something to review', async () => {
+  it('says who is signed in once: on the top border, or on the bottom one when the top has no room', async () => {
     const m = mount(fakeClient(), { columns: 100, rows: 30 });
     await loaded(m);
     await m.press('2');
-    expect(m.screen()).toContain('owner · 1 to review');
+    expect(m.screen().match(/owner/g)).toHaveLength(1);
+    expect(m.screen()).toContain('1 to review');
+    m.unmount();
+  });
+
+  it('closes the notice when help opens', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    await m.press(ENTER);
+    expect(m.screen()).toContain('already showing');
+    await m.press('?');
+    expect(m.screen()).not.toContain('already showing');
     m.unmount();
   });
 
