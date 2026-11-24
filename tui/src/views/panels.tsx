@@ -290,7 +290,8 @@ export function StatusPanel({
   // As rows run out the summary shrinks, keeping the connection, the count, the spend,
   // the price and a stale warning longest. Nothing is said twice.
   const tierFor = (n: number): Seg[][] => {
-    if (n <= 1) return [compactLine];
+    // With no keys to count, the one row is what is left: updated and the price (and the problem, if stacked short).
+    if (n <= 1) return [noKeys && !strip ? head(false) : compactLine];
     if (n === 2) return [head(true), money2(head(true))];
     return [head(false), countsLine, money2(head(false)), ...(inBorder ? [] : [whereLine])];
   };
@@ -302,17 +303,21 @@ export function StatusPanel({
   // summary gets everything else, down to a few lines.
   // The label sits on the list only when there is room; otherwise the border says it
   // (`1 of 7 need attention`), and at least one selectable line is always kept.
-  const header = items.length > 0 && rows >= 5 ? 1 : 0;
+  // Rows the summary needs at least: one line when there are no keys to count, else three.
+  const reserve = noKeys ? 1 : 3;
+  const header = items.length > 0 && rows >= reserve + 2 ? 1 : 0;
   const needed = items.length === 0 ? 1 : header + items.length;
-  const listArea = focused ? Math.min(needed, Math.max(header + 1, rows >= 5 ? rows - 3 : rows - 2)) : 0;
+  const listArea = focused ? Math.min(needed, Math.max(header + 1, rows >= reserve + 2 ? rows - reserve : rows - 2)) : 0;
   const summaryRows = focused ? rows - listArea : rows;
   const base = (summaryRows >= fullLines.length ? fullLines : tierFor(summaryRows)).filter((l) => l.length > 0);
   // A tall summary with a row to spare says what the list would: the first thing to look at.
   const first = items[0];
+  const reason = ` · ${first ? topRisk(first.risks)!.short : ''}${items.length > 1 ? ` · +${items.length - 1} more` : ''}`;
   const attentionLine: Seg[] = first
     ? [
         { t: severityGlyph[first.top], color: severityColor[first.top], dim: first.top === 'info' },
-        { t: ` ${first.name} · ${topRisk(first.risks)!.short}` + (items.length > 1 ? ` · +${items.length - 1} more` : ''), dim: first.top === 'info' },
+        // The name is cut in the middle, so the end that tells similar keys apart stays beside the reason.
+        { t: ` ${fitMiddle(first.name, Math.max(10, inner - 3 - textWidth(reason)))}${reason}`, dim: first.top === 'info' },
       ]
     : [{ t: 'Nothing to review.', dim: true }];
   // Unfocused, the last line of the summary is the first thing to look at, whatever it has to
@@ -341,7 +346,12 @@ export function StatusPanel({
       count={count}
       subtitle={borderText}
       position={
-        focused && items.length > 1 ? `${sel + 1} of ${items.length}` : items.length > 0 ? `${items.length} to review` : undefined
+        focused && items.length > 1
+          ? `${sel + 1} of ${items.length}`
+          : // Who is signed in rides on the bottom border when no row has room for it.
+            items.length > 0
+            ? `${actor ? `${actor} · ` : ''}${items.length} to review`
+            : actor
       }
       focused={focused}
       width={width}

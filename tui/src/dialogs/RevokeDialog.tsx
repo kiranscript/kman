@@ -59,6 +59,7 @@ export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, o
         </Text>
       </Box>
       <TextField value={typed} cursor={field.cursor} focused width={panelWidth - 6} />
+      {tried || error || busy || matches || typed !== '' ? (
       <Box marginTop={1} flexDirection="column">
         {tried ? (
           <Text color={color.danger}>✖ That is not the {keyData.name ? 'name' : 'id'}. Type it exactly.</Text>
@@ -70,9 +71,10 @@ export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, o
         ) : busy ? (
           <Text dimColor>Revoking…</Text>
         ) : (
-          <Text dimColor>{matches ? 'Name matches.' : typed === '' ? ' ' : 'Not matching yet.'}</Text>
+          <Text dimColor>{matches ? 'Name matches.' : 'Not matching yet.'}</Text>
         )}
       </Box>
+      ) : null}
     </Panel>
   );
 }

@@ -2826,6 +2826,60 @@ describe('review round 12', () => {
   });
 });
 
+describe('review round 13', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+
+  it('keeps updated on the first line of a focused Status on an empty install', async () => {
+    const client = fakeClient();
+    client.keys = [];
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(lines(m)[1]).toContain('updated');
+    m.unmount();
+  });
+
+  it('shows the heading and the row, and no blank row, in Status with no keys and no upstream', async () => {
+    const client = fakeClient();
+    client.keys = [];
+    client.upstreams = [];
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    const at = lines(m).findIndex((l) => l.includes('✖ no upstream'));
+    expect(at).toBeGreaterThan(0);
+    expect(lines(m)[at + 1]).toMatch(/^╰|^┗/);
+    m.unmount();
+  });
+
+  it('keeps the end of a long key name beside its reason on the Status line', async () => {
+    const client = fakeClient();
+    client.keys[1]!.name = 'customer-support-summariser-production-eu-west-b';
+    const m = mount(client, { columns: 120, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).find((l) => l.includes('near cap') && l.includes('…'))).toMatch(/west-b · near cap/);
+    m.unmount();
+  });
+
+  it('puts who is signed in on the bottom border of Status when it has something to review', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    expect(m.screen()).toContain('owner · 1 to review');
+    m.unmount();
+  });
+
+  it('leaves no blank rows under the revoke input before anything is typed', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('x');
+    const at = lines(m).findIndex((l) => /\[ .* \]|\[.{10,}\]/.test(l) && l.includes('['));
+    expect(at).toBeGreaterThan(0);
+    expect(lines(m)[at + 1]).toMatch(/^\s*[╰┗]/);
+    m.unmount();
+  });
+});
+
 describe('NO_COLOR', () => {
   it('removes every colour from the theme and leaves the rest of the styling to the app', async () => {
     const { vi } = await import('vitest');
