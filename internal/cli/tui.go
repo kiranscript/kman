@@ -37,6 +37,13 @@ type dashboard struct {
 	openID                 string // the item the detail shows, found again after a refresh
 	jumpKey                string // a key to open as soon as the keys view has loaded
 
+	// The open key's client addresses, loaded when its detail opens. clientsFor is the key
+	// they are, or are being, loaded for; empty when none are wanted.
+	clientsFor     string
+	clients        admin.KeyClients
+	clientsErr     error
+	clientsLoading bool
+
 	keys      []admin.Key
 	findings  []admin.ExposureFinding
 	audit     []admin.AuditEntry
@@ -89,6 +96,13 @@ func (m dashboard) load() tea.Cmd {
 		}
 		return r
 	}
+}
+
+// dashboardClients is the answer to a load of a key's client addresses.
+type dashboardClients struct {
+	id  string
+	got admin.KeyClients
+	err error
 }
 
 type dashboardBanner struct {
@@ -252,12 +266,13 @@ func (m dashboard) reconcile() dashboard {
 func (m dashboard) switchTab(i int) (dashboard, tea.Cmd) {
 	m.tab = i
 	m.cursor, m.offset, m.scroll = 0, 0, 0
-	m.detail, m.openID, m.jumpKey = false, "", ""
+	m.detail, m.openID, m.jumpKey, m.clientsFor = false, "", "", ""
 	return m.refresh()
 }
 
 // refresh loads the current view again, keeping the place in it.
 func (m dashboard) refresh() (dashboard, tea.Cmd) {
+	m.clientsFor = "" // an open key's addresses are loaded again with it
 	m.generation++
 	m.loading = true
 	m.err = nil
@@ -275,7 +290,26 @@ func (m dashboard) open() (dashboard, tea.Cmd) {
 		return m.openKey(m.audit[len(m.audit)-1-m.cursor].TargetID)
 	}
 	m.detail, m.scroll, m.openID = true, 0, m.itemID(m.cursor)
-	return m.clamp(), nil
+	return m.wantClients()
+}
+
+// wantClients loads the open key's client addresses, once, when a key's detail is
+// open and they are not already loaded or on their way. The admin API gives them
+// out only when the install turned that on, and says so when it has not: the
+// answer, either way, is what the detail shows.
+func (m dashboard) wantClients() (dashboard, tea.Cmd) {
+	if !m.detail || m.tab != 0 || m.openID == "" || m.openID == m.clientsFor {
+		return m.clamp(), nil
+	}
+	m.clientsFor, m.clients, m.clientsErr, m.clientsLoading = m.openID, admin.KeyClients{}, nil, true
+	id, cl, ctx, demo := m.openID, m.client, m.ctx, m.demo
+	return m.clamp(), func() tea.Msg {
+		if demo != nil {
+			return dashboardClients{id: id, got: demo.clients[id]}
+		}
+		got, err := cl.KeyClients(ctx, admin.KeyRef{ID: id})
+		return dashboardClients{id: id, got: got, err: err}
+	}
 }
 
 func (m dashboard) openKey(id string) (dashboard, tea.Cmd) {
@@ -324,6 +358,14 @@ func (m dashboard) update(msg tea.Msg) (dashboard, tea.Cmd) {
 			}
 		}
 		m = m.reconcile()
+		var cmd tea.Cmd
+		m, cmd = m.wantClients()
+		return m, cmd
+	case dashboardClients:
+		if v.id == m.clientsFor {
+			m.clients, m.clientsErr, m.clientsLoading = v.got, v.err, false
+		}
+		return m.clamp(), nil
 	case tea.KeyMsg:
 		var cmd tea.Cmd
 		switch s := v.String(); s {
@@ -338,10 +380,10 @@ func (m dashboard) update(msg tea.Msg) (dashboard, tea.Cmd) {
 		case "r":
 			m, cmd = m.refresh()
 		case "esc":
-			m.detail = false
+			m.detail, m.clientsFor = false, ""
 		case "enter":
 			if m.detail {
-				m.detail = false
+				m.detail, m.clientsFor = false, ""
 			} else if m.ready() {
 				m, cmd = m.open()
 			}
@@ -605,6 +647,7 @@ func (m dashboard) detailLines() []string {
 		if k.Spend != nil {
 			lines = append(lines, "Today:       "+spendLine(k.Spend.Today), "Month:       "+spendLine(k.Spend.Month))
 		}
+		lines = append(lines, clientsSection(m.clients, m.clientsErr, m.clientsLoading || m.clientsFor != k.ID)...)
 		for _, f := range m.findings {
 			if f.KeyID == k.ID {
 				lines = append(lines, "", "! "+cleanDashboard(f.Message), "  Fix: "+cleanDashboard(f.Fix))
@@ -650,6 +693,42 @@ func (m dashboard) placeLines(k admin.Key) []string {
 			value += " " + cleanDashboard(p.Label)
 		}
 		lines = append(lines, fmt.Sprintf("  %-8s %s  (last %s, %d forwarded, %d refused)", p.Kind, value, when(&p.LastSeen), p.Requests, p.Refused))
+	}
+	return lines
+}
+
+// clientsSection is a key's client addresses as lines of the detail: a table of
+// the addresses it was used from, or why there is none. The admin API refuses to
+// give addresses out until the install turns that on, and says how.
+func clientsSection(got admin.KeyClients, err error, loading bool) []string {
+	head := "CLIENTS  by address, from the events kman keeps"
+	var ae *admin.Error
+	switch {
+	case loading:
+		return []string{"", "CLIENTS  loading…"}
+	case errors.As(err, &ae) && ae.Code == admin.CodeConflict:
+		return []string{"", "CLIENTS  not shown", "  " + cleanDashboard(ae.Message)}
+	case err != nil:
+		return []string{"", "CLIENTS  could not be loaded: " + cleanDashboard(err.Error())}
+	case len(got.Clients) == 0:
+		return []string{"", "CLIENTS  none in the events kman keeps"}
+	}
+	width := len("ADDRESS")
+	addrs := make([]string, len(got.Clients))
+	for i, c := range got.Clients {
+		addrs[i] = cut(cleanDashboard(c.Address), 24)
+		width = max(width, len([]rune(addrs[i])))
+	}
+	lines := []string{"", head, fmt.Sprintf("  %-*s  %8s  %7s  %-10s  %s", width, "ADDRESS", "REQUESTS", "BLOCKED", "LAST SEEN", "WHERE")}
+	for i, c := range got.Clients {
+		where := cleanDashboard(c.Country)
+		if c.ASN != 0 {
+			where = strings.TrimSpace(where + fmt.Sprintf(" AS%d", c.ASN))
+		}
+		lines = append(lines, fmt.Sprintf("  %-*s  %8d  %7d  %-10s  %s", width, addrs[i], c.Requests, c.Blocked, c.LastSeen.UTC().Format("2006-01-02"), where))
+	}
+	if got.Total > len(got.Clients) {
+		lines = append(lines, fmt.Sprintf("  and %d more addresses", got.Total-len(got.Clients)))
 	}
 	return lines
 }

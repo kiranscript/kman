@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from 'ink';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CreatedKey } from '../api.js';
 import { keyLabel } from '../keys.js';
 import { color } from '../ui/theme.js';
@@ -14,6 +14,11 @@ interface Props {
   width: number;
   onClose: () => void;
   onCopy?: (text: string) => void;
+  /**
+   * Enter is ignored for this long after the secret appears: the Enter that created the
+   * key, or one more behind it, must not dismiss a secret nobody has seen yet.
+   */
+  armMs?: number;
 }
 
 /**
@@ -22,15 +27,21 @@ interface Props {
  * the secret or the export line with a mouse takes nothing but the text.
  * Only Enter closes it: Esc is a reflex, and the secret cannot be shown again.
  */
-export function SecretDialog({ created, width, onClose, onCopy = osc52 }: Props) {
+export function SecretDialog({ created, width, onClose, onCopy = osc52, armMs = 750 }: Props) {
   const [note, setNote] = useState<{ text: string; warn: boolean } | undefined>();
+  const [armed, setArmed] = useState(armMs <= 0);
+  useEffect(() => {
+    if (armMs <= 0) return;
+    const t = setTimeout(() => setArmed(true), armMs);
+    return () => clearTimeout(t);
+  }, [armMs]);
   const exportLine = created.sdk_env ? `export ${created.sdk_env}=${created.secret}` : undefined;
   // Ink breaks a long line with a hard newline, which would corrupt a copied secret. So the
   // export line is shown only when it fits; otherwise the secret above is the thing to copy.
   const exportFits = exportLine !== undefined && [...exportLine].length <= width - 4;
 
   useInput((input, key) => {
-    if (key.return) return onClose();
+    if (key.return) return armed ? onClose() : undefined;
     if (key.escape) return setNote({ text: 'Esc does not close this: the secret cannot be shown again. Press Enter once you have copied it.', warn: true });
     if (input === 'c') {
       onCopy(created.secret);
@@ -83,7 +94,7 @@ export function SecretDialog({ created, width, onClose, onCopy = osc52 }: Props)
             c
           </Text>
           <Text dimColor> copy   </Text>
-          <Text bold color={color.accent}>
+          <Text bold={armed} dimColor={!armed} color={armed ? color.accent : undefined}>
             Enter
           </Text>
           <Text dimColor> done</Text>

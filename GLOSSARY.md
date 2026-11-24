@@ -146,6 +146,10 @@ _Avoid_: Log line, request log
 Where a virtual key has been used from, at one of three grains: a country, an autonomous system (ASN), or a network (an IPv4 /24 or an IPv6 /64). kman keeps each place a key turns up at, with when it was first and last seen and how many requests it forwarded and refused, forever. `kman key places` lists them.
 _Avoid_: Source (a known source is an operator's label for a place), location
 
+**Client address**:
+The IP address a request came from: the connection's, or `X-Forwarded-For` only through `trusted_proxies`. It is stored on each event, and it is personal data, so the admin API shows which addresses used a key only when the `expose_client_addresses` setting is on.
+_Avoid_: Caller IP, source IP
+
 **Baseline**:
 What normal use of one virtual key looks like: its usual request rate, spend, and the places it is used from.
 

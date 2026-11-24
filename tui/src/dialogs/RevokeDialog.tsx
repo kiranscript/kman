@@ -1,9 +1,10 @@
 import { Box, Text, useInput } from 'ink';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Key } from '../api.js';
 import { keyLabel } from '../keys.js';
-import { editText, TextField } from '../ui/TextField.js';
-import { Panel } from '../ui/parts.js';
+import { editField, TextField } from '../ui/TextField.js';
+import type { Edit } from '../ui/TextField.js';
+import { Panel, Wrapped } from '../ui/parts.js';
 import { color } from '../ui/theme.js';
 
 interface Props {
@@ -12,16 +13,26 @@ interface Props {
   maxWidth: number;
   busy: boolean;
   error?: string;
+  /** The most lines a server error may take, which is as many as the screen has room for. */
+  errorLines?: number;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Told whether the typed name matches, so the footer offers Enter only when it would revoke. */
+  onReady?: (ready: boolean) => void;
 }
 
 /** Revoking cannot be undone, so it asks for the key's name to be typed, not just "y". */
-export function RevokeDialog({ keyData, maxWidth, busy, error, onConfirm, onCancel }: Props) {
-  const [typed, setTyped] = useState('');
+export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, onConfirm, onCancel, onReady }: Props) {
+  const [field, setField] = useState<Edit>({ value: '', cursor: 0 });
+  const typed = field.value;
   const [tried, setTried] = useState(false);
   const expected = keyLabel(keyData);
   const matches = typed === expected;
+  const panelWidth = Math.min(maxWidth, Math.max(64, expected.length + 6));
+  useEffect(() => {
+    onReady?.(matches);
+    return () => onReady?.(false);
+  }, [matches, onReady]);
 
   useInput((input, key) => {
     if (busy) return;
@@ -32,33 +43,38 @@ export function RevokeDialog({ keyData, maxWidth, busy, error, onConfirm, onCanc
       return;
     }
     setTried(false);
-    setTyped((v) => editText(v, input, key, 63));
+    setField((f) => editField(f, input, key, 63));
   });
 
   return (
-    <Panel title={`Revoke ${expected}?`} width={Math.min(maxWidth, Math.max(64, expected.length + 6))} tone={color.danger}>
-      <Box flexDirection="column" marginTop={1}>
-        <Text>This ends the key for good. Apps using it are refused from their next request, and a revoked key cannot be enabled again.</Text>
+    <Panel title={`Revoke ${expected}?`} width={panelWidth} tone={color.danger}>
+      <Box flexDirection="column">
+        <Text>This ends the key for good: apps using it are refused at once, and it cannot be enabled again.</Text>
         <Text dimColor>To stop it for now, disable it instead.</Text>
       </Box>
       <Box marginTop={1} flexDirection="column">
-        <Text>Type the key's name exactly to confirm:</Text>
+        <Text>Type the key's {keyData.name ? 'name' : 'id'} exactly to confirm:</Text>
         <Text bold wrap="wrap">
           {expected}
         </Text>
       </Box>
-      <TextField value={typed} focused width={40} />
-      <Box marginTop={1}>
-        {error ? (
-          <Text color={color.danger}>✖ {error}</Text>
-        ) : tried ? (
-          <Text color={color.danger}>✖ That is not the name. Type it exactly, or Esc to cancel.</Text>
+      <TextField value={typed} cursor={field.cursor} focused width={panelWidth - 6} />
+      {tried || error || busy || matches || typed !== '' ? (
+      <Box marginTop={1} flexDirection="column">
+        {tried ? (
+          <Text color={color.danger}>✖ That is not the {keyData.name ? 'name' : 'id'}. Type it exactly.</Text>
+        ) : error ? (
+          <>
+            <Wrapped text={error} marker="✖ " width={panelWidth - 4} maxLines={errorLines} tone={color.danger} />
+            <Text dimColor>{busy ? 'Revoking…' : matches ? 'Enter tries again.' : `Type the ${keyData.name ? 'name' : 'id'} exactly.`}</Text>
+          </>
         ) : busy ? (
           <Text dimColor>Revoking…</Text>
         ) : (
-          <Text dimColor>{matches ? 'Press Enter to revoke · Esc to cancel' : 'Esc to cancel'}</Text>
+          <Text dimColor>{matches ? 'Name matches.' : 'Not matching yet.'}</Text>
         )}
       </Box>
+      ) : null}
     </Panel>
   );
 }

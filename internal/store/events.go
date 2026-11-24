@@ -239,3 +239,55 @@ func (tx *Tx) LastUsed() (map[string]time.Time, error) {
 	}
 	return out, nil
 }
+
+// ClientRow is one client address that used a key, from the events table: what
+// that address did in the events kept, grouped. It holds no request content.
+type ClientRow struct {
+	IP string
+	// Requests counts the forwarded requests and realtime sessions; Blocked the
+	// requests kman refused.
+	Requests, Blocked   int64
+	FirstSeen, LastSeen time.Time
+	// Country and ASN are what the databases said when the address was last
+	// seen; empty and zero when there is no database, or it does not know.
+	Country string
+	ASN     int64
+	// CostMicro adds the costs that are known, and Unmetered counts the
+	// forwarded requests whose cost is not, so a total is never read as complete
+	// when it is not.
+	CostMicro int64
+	Unmetered int64
+}
+
+// KeyClients is the addresses a key was used from, in the events kept, the most
+// recently seen first, at most limit of them. total is how many addresses there
+// are. A request that came in on the Unix socket has no address and is not
+// counted.
+func (tx *Tx) KeyClients(keyID string, limit int) (rows []ClientRow, total int, err error) {
+	if err := tx.tx.QueryRowContext(tx.ctx, `SELECT COUNT(DISTINCT client_ip) FROM events WHERE key_id = ?1 AND client_ip IS NOT NULL`, keyID).Scan(&total); err != nil {
+		return nil, 0, typed(err, "read clients")
+	}
+	res, err := tx.tx.QueryContext(tx.ctx, `SELECT client_ip,
+			COALESCE(SUM(kind IN ('request', 'session')), 0), COALESCE(SUM(kind = 'blocked'), 0),
+			MIN(ts), MAX(ts), COALESCE(MAX(country), ''), COALESCE(MAX(asn), 0),
+			COALESCE(SUM(cost_micro), 0), COALESCE(SUM(kind IN ('request', 'session') AND cost_micro IS NULL), 0)
+		FROM events WHERE key_id = ?1 AND client_ip IS NOT NULL
+		GROUP BY client_ip ORDER BY MAX(ts) DESC, client_ip LIMIT ?2`, keyID, limit)
+	if err != nil {
+		return nil, 0, typed(err, "read clients")
+	}
+	defer res.Close()
+	for res.Next() {
+		var r ClientRow
+		var first, last int64
+		if err := res.Scan(&r.IP, &r.Requests, &r.Blocked, &first, &last, &r.Country, &r.ASN, &r.CostMicro, &r.Unmetered); err != nil {
+			return nil, 0, typed(err, "read clients")
+		}
+		r.FirstSeen, r.LastSeen = fromMilli(first), fromMilli(last)
+		rows = append(rows, r)
+	}
+	if err := res.Err(); err != nil {
+		return nil, 0, typed(err, "read clients")
+	}
+	return rows, total, nil
+}

@@ -55,6 +55,28 @@ describe('the admin client', () => {
     expect(await createClient({ url, token: 't' }).listKeys()).toEqual([]);
   });
 
+  it('fills in what the server leaves out: no credentials, null tags', async () => {
+    respond = (req, res) =>
+      req.url === '/admin/v1/keys'
+        ? json(res, 200, { keys: [{ id: 'k1', tags: null, policy: null }] })
+        : json(res, 200, { upstreams: [{ id: 'u1', name: 'openai' }] });
+    const client = createClient({ url, token: 't' });
+    expect((await client.listUpstreams())[0]).toMatchObject({ credentials: [], path_allowlist: [] });
+    expect((await client.listKeys())[0]).toMatchObject({ tags: [], policy: {} });
+  });
+
+  it('reads a key\'s client addresses by key id, and treats a null list as empty', async () => {
+    respond = (_r, res) => json(res, 200, { key_id: 'k/1', clients: null, total: 0 });
+    const got = await createClient({ url, token: 't' }).keyClients('k/1');
+    expect(seen[0]).toMatchObject({ method: 'GET', url: '/admin/v1/keys/k%2F1/clients' });
+    expect(got.clients).toEqual([]);
+  });
+
+  it('says the install does not give addresses out as a conflict', async () => {
+    respond = (_r, res) => json(res, 409, { error: { code: 'conflict', message: 'turn it on: kman settings set expose_client_addresses true' } });
+    await expect(createClient({ url, token: 't' }).keyClients('k1')).rejects.toMatchObject({ code: 'conflict', status: 409 });
+  });
+
   it('posts a key change to the key by id, with no body', async () => {
     respond = (_r, res) => json(res, 200, { id: 'k/1', status: 'disabled' });
     await createClient({ url, token: 't' }).disableKey('k/1');

@@ -1,4 +1,4 @@
-import type { AdminClient, AuditEntry, Key, Upstream } from '../src/api.js';
+import type { AdminClient, AuditEntry, Key, KeyClients, Upstream } from '../src/api.js';
 import { ApiError } from '../src/api.js';
 
 export const NOW = Date.parse('2026-11-17T12:30:00Z');
@@ -46,6 +46,11 @@ export interface Fake extends AdminClient {
   keys: Key[];
   /** Make every call fail with this until cleared. */
   fail?: ApiError;
+  upstreams: Upstream[];
+  /** Each key's client addresses, by key id. */
+  clients: Record<string, KeyClients>;
+  /** Whether the install gives addresses out (expose_client_addresses). */
+  exposeClients: boolean;
 }
 
 /** An in-memory admin API that records the changes it is asked to make. */
@@ -61,6 +66,9 @@ export function fakeClient(keys: Key[] = defaultKeys()): Fake {
   const fake: Fake = {
     calls: [],
     keys,
+    upstreams: [upstream],
+    clients: {},
+    exposeClients: true,
     async whoami() {
       guard();
       return 'owner';
@@ -71,7 +79,7 @@ export function fakeClient(keys: Key[] = defaultKeys()): Fake {
     },
     async listUpstreams() {
       guard();
-      return [upstream];
+      return structuredClone(fake.upstreams);
     },
     async latestAudit() {
       guard();
@@ -105,6 +113,19 @@ export function fakeClient(keys: Key[] = defaultKeys()): Fake {
       const k = find(id);
       k.status = 'active';
       return k;
+    },
+    async keyClients(id) {
+      guard();
+      fake.calls.push(`clients ${id}`);
+      if (!fake.exposeClients) {
+        throw new ApiError(
+          'conflict',
+          'the admin API does not give out client addresses until you turn that on: kman settings set expose_client_addresses true',
+          409,
+        );
+      }
+      find(id);
+      return structuredClone(fake.clients[id] ?? { key_id: id, clients: [], total: 0 });
     },
     async revokeKey(id) {
       guard();

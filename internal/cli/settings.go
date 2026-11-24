@@ -48,6 +48,27 @@ var settings = []setting{
 		},
 	},
 	{
+		name: "expose_client_addresses",
+		get: func(s admin.Settings) string {
+			if s.ExposeClientAddresses {
+				return "on"
+			}
+			return "off"
+		},
+		parse: func(v string, u *admin.SettingsUpdate) error {
+			var on bool
+			switch strings.ToLower(v) {
+			case "on", "true", "yes", "1":
+				on = true
+			case "off", "false", "no", "0":
+			default:
+				return fmt.Errorf("%q is not on or off", v)
+			}
+			u.ExposeClientAddresses = &on
+			return nil
+		},
+	},
+	{
 		name: "soft_budget_defaults",
 		get: func(s admin.Settings) string {
 			if len(s.SoftBudgetPercents) == 0 {

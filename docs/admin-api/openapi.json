@@ -721,6 +721,86 @@
         ],
         "type": "object"
       },
+      "KeyClient": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "description": "The client address: the connection's, or X-Forwarded-For only through trusted_proxies.",
+            "type": "string"
+          },
+          "asn": {
+            "description": "The autonomous system number, from the ASN database, when there is one that knows the address.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "blocked": {
+            "description": "Requests kman refused: a locked address, a refused key, a policy.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cost_micro": {
+            "description": "The known cost of its requests, in microdollars.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "country": {
+            "description": "ISO 3166-1 code, from the country database, when there is one that knows the address.",
+            "type": "string"
+          },
+          "first_seen": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_seen": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "requests": {
+            "description": "Forwarded requests and realtime sessions.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "unmetered_requests": {
+            "description": "Forwarded requests whose cost is not known, which cost_micro does not include.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "address",
+          "requests",
+          "blocked",
+          "first_seen",
+          "last_seen",
+          "cost_micro"
+        ],
+        "type": "object"
+      },
+      "KeyClients": {
+        "additionalProperties": false,
+        "properties": {
+          "clients": {
+            "description": "The addresses the key was used from, the most recently seen first, at most 50. A request that came in on a Unix socket has no address and is not counted.",
+            "items": {
+              "$ref": "#/components/schemas/KeyClient"
+            },
+            "type": "array"
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "total": {
+            "description": "How many distinct addresses the key was used from. More than the length of clients when the list was cut.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key_id",
+          "clients",
+          "total"
+        ],
+        "type": "object"
+      },
       "KeyList": {
         "additionalProperties": false,
         "properties": {
@@ -1360,6 +1440,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "expose_client_addresses": {
+            "description": "Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited.",
+            "type": "boolean"
+          },
           "max_key_lifetime_seconds": {
             "description": "The longest any virtual key may stay valid. No key is created or extended past it. Default 365 days.",
             "format": "int64",
@@ -1381,6 +1465,7 @@
           "max_key_lifetime_seconds",
           "default_key_ttl_seconds",
           "spend_timezone",
+          "expose_client_addresses",
           "soft_budget_defaults"
         ],
         "type": "object"
@@ -1391,6 +1476,9 @@
           "default_key_ttl_seconds": {
             "format": "int64",
             "type": "integer"
+          },
+          "expose_client_addresses": {
+            "type": "boolean"
           },
           "max_key_lifetime_seconds": {
             "format": "int64",
@@ -2514,6 +2602,45 @@
           }
         },
         "summary": "Change a virtual key's name, note, tags, expiry or policy"
+      }
+    },
+    "/admin/v1/keys/{id}/clients": {
+      "get": {
+        "operationId": "getKeyClients",
+        "parameters": [
+          {
+            "description": "The key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyClients"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List the client addresses a virtual key was used from, grouped, from the events kept; refused unless the expose_client_addresses setting is on"
       }
     },
     "/admin/v1/keys/{id}/disable": {

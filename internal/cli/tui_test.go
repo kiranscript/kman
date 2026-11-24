@@ -354,3 +354,51 @@ func TestDashboardListsTenPlacesAndPointsAtTheRest(t *testing.T) {
 		t.Errorf("view:\n%s", view)
 	}
 }
+
+func TestDashboardKeyDetailListsItsClientsByAddress(t *testing.T) {
+	m := press(t, demoModel(t, 100, 40), "enter")
+	if !m.detail || m.keys[m.cursor].ID != "k_9f2a1c" {
+		t.Fatalf("no detail of the first key: detail %v", m.detail)
+	}
+	v := m.View()
+	for _, want := range []string{"CLIENTS", "ADDRESS", "REQUESTS", "BLOCKED", "LAST SEEN", "10.0.4.17", "203.0.113.44", "DE AS3320"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("the key's detail lacks %q:\n%s", want, v)
+		}
+	}
+	// Close it and open another key: its own addresses replace the first key's.
+	m = press(t, m, "esc", "down", "enter")
+	if v := m.View(); !strings.Contains(v, "198.51.100.23") || strings.Contains(v, "10.0.4.17") {
+		t.Errorf("the second key's detail shows the wrong addresses:\n%s", v)
+	}
+	// A key with none says so instead of showing an empty table.
+	m = press(t, m, "esc", "down", "enter")
+	if v := m.View(); !strings.Contains(v, "none in the events kman keeps") {
+		t.Errorf("a key with no addresses:\n%s", v)
+	}
+}
+
+func TestDashboardClientsSectionSaysWhyThereAreNone(t *testing.T) {
+	off := &admin.Error{Code: admin.CodeConflict, Message: "the admin API does not give out client addresses until you turn that on: kman settings set expose_client_addresses true"}
+	cases := []struct {
+		name    string
+		got     admin.KeyClients
+		err     error
+		loading bool
+		want    string
+	}{
+		{"loading", admin.KeyClients{}, nil, true, "loading"},
+		{"the setting is off", admin.KeyClients{}, off, false, "kman settings set expose_client_addresses true"},
+		{"another failure", admin.KeyClients{}, fmt.Errorf("boom\x1b[2J"), false, "could not be loaded: boom"},
+		{"too many to list", admin.KeyClients{Total: 80, Clients: []admin.KeyClient{{Address: "203.0.113.7", Requests: 1}}}, nil, false, "and 79 more addresses"},
+	}
+	for _, c := range cases {
+		out := strings.Join(clientsSection(c.got, c.err, c.loading), "\n")
+		if !strings.Contains(out, c.want) {
+			t.Errorf("%s: %q lacks %q", c.name, out, c.want)
+		}
+		if strings.Contains(out, "\x1b") {
+			t.Errorf("%s: a terminal control got through: %q", c.name, out)
+		}
+	}
+}

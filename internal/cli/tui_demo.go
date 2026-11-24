@@ -15,6 +15,9 @@ type demoData struct {
 	audit     []admin.AuditEntry
 	upstreams []admin.Upstream
 	places    map[string][]admin.Place // by key id
+
+	// clients is each key's client addresses, as if expose_client_addresses were on.
+	clients map[string]admin.KeyClients
 }
 
 func newDemoData(now time.Time) *demoData {
@@ -42,6 +45,20 @@ func newDemoData(now time.Time) *demoData {
 		key("k_e15c08", "leaked-demo", "openai", "main", admin.KeyRevoked, 45*day, []string{"incident"}, policy, spend(0, 880_000, 0, 31)),
 	}
 	d.keys = append(d.keys[:5:5], key("k_5d19e3", "batch-export", "anthropic", "prod", admin.KeyActive, 20*day, []string{"batch"}, policy, spend(0, 0, 0, 0)), d.keys[5])
+	client := func(addr string, reqs, blocked int64, ago time.Duration, country string, asn int64) admin.KeyClient {
+		return admin.KeyClient{Address: addr, Requests: reqs, Blocked: blocked, FirstSeen: now.Add(-ago - 20*day), LastSeen: now.Add(-ago), Country: country, ASN: asn}
+	}
+	d.clients = map[string]admin.KeyClients{
+		"k_9f2a1c": {KeyID: "k_9f2a1c", Total: 3, Clients: []admin.KeyClient{
+			client("10.0.4.17", 1920, 0, 2*time.Minute, "", 0),
+			client("10.0.4.18", 205, 0, 3*time.Hour, "", 0),
+			client("203.0.113.44", 15, 15, 26*time.Hour, "DE", 3320),
+		}},
+		"k_3b7d40": {KeyID: "k_3b7d40", Total: 2, Clients: []admin.KeyClient{
+			client("198.51.100.23", 8800, 0, time.Minute, "US", 16509),
+			client("2001:db8:85a3::8a2e:370:7334", 510, 2, 5*time.Hour, "NL", 1136),
+		}},
+	}
 	d.exposure = admin.Exposure{KeysChecked: 4, Findings: []admin.ExposureFinding{
 		{KeyID: "k_c81e55", Name: "dev-laptop", Rule: "open_to_every_address",
 			Message: "It is open to every address: its policy has no allowed_cidrs and no allowed_countries, so anyone who holds it can use it from anywhere. Replace <network/bits> with the network it is used from.",

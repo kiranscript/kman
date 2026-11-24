@@ -19,17 +19,24 @@ Or, without building, `npm run dev`. `--config-dir <dir>` points it at another i
 
 It finds the admin address and token the way the kman CLI does: the credentials file in the config directory (written by `kman init` or `kman login`), overridden by `KMAN_ADMIN_URL` and `KMAN_ADMIN_TOKEN`. The admin address can be `http://`, `https://` or `unix:/path/to/socket`. It talks only to that address and sends nothing anywhere else.
 
+## Layout
+
+The screen follows [lazygit](https://github.com/jesseduffield/lazygit): numbered panels down the left (Status, Keys, Upstreams, Audit), the details of the selected line in the main panel on the right, and the keys that work right now along the bottom. The focused panel has a green border and is the tall one; the others shrink to the one line that is selected. The selected line is a blue bar, and a panel's bottom border says where it is (`2 of 7`). Below 100 columns the main panel goes under the panels instead of beside them, and on a short terminal (under 30 rows) the panels that are not focused shrink to a single line each, so the detail keeps the room. Status names the install (`owner @ host:port`) in its top border and counts both keys and upstreams that need attention.
+
 ## Keys
 
 | Key | Does |
 |---|---|
-| `1`–`4`, `←` `→`, `Tab` | switch view: Overview, Keys, Upstreams, Audit |
+| `1`–`4`, `←` `→`, `h` `l`, `Tab` | focus a panel: Status, Keys, Upstreams, Audit |
 | `↑` `↓`, `j` `k`, `PgUp` `PgDn`, `g` `G` | move |
-| `Enter` (Overview) | open the selected key from Needs attention |
+| `Enter` (Status) | open the selected key from Needs attention |
+| `Enter` | on Keys, Upstreams or Audit: hand the keyboard to the main panel, so the arrow keys, `PgUp`/`PgDn`, `g`/`G` scroll it; `Esc` gives it back (on Status, `Enter` opens the selected key or upstream) |
+| `J` `K` | scroll the main panel without leaving the list, when its content is taller than it (the bottom border says so) |
 | `/`, `Esc` | filter keys by name, id, tag or upstream, and clear the filter |
 | `n` | create a key |
 | `d`, `e` | disable, enable the selected key (asks y/n) |
 | `x` | revoke the selected key (asks for its name to be typed) |
+| `c` | the addresses the selected key was used from, grouped, newest first (see below) |
 | `r` | refresh now (it also refreshes every 3 seconds) |
 | `?` | help |
 | `q`, `Ctrl+C` | quit |
@@ -37,6 +44,18 @@ It finds the admin address and token the way the kman CLI does: the credentials 
 A created key's secret is shown once, on a screen of its own. Only Enter closes it, `c` asks the terminal to copy it (OSC 52, which not every terminal allows), and it is gone from memory when it is closed.
 
 Colour uses the terminal's own 16 colours. `NO_COLOR` turns it off and keeps bold and inverse. Every status has a glyph and a word as well as a colour.
+
+## Which addresses used a key
+
+`c` on a key opens a table of the client addresses it was used from: requests, refused requests, when each was last seen, country and ASN (when kman has GeoIP databases), and cost, from the events kman keeps (30 days by default). It is a read, so it works while a change is running, but not while kman is unreachable.
+
+A client address is personal data, so the admin API gives them out only when the install turns them on. Until then the dialog says so and shows the command:
+
+```sh
+kman settings set expose_client_addresses on
+```
+
+Each change of that setting is audited. See [ADR 0010](../docs/adr/0010-client-addresses-are-opt-in-on-the-admin-api.md).
 
 ## Test it
 

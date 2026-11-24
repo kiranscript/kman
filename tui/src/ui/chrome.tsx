@@ -1,101 +1,47 @@
 import { Box, Text } from 'ink';
 import { useEffect, useState } from 'react';
-import { fit, since } from '../format.js';
-import type { Link } from '../useAdmin.js';
+import { fit, wrapLines } from '../format.js';
 import { Hint } from './parts.js';
 import { color } from './theme.js';
+import type { Link } from '../useAdmin.js';
 
-export type Tab = 'overview' | 'keys' | 'upstreams' | 'audit';
+/** The panels on the left, in order. The number is the key that jumps to each. */
+export type Tab = 'status' | 'keys' | 'upstreams' | 'audit';
 export const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
+  { id: 'status', label: 'Status' },
   { id: 'keys', label: 'Keys' },
   { id: 'upstreams', label: 'Upstreams' },
   { id: 'audit', label: 'Audit' },
 ];
 
-export function Header({ link, url, actor, width }: { link: Link; url: string; actor?: string; width: number }) {
-  const tick = useTick(1000);
-  void tick;
-  let status: { glyph: string; text: string; color?: string };
+/** "live", "offline", "token refused": the connection in one word, with a glyph. */
+export function linkBadge(link: Link): { glyph: string; word: string; color?: string } {
   switch (link.state) {
     case 'ok':
-      status = { glyph: '●', text: `live · updated ${since(link.at, Date.now())}`, color: color.ok };
-      break;
+      return { glyph: '●', word: 'live', color: color.ok };
     case 'down':
-      status = {
-        glyph: '○',
-        text: link.lastOk ? `connection lost · last data ${since(link.lastOk, Date.now())}` : 'cannot connect',
-        color: color.warn,
-      };
-      break;
+      // The server answered, so it is there: say what kind of answer, not "offline".
+      if (link.answered) {
+        const st = link.status ?? 500;
+        const word = st < 400 ? 'invalid reply' : st >= 500 ? 'server error' : st === 429 ? 'rate limited' : 'refused';
+        return { glyph: '✖', word, color: color.danger };
+      }
+      return { glyph: '◌', word: link.lastOk ? 'offline' : 'cannot connect', color: color.warn };
     case 'denied':
-      status = { glyph: '✖', text: 'token refused', color: color.danger };
-      break;
+      return { glyph: '✖', word: 'token refused', color: color.danger };
     default:
-      status = { glyph: '○', text: 'connecting…' };
+      return { glyph: '◌', word: 'connecting' };
   }
-  const where = `${actor ? `${actor} @ ` : ''}${url}`;
-  return (
-    <Box width={width} justifyContent="space-between">
-      <Text wrap="truncate-end">
-        <Text bold color={color.accent}>
-          kman
-        </Text>
-        <Text dimColor> admin  </Text>
-        <Text color={status.color}>{status.glyph} </Text>
-        <Text color={status.color} dimColor={status.color === undefined}>
-          {status.text}
-        </Text>
-      </Text>
-      <Text dimColor wrap="truncate-start">
-        {fit(where, Math.max(10, Math.floor(width / 2) - 2))}
-      </Text>
-    </Box>
-  );
 }
 
-function useTick(ms: number): number {
+/** Re-renders every `ms`, so "updated 3s ago" keeps counting. */
+export function useTick(ms: number): number {
   const [n, setN] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setN((x) => x + 1), ms);
     return () => clearInterval(t);
   }, [ms]);
   return n;
-}
-
-export function Tabs({
-  active,
-  counts,
-  warnings,
-  infos,
-  width,
-}: {
-  active: Tab;
-  counts: Partial<Record<Tab, number>>;
-  /** Keys with a warning or worse. */
-  warnings: number;
-  /** Keys with only a note, such as no spend cap. */
-  infos: number;
-  width: number;
-}) {
-  return (
-    <Box width={width} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderDimColor>
-      {TABS.map((t, i) => {
-        const on = t.id === active;
-        const count = counts[t.id];
-        return (
-          <Box key={t.id} marginRight={2}>
-            <Text inverse={on} bold={on} color={on ? color.accent : undefined}>
-              {` ${i + 1} ${t.label}`}
-              {count !== undefined ? ` ${count}` : ''}
-              {t.id === 'overview' && warnings > 0 ? ` ▲${warnings}` : ''}
-              {t.id === 'overview' && infos > 0 ? ` ○${infos}` : ''}{' '}
-            </Text>
-          </Box>
-        );
-      })}
-    </Box>
-  );
 }
 
 export interface Notice {
@@ -106,39 +52,79 @@ export interface Notice {
 export interface HintItem {
   k: string;
   label: string;
-  /** Kept when space runs out; the others are dropped from the end first. */
+  /** Kept when space runs out; the others are dropped lowest rank first, the later one of equal rank first. */
   always?: boolean;
+  /** How much it is missed (default 3): hints with a low rank go first when space runs out. */
+  rank?: number;
 }
 
 const HINT_GAP = 2;
 const hintWidth = (h: HintItem) => [...h.k].length + 1 + [...h.label].length;
 
-/** The hints that fit in `width`, dropping the last droppable one until they do. */
+/** The hints that fit in `width`, dropping the least missed one (the last of them) until they do. */
 export function fitHints(hints: HintItem[], width: number): HintItem[] {
   const kept = [...hints];
   const total = () => kept.reduce((n, h) => n + hintWidth(h), 0) + HINT_GAP * Math.max(0, kept.length - 1);
   while (total() > width) {
-    const i = kept.map((h) => !h.always).lastIndexOf(true);
-    if (i < 0) break;
-    kept.splice(i, 1);
+    let drop = -1;
+    kept.forEach((h, i) => {
+      if (h.always) return;
+      if (drop < 0 || (h.rank ?? 3) <= (kept[drop]!.rank ?? 3)) drop = i;
+    });
+    if (drop < 0) break;
+    kept.splice(drop, 1);
   }
   return kept;
 }
 
-export function Footer({ notice, hints, width }: { notice?: Notice; hints: HintItem[]; width: number }) {
-  const shown = fitHints(hints, width);
+const noticeMark = (n: Notice) => `${n.tone === 'ok' ? '✔' : n.tone === 'error' ? '✖' : '·'} `;
+const NOTICE_LINES = 3;
+
+/** The lines of a notice: one for most, and up to three, hanging under the mark, for a failure. */
+function noticeLines(n: Notice, width: number): string[] {
+  const mark = ` ${noticeMark(n)}`;
+  if (n.tone !== 'error') return [fit(mark + n.text, width)];
+  return wrapLines(n.text, width - mark.length, NOTICE_LINES).map((l, i) => (i === 0 ? mark : ' '.repeat(mark.length)) + l);
+}
+
+/**
+ * Rows a notice takes. A failure keeps the reason on screen until a key is pressed, so
+ * it gets more rows rather than being cut; everything else is one row.
+ */
+export function noticeRows(notice: Notice | undefined, width: number): number {
+  if (!notice || notice.tone !== 'error') return 1;
+  return Math.max(1, noticeLines(notice, width).length);
+}
+
+/**
+ * The rows under the panels, as in lazygit: the notice, then the options bar with the
+ * keys that work right now and, at the right, the connection.
+ */
+export function Footer({ notice, hints, link, width }: { notice?: Notice; hints: HintItem[]; link: Link; width: number }) {
+  const badge = linkBadge(link);
+  const tail = ` ${badge.glyph} ${badge.word} `;
+  // Two spaces at least between the last hint and the connection.
+  const shown = fitHints(hints, width - [...tail].length - 3);
   const tone = notice?.tone === 'ok' ? color.ok : notice?.tone === 'error' ? color.danger : undefined;
+  const lines = notice ? noticeLines(notice, width) : [' '];
   return (
     <Box flexDirection="column" width={width}>
-      <Text color={tone} wrap="truncate-end">
-        {notice ? `${notice.tone === 'ok' ? '✔' : notice.tone === 'error' ? '✖' : '·'} ${notice.text}` : ' '}
-      </Text>
-      <Box>
-        {shown.map((h, i) => (
-          <Box key={h.k + h.label} marginRight={i < shown.length - 1 ? HINT_GAP : 0} flexShrink={0}>
-            <Hint k={h.k}>{h.label}</Hint>
-          </Box>
-        ))}
+      {lines.map((line, i) => (
+        <Text key={i} color={tone} wrap="truncate-end">
+          {line}
+        </Text>
+      ))}
+      <Box width={width} justifyContent="space-between">
+        <Box paddingLeft={1}>
+          {shown.map((h, i) => (
+            <Box key={h.k + h.label} marginRight={i < shown.length - 1 ? HINT_GAP : 0} flexShrink={0}>
+              <Hint k={h.k}>{h.label}</Hint>
+            </Box>
+          ))}
+        </Box>
+        <Text color={badge.color} dimColor={badge.color === undefined} wrap="truncate-end">
+          {tail}
+        </Text>
       </Box>
     </Box>
   );
