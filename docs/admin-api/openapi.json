@@ -1445,7 +1445,7 @@
             "type": "integer"
           },
           "expose_client_addresses": {
-            "description": "Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited.",
+            "description": "Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients), and the networks a key was used from (GET /keys/{id}/places). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited.",
             "type": "boolean"
           },
           "max_key_lifetime_seconds": {

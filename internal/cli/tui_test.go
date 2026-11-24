@@ -402,3 +402,15 @@ func TestDashboardClientsSectionSaysWhyThereAreNone(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboardSaysNetworksAreNotShownInsteadOfNotUsedYet(t *testing.T) {
+	m := dashboard{width: 100, height: 40, keys: []admin.Key{{ID: "key-1", Name: "app"}}, detail: true, openID: "key-1", placesFor: "key-1", places: []admin.Place{}, placesHidden: true}
+	view := m.View()
+	if strings.Contains(view, "Not used yet.") || !strings.Contains(view, "Networks are not shown") {
+		t.Errorf("a key whose only places are withheld networks:\n%s", view)
+	}
+	m.places = []admin.Place{{Kind: "country", Value: "FR"}}
+	if view := m.View(); !strings.Contains(view, "FR") || !strings.Contains(view, "Networks are not shown") {
+		t.Errorf("places shown with networks withheld:\n%s", view)
+	}
+}

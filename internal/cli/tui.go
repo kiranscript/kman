@@ -55,6 +55,9 @@ type dashboard struct {
 	placesFor string
 	places    []admin.Place
 	placesErr error
+	// placesHidden: the server left networks out of places, as it does unless
+	// expose_client_addresses is on.
+	placesHidden bool
 }
 
 var dashboardTabs = []string{"keys", "exposure", "audit", "upstreams"}
@@ -133,6 +136,7 @@ func (m dashboard) Init() tea.Cmd { return m.loadView() }
 type dashboardPlaces struct {
 	keyID  string
 	places []admin.Place
+	hidden bool // networks were left out
 	err    error
 }
 
@@ -144,7 +148,7 @@ func (m dashboard) loadPlaces(keyID string) tea.Cmd {
 			return dashboardPlaces{keyID: keyID, places: demo.places[keyID]}
 		}
 		got, err := cl.Places(ctx, admin.PlaceQuery{ID: keyID})
-		return dashboardPlaces{keyID: keyID, places: got.Places, err: err}
+		return dashboardPlaces{keyID: keyID, places: got.Places, hidden: got.NetworksWithheld, err: err}
 	}
 }
 
@@ -154,7 +158,7 @@ func (m dashboard) wantPlaces() (dashboard, tea.Cmd) {
 	if m.tab != 0 || !m.detail || m.openID == "" || m.placesFor == m.openID {
 		return m, nil
 	}
-	m.placesFor, m.places, m.placesErr = m.openID, nil, nil
+	m.placesFor, m.places, m.placesErr, m.placesHidden = m.openID, nil, nil, false
 	return m, m.loadPlaces(m.openID)
 }
 
@@ -328,7 +332,7 @@ func (m dashboard) update(msg tea.Msg) (dashboard, tea.Cmd) {
 	switch v := msg.(type) {
 	case dashboardPlaces:
 		if v.keyID == m.placesFor {
-			m.places, m.placesErr = v.places, v.err
+			m.places, m.placesErr, m.placesHidden = v.places, v.err, v.hidden
 			if m.places == nil && v.err == nil {
 				m.places = []admin.Place{}
 			}
@@ -680,9 +684,12 @@ func (m dashboard) placeLines(k admin.Key) []string {
 		return append(lines, "  Could not load: "+cleanDashboard(m.placesErr.Error()))
 	case m.places == nil:
 		return append(lines, "  Loading...")
+	case len(m.places) == 0 && m.placesHidden:
+		return append(lines, "  Networks are not shown: kman settings set expose_client_addresses true")
 	case len(m.places) == 0:
 		return append(lines, "  Not used yet.")
 	}
+
 	for i, p := range m.places {
 		if i == placesShown {
 			lines = append(lines, fmt.Sprintf("  ...and %d more: kman key places %s", len(m.places)-placesShown, cleanDashboard(cmp.Or(k.Name, k.ID))))
@@ -693,6 +700,9 @@ func (m dashboard) placeLines(k admin.Key) []string {
 			value += " " + cleanDashboard(p.Label)
 		}
 		lines = append(lines, fmt.Sprintf("  %-8s %s  (last %s, %d forwarded, %d refused)", p.Kind, value, when(&p.LastSeen), p.Requests, p.Refused))
+	}
+	if m.placesHidden {
+		lines = append(lines, "  Networks are not shown: kman settings set expose_client_addresses true")
 	}
 	return lines
 }
