@@ -142,12 +142,16 @@ A virtual key's old secret after its grace period has ended. It no longer works,
 The record of one request or realtime session through kman: which key sent it, from where, what it was allowed to do, and what it cost. Never its content.
 _Avoid_: Log line, request log
 
+**Event feed**:
+The events as they happen, or the recent ones: `kman events`, and `kman events --follow` for the live stream (`GET /admin/v1/events` and `/events/stream`). A request that presented no key kman could identify appears in it marked as having no key, which is how probing shows. A reader that cannot keep up loses events, is told how many, and never slows requests down.
+_Avoid_: Request log, activity log
+
 **Place**:
 Where a virtual key has been used from, at one of three grains: a country, an autonomous system (ASN), or a network (an IPv4 /24 or an IPv6 /64). kman keeps each place a key turns up at, with when it was first and last seen and how many requests it forwarded and refused, forever. `kman key places` lists them.
 _Avoid_: Source (a known source is an operator's label for a place), location
 
 **Client address**:
-The IP address a request came from: the connection's, or `X-Forwarded-For` only through `trusted_proxies`. It is stored on each event, and it is personal data, so the admin API shows which addresses used a key only when the `expose_client_addresses` setting is on.
+The IP address a request came from: the connection's, or `X-Forwarded-For` only through `trusted_proxies`. It is stored on each event, and it is personal data, so the admin API shows which addresses used a key, and the address of each event in the event feed, only when the `expose_client_addresses` setting is on.
 _Avoid_: Caller IP, source IP
 
 **Baseline**:
