@@ -115,3 +115,31 @@ func TestAuditActionsAreAlertedByHowMuchTheyMatter(t *testing.T) {
 		}
 	})
 }
+
+func TestTheAuditLogAlertsOnCanariesByTheirOwnCommands(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		in := newInstall(t)
+		in.channel("ch_1", "slack", "hooks.test", "medium", true, "")
+		in.withCanary("cafe0001", "decoy", "the wiki")
+		stop := in.run()
+		defer stop()
+		// Making and changing a canary is low and so is not sent to a default
+		// channel; arming it again is medium and is.
+		in.audited(store.AuditEntry{Actor: "owner", Action: "canary.create", TargetKind: "canary", TargetID: "cafe0001"})
+		in.audited(store.AuditEntry{Actor: "owner", Action: "canary.update", TargetKind: "canary", TargetID: "cafe0001"})
+		in.audited(store.AuditEntry{Actor: "owner", Action: "canary.reset", TargetKind: "canary", TargetID: "cafe0001"})
+		synctest.Wait()
+		got := in.net.received("hooks.test")
+		if len(got) != 1 {
+			t.Fatalf("%d alerts, want only the reset's", len(got))
+		}
+		for _, want := range []string{"MEDIUM", "Canary armed again", "decoy", "cafe0001", "owner", "kman canary list", "kman audit"} {
+			if !strings.Contains(got[0].Body, want) {
+				t.Errorf("the alert lacks %q:\n%s", want, got[0].Body)
+			}
+		}
+		if strings.Contains(got[0].Body, "kman key show") {
+			t.Errorf("a canary is not shown with the key commands:\n%s", got[0].Body)
+		}
+	})
+}

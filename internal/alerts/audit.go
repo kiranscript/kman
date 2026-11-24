@@ -29,6 +29,9 @@ var auditActions = map[string]auditAction{
 	"key.rotate":            {Medium, "Key rotated"},
 	"key.create":            {Low, "Key created"},
 	"key.update":            {Low, "Key changed"},
+	"canary.create":         {Low, "Canary made"},
+	"canary.update":         {Low, "Canary changed"},
+	"canary.reset":          {Medium, "Canary armed again"},
 	"data.prune":            {Medium, "Data pruned"},
 	"backup.create":         {Medium, "Backup taken"},
 	"alert_channel.create":  {Medium, "Alert channel added"},
@@ -71,6 +74,12 @@ func (s *Service) AlertAudit(tx *store.Tx, e store.AuditEntry) error {
 		if e.Action == "key.disable" {
 			a.Commands = append(a.Commands, "kman key enable "+e.TargetID)
 		}
+	case "canary":
+		a.KeyID = e.TargetID
+		if err := nameKey(tx, &a); err != nil {
+			return err
+		}
+		a.Commands = append(a.Commands, "kman canary list")
 	case "admin_token":
 		a.Commands = append(a.Commands, "kman admin-token list")
 	}
