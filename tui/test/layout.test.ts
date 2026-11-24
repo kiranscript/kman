@@ -44,14 +44,21 @@ describe('layout', () => {
     expect(layout(200, 40, 'keys').leftW).toBe(56);
   });
 
-  it('gives each wide panel only what it can use, and what nothing wants to the focused one', () => {
+  it('gives each wide panel what it can use, two lines at least, and leaves the rest empty', () => {
     const l = layout(140, 40, 'upstreams', { status: 5, keys: 3, upstreams: 1, audit: 1 });
-    expect([l.heights.status, l.heights.keys, l.heights.audit]).toEqual([7, 5, 3]);
-    expect(l.heights.upstreams).toBe(40 - 7 - 5 - 3);
-    // A focused list with more than the screen holds keeps the rest, the others staying at one line.
+    expect([l.heights.status, l.heights.keys, l.heights.upstreams, l.heights.audit]).toEqual([7, 5, 3, 3]);
+    // A focused list with more than the screen holds keeps the rest; the others keep their first rows.
     const busy = layout(140, 40, 'keys', { status: 5, keys: 100, upstreams: 1, audit: 100 });
-    expect([busy.heights.status, busy.heights.upstreams, busy.heights.audit]).toEqual([3, 3, 3]);
-    expect(busy.heights.keys).toBe(40 - 9);
+    expect(busy.heights.status).toBe(5);
+    expect(busy.heights.upstreams).toBe(3);
+    expect(busy.heights.keys + busy.heights.audit + busy.heights.status + busy.heights.upstreams).toBe(40);
+  });
+
+  it('never hides the rows of a problem: every wide panel keeps its first two', () => {
+    const l = layout(100, 30, 'status', { status: 12, keys: 20, upstreams: 2, audit: 50 });
+    expect(l.heights.upstreams).toBe(4);
+    expect(l.heights.audit).toBeGreaterThanOrEqual(5);
+    expect(l.heights.keys).toBeGreaterThanOrEqual(5);
   });
 
   it('puts the main panel beside the panels when wide and under them when narrow', () => {

@@ -357,19 +357,77 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   const width = columns;
   // What each list could fill; Status is its summary, and under it the list when focused.
   const wants = {
-    status: tab === 'status' ? 6 + items.length : 5,
+    status: tab === 'status' ? 7 + items.length : 5,
     keys: Math.max(1, visible.length) + (tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? 1 : 0),
     upstreams: Math.max(1, data.upstreams.length),
     audit: Math.max(1, data.audit.length),
   };
   const lay = layout(columns, bodyRows, tab, wants);
 
+  const popup = usable && mode.kind !== 'none' && mode.kind !== 'filter';
+  const h = lay.heights;
+  const names = { keys: data.keys, upstreams: data.upstreams };
+  const upSel = Math.min(upstreamSel, Math.max(0, data.upstreams.length - 1));
+  const auSel = Math.min(auditSel, Math.max(0, data.audit.length - 1));
+  const left = (
+    <Box flexDirection="column" width={lay.leftW} height={lay.wide ? bodyRows : undefined} flexShrink={0}>
+      <StatusPanel
+        width={lay.leftW}
+        height={h.status}
+        focused={tab === 'status' && !detail && !popup}
+        link={link}
+        url={url}
+        actor={data.actor}
+        keys={data.keys}
+        items={items}
+        selected={attentionSel}
+        price={data.price}
+        upstreamCount={data.upstreams.length}
+      />
+      <KeysPanel
+        width={lay.leftW}
+        height={h.keys}
+        focused={tab === 'keys' && !detail && !popup}
+        keys={visible}
+        total={data.keys.length}
+        selectedId={selectedId}
+        filter={filter}
+        filtering={mode.kind === 'filter'}
+        hasUpstreams={data.upstreams.length > 0}
+        now={now}
+      />
+      <UpstreamsPanel
+        width={lay.leftW}
+        height={h.upstreams}
+        focused={tab === 'upstreams' && !detail && !popup}
+        upstreams={data.upstreams}
+        keys={data.keys}
+        selected={upstreamSel}
+      />
+      <AuditPanel
+        width={lay.leftW}
+        height={h.audit}
+        focused={tab === 'audit' && !detail && !popup}
+        audit={data.audit}
+        names={names}
+        fresh={fresh}
+        selected={auditSel}
+        now={now}
+      />
+    </Box>
+  );
+
+  // A popup stays beside the panels when the main panel is wide enough to hold it,
+  // so the list a change applies to is still in view; otherwise it takes the screen.
+  const overlay = lay.wide && lay.mainW >= 78;
+  const dw = overlay ? lay.mainW : width;
+
   let body;
   if (link.state === 'denied') {
     body = (
       <Centered width={width} height={bodyRows}>
         <Panel title="The admin API refused this token" width={66} tone={color.danger}>
-          <Box flexDirection="column" marginTop={1}>
+          <Box flexDirection="column">
             <Text>{link.error}</Text>
             <Text dimColor>The token may be revoked or rotated.</Text>
             <Text dimColor>Save a current one with kman login, or set KMAN_ADMIN_TOKEN,</Text>
@@ -383,7 +441,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
       <Centered width={width} height={bodyRows}>
         {link.state === 'down' ? (
           <Panel title="Cannot reach kman" width={66} tone={color.warn}>
-            <Box flexDirection="column" marginTop={1}>
+            <Box flexDirection="column">
               <Text>{link.error}</Text>
               <Text dimColor>Is it running? Start it with: kman serve</Text>
               <Text dimColor>Retrying every few seconds. r retries now, q quits.</Text>
@@ -396,7 +454,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
     );
   } else if (mode.kind === 'create') {
     body = (
-      <Centered width={width} height={bodyRows}>
+      <Centered width={dw} height={bodyRows}>
         <CreateKeyDialog
           upstreams={data.upstreams}
           defaultDays={data.settings ? Math.round(data.settings.default_key_ttl_seconds / 86_400) : undefined}
@@ -411,10 +469,10 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
     );
   } else if (mode.kind === 'revoke') {
     body = (
-      <Centered width={width} height={bodyRows}>
+      <Centered width={dw} height={bodyRows}>
         <RevokeDialog
           keyData={mode.key}
-          maxWidth={width}
+          maxWidth={dw}
           busy={working === 'revoke'}
           // The dialog is at most 14 rows without its error (its hint line included).
           errorLines={Math.max(3, bodyRows - 14)}
@@ -426,27 +484,27 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
     );
   } else if (mode.kind === 'secret') {
     body = (
-      <Centered width={width} height={bodyRows}>
-        <SecretDialog created={mode.created} width={width} onCopy={copy} armMs={secretGuardMs} onClose={() => setMode({ kind: 'none' })} />
+      <Centered width={dw} height={bodyRows}>
+        <SecretDialog created={mode.created} width={dw} onCopy={copy} armMs={secretGuardMs} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'clients') {
     body = (
-      <Centered width={width} height={bodyRows}>
-        <ClientsDialog client={client} keyData={mode.key} width={width} height={bodyRows} now={now} onClose={() => setMode({ kind: 'none' })} />
+      <Centered width={dw} height={bodyRows}>
+        <ClientsDialog client={client} keyData={mode.key} width={dw} height={bodyRows} now={now} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'help') {
     body = (
-      <Centered width={width} height={bodyRows}>
-        <HelpDialog focus={tab} onClose={() => setMode({ kind: 'none' })} />
+      <Centered width={dw} height={bodyRows}>
+        <HelpDialog focus={tab} detail={detail} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'confirm') {
     body = (
-      <Centered width={width} height={bodyRows}>
-        <Panel title={`${mode.action === 'disable' ? 'Disable' : 'Enable'} this key?`} width={Math.min(70, width)} tone={color.warn}>
-          <Box flexDirection="column" marginTop={1}>
+      <Centered width={dw} height={bodyRows}>
+        <Panel title={`${mode.action === 'disable' ? 'Disable' : 'Enable'} this key?`} width={Math.min(70, dw)} tone={color.warn}>
+          <Box flexDirection="column">
             {/* Never cut: two names can differ only at the end. */}
             <Text bold wrap="wrap">
               {keyLabel(mode.key)}
@@ -471,57 +529,6 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
       </Centered>
     );
   } else {
-    const h = lay.heights;
-    const names = { keys: data.keys, upstreams: data.upstreams };
-    const upSel = Math.min(upstreamSel, Math.max(0, data.upstreams.length - 1));
-    const auSel = Math.min(auditSel, Math.max(0, data.audit.length - 1));
-    const left = (
-      <Box flexDirection="column" width={lay.leftW} height={lay.wide ? bodyRows : undefined} flexShrink={0}>
-        <StatusPanel
-          width={lay.leftW}
-          height={h.status}
-          focused={tab === 'status' && !detail}
-          link={link}
-          url={url}
-          actor={data.actor}
-          keys={data.keys}
-          items={items}
-          selected={attentionSel}
-          price={data.price}
-          upstreamCount={data.upstreams.length}
-        />
-        <KeysPanel
-          width={lay.leftW}
-          height={h.keys}
-          focused={tab === 'keys' && !detail}
-          keys={visible}
-          total={data.keys.length}
-          selectedId={selectedId}
-          filter={filter}
-          filtering={mode.kind === 'filter'}
-          hasUpstreams={data.upstreams.length > 0}
-          now={now}
-        />
-        <UpstreamsPanel
-          width={lay.leftW}
-          height={h.upstreams}
-          focused={tab === 'upstreams' && !detail}
-          upstreams={data.upstreams}
-          keys={data.keys}
-          selected={upstreamSel}
-        />
-        <AuditPanel
-          width={lay.leftW}
-          height={h.audit}
-          focused={tab === 'audit' && !detail}
-          audit={data.audit}
-          names={names}
-          fresh={fresh}
-          selected={auditSel}
-          now={now}
-        />
-      </Box>
-    );
     const attn = attnItem?.key;
     const attnUp = attnItem?.upstream;
     const main =
@@ -565,6 +572,15 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
       <Box width={width} height={bodyRows} flexDirection={lay.wide ? 'row' : 'column'}>
         {left}
         {main}
+      </Box>
+    );
+  }
+
+  if (overlay && popup) {
+    body = (
+      <Box width={width} height={bodyRows}>
+        {left}
+        {body}
       </Box>
     );
   }
@@ -646,6 +662,8 @@ function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canC
       ...(selectable ? [{ k: '↑↓', label: 'select' }] : []),
     ];
   }
+  // With no upstream the form only explains, and Esc is all that works in it.
+  if (mode === 'create' && !canCreate) return [{ k: 'Esc', label: 'close', always: true }];
   if (mode === 'create') {
     return [
       { k: 'Tab/Enter', label: 'next field' },

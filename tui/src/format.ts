@@ -103,10 +103,29 @@ export function clock(iso: string, now: number): string {
 /** Fit text to a width, ending in an ellipsis when cut. */
 export function fit(text: string, width: number): string {
   if (width <= 0) return '';
-  const chars = [...text];
-  if (chars.length <= width) return text;
+  if (textWidth(text) <= width) return text;
   if (width === 1) return '…';
-  return chars.slice(0, width - 1).join('') + '…';
+  return takeCells([...text], width - 1) + '…';
+}
+
+/** The terminal cells a string takes: a CJK or emoji character is two. */
+export function textWidth(text: string): number {
+  let n = 0;
+  for (const ch of text) n += cellWidth(ch);
+  return n;
+}
+
+/** The longest start of `chars` that fits in `cells`. */
+function takeCells(chars: string[], cells: number): string {
+  let used = 0;
+  let out = '';
+  for (const ch of chars) {
+    const w = cellWidth(ch);
+    if (used + w > cells) break;
+    out += ch;
+    used += w;
+  }
+  return out;
 }
 
 /**
@@ -148,22 +167,22 @@ export function wrapLines(text: string, width: number, maxLines: number): string
  */
 export function fitMiddle(text: string, width: number): string {
   if (width <= 0) return '';
-  const chars = [...text];
-  if (chars.length <= width) return text;
+  if (textWidth(text) <= width) return text;
   if (width <= 2) return fit(text, width);
+  const chars = [...text];
   const head = Math.ceil((width - 1) * 0.55);
   const tail = width - 1 - head;
-  return chars.slice(0, head).join('') + '…' + chars.slice(chars.length - tail).join('');
+  return takeCells(chars, head) + '…' + takeCells([...chars].reverse(), tail).split('').reverse().join('');
 }
 
 export function padEnd(text: string, width: number): string {
   const t = fit(text, width);
-  return t + ' '.repeat(Math.max(0, width - [...t].length));
+  return t + ' '.repeat(Math.max(0, width - textWidth(t)));
 }
 
 export function padStart(text: string, width: number): string {
   const t = fit(text, width);
-  return ' '.repeat(Math.max(0, width - [...t].length)) + t;
+  return ' '.repeat(Math.max(0, width - textWidth(t))) + t;
 }
 
 /**

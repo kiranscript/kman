@@ -2,6 +2,7 @@
 // across the whole width (inverse without colour); in an unfocused panel the
 // selected line is only bold, as in lazygit.
 import { Text } from 'ink';
+import { cellWidth, textWidth } from '../format.js';
 import { color } from './theme.js';
 
 export interface Seg {
@@ -11,21 +12,28 @@ export interface Seg {
   bold?: boolean;
 }
 
-const len = (segs: Seg[]) => segs.reduce((n, s) => n + [...s.t].length, 0);
+const len = (segs: Seg[]) => segs.reduce((n, s) => n + textWidth(s.t), 0);
 
-/** The segments cut to `max` characters, ending in an ellipsis when cut. */
+/** The segments cut to `max` cells, ending in an ellipsis when cut. */
 function clip(segs: Seg[], max: number): Seg[] {
   if (len(segs) <= max) return segs;
   const out: Seg[] = [];
   let left = Math.max(0, max - 1);
   for (const s of segs) {
-    const chars = [...s.t];
-    if (chars.length >= left) {
-      out.push({ ...s, t: chars.slice(0, left).join('') + '…' });
+    const w = textWidth(s.t);
+    if (w >= left) {
+      let used = 0;
+      let text = '';
+      for (const ch of s.t) {
+        if (used + cellWidth(ch) > left) break;
+        text += ch;
+        used += cellWidth(ch);
+      }
+      out.push({ ...s, t: text + '…' });
       return out;
     }
     out.push(s);
-    left -= chars.length;
+    left -= w;
   }
   return out;
 }

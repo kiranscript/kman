@@ -173,10 +173,11 @@ export function KeyMain({
   if (!k) {
     return (
       <Frame title="Key" width={width} height={height}>
-        <Text dimColor wrap="wrap">
-          {' '}
-          {none}
-        </Text>
+        <Box paddingX={1}>
+          <Text dimColor wrap="wrap">
+            {none}
+          </Text>
+        </Box>
       </Frame>
     );
   }
@@ -272,10 +273,11 @@ export function UpstreamMain({
   if (!u) {
     return (
       <Frame title="Upstream" width={width} height={height}>
-        <Text dimColor wrap="wrap">
-          {' '}
-          {none}
-        </Text>
+        <Box paddingX={1}>
+          <Text dimColor wrap="wrap">
+            {none}
+          </Text>
+        </Box>
       </Frame>
     );
   }
@@ -296,7 +298,7 @@ export function UpstreamMain({
         <Field label="profile">{u.profile}</Field>
         <Field label="preset">
           {u.update_available ? (
-            <Text color={color.warn}>▲ {u.preset ? `${u.preset} v${u.preset_version ?? '?'}` : 'custom'}: a newer version exists</Text>
+            <Text dimColor>{severityGlyph.info} {u.preset ? `${u.preset} v${u.preset_version ?? '?'}` : 'custom'}: a newer version exists</Text>
           ) : u.preset ? (
             `${u.preset} v${u.preset_version ?? '?'}`
           ) : (
@@ -307,7 +309,7 @@ export function UpstreamMain({
           {u.credentials.length ? (
             u.credentials.map((c) => `${c.name} ····${c.last4 ?? ''}`).join('   ')
           ) : (
-            <Text color={color.warn}>▲ none: add one before creating keys</Text>
+            <Text color={severityColor.danger}>{severityGlyph.danger} none: add one before creating keys</Text>
           )}
         </Field>
         <Field label="sdk env">{u.sdk_env ?? '—'}</Field>
@@ -345,10 +347,11 @@ export function AuditMain({
   if (!e) {
     return (
       <Frame title="Entry" width={width} height={height}>
-        <Text dimColor wrap="wrap">
-          {' '}
-          {none}
-        </Text>
+        <Box paddingX={1}>
+          <Text dimColor wrap="wrap">
+            {none}
+          </Text>
+        </Box>
       </Frame>
     );
   }

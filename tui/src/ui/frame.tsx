@@ -4,7 +4,7 @@
 // border, so the top and bottom edges are drawn here and Ink draws the sides.
 import { Box, Text } from 'ink';
 import type { ReactNode } from 'react';
-import { fit } from '../format.js';
+import { fit, textWidth } from '../format.js';
 import { color, noColor } from './theme.js';
 
 const EDGES = {
@@ -35,18 +35,18 @@ interface FrameProps {
 
 /** Whether a panel `width` wide shows the whole of this title and count, or cuts it. */
 export function titleFits(title: string, count: string | undefined, width: number): boolean {
-  return [...` ${title}${count ? ` ${count}` : ''} `].length <= Math.max(0, width - 4);
+  return textWidth(` ${title}${count ? ` ${count}` : ''} `) <= Math.max(0, width - 4);
 }
 
 /** Whether `subtitle` fits in the top border of a panel `width` wide, beside its title and count. */
 export function subtitleFits(subtitle: string, title: string, count: string | undefined, width: number): boolean {
-  const label = [...` ${title}${count ? ` ${count}` : ''} `].length;
-  return [...subtitle].length + 2 + Math.min(label, Math.max(0, width - 4)) + 3 <= width;
+  const label = textWidth(` ${title}${count ? ` ${count}` : ''} `);
+  return textWidth(subtitle) + 2 + Math.min(label, Math.max(0, width - 4)) + 4 <= width;
 }
 
 /** The width a strip's label takes: its title and count, and a space. */
 export function stripLabelWidth(title: string, count?: string): number {
-  return [...` ${title}${count ? ` ${count}` : ''} `].length;
+  return textWidth(` ${title}${count ? ` ${count}` : ''} `);
 }
 
 /**
@@ -73,13 +73,14 @@ export function Frame({ title, count, position, subtitle, focused, tone, heavy =
   const style = { color: border, dimColor: dim, bold: focused };
 
   const label = title ? ` ${title}${count ? ` ${count}` : ''} ` : '';
-  const shownLabel = fit(label, Math.max(0, width - 4));
+  // A title that has to be cut keeps a rule before the corner.
+  const shownLabel = fit(label, Math.max(0, textWidth(label) > width - 4 ? width - 5 : width - 4));
   const sub = subtitle ? ` ${subtitle} ` : '';
-  const showSub = sub !== '' && [...sub].length + [...shownLabel].length + 3 <= width;
-  const topFill = Math.max(0, width - 3 - [...shownLabel].length - (showSub ? [...sub].length : 0));
+  const showSub = sub !== '' && textWidth(sub) + textWidth(shownLabel) + 4 <= width;
+  const topFill = Math.max(0, width - 3 - textWidth(shownLabel) - (showSub ? textWidth(sub) : 0));
   const pos = position ? ` ${position} ` : '';
   const shownPos = fit(pos, Math.max(0, width - 4));
-  const bottomFill = Math.max(0, width - 3 - [...shownPos].length);
+  const bottomFill = Math.max(0, width - 3 - textWidth(shownPos));
 
   return (
     <Box flexDirection="column" width={width} height={height} flexShrink={0}>

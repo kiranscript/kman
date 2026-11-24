@@ -208,11 +208,7 @@ export function CreateKeyDialog({ upstreams, defaultDays, busy, error, errorLine
           <Text> </Text>
         )}
         <Text color={discardArmed ? color.warn : undefined} dimColor={!discardArmed}>
-          {busy
-            ? 'Creating…'
-            : discardArmed
-              ? 'Esc again discards · any other key keeps editing'
-              : 'Enter next (the last field creates) · Ctrl+S create now · Esc cancel'}
+          {busy ? 'Creating…' : discardArmed ? 'Esc again discards · any other key keeps editing' : ' '}
         </Text>
       </Box>
     </Panel>

@@ -10,6 +10,8 @@ import type { Tab } from './ui/chrome.js';
 export const WIDE = 100;
 /** A panel's border plus one line: the least that shows where its selection is. */
 export const COLLAPSED = 3;
+/** The rows a wide panel is sure of beside its border and one line: two lines of its list. */
+const FLOOR = COLLAPSED + 2;
 /** The least the main panel needs under the focused panel: a compact key detail. */
 export const MAIN_MIN = 7;
 
@@ -42,19 +44,23 @@ export function layout(columns: number, rows: number, focus: Tab, want: number |
   const small = strips ? 1 : COLLAPSED;
   const heights: Record<Tab, number> = { status: small, keys: small, upstreams: small, audit: small };
   const wants: Partial<Record<Tab, number>> = typeof want === 'number' ? { [focus]: want } : want;
-  const need = (t: Tab) => Math.max(COLLAPSED, (wants[t] ?? Infinity) + 2);
+  // A panel nobody said anything about stays one line, unless it is the focused one.
+  const need = (t: Tab) => (wants[t] === undefined ? (t === focus ? Infinity : COLLAPSED) : Math.max(COLLAPSED, wants[t]! + 2));
 
   if (wide) {
-    // Extra rows go to the focused panel first, then Keys, then the rest, each up to what it can use.
+    // First every panel gets what shows its first rows (up to FLOOR), so a problem is never
+    // hidden; then the focused one gets what it can use, then Keys and the rest. What nothing
+    // wants stays empty below the panels, unless a panel has no limit: then it takes it.
     let spare = rows - COLLAPSED * PANELS.length;
+    const give = (t: Tab, upTo: number) => {
+      const n = Math.max(0, Math.min(spare, upTo - heights[t]));
+      heights[t] += n;
+      spare -= n;
+    };
     const order = [focus, ...(['keys', 'status', 'upstreams', 'audit'] as Tab[]).filter((t) => t !== focus)];
-    for (const t of order) {
-      const give = Math.max(0, Math.min(spare, need(t) - COLLAPSED));
-      heights[t] += give;
-      spare -= give;
-    }
-    // Whatever nothing wants goes to the focused panel, so the column is always full.
-    heights[focus] += spare;
+    for (const t of order) give(t, Math.min(FLOOR, need(t)));
+    for (const t of order) give(t, need(t));
+    if (!Number.isFinite(need(focus))) heights[focus] += spare;
     return { wide, strips, leftW, mainW: columns - leftW, mainH: rows, heights };
   }
 

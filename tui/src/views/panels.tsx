@@ -3,9 +3,9 @@
 // blue bar; the others shrink until only their selected line shows.
 import { Text } from 'ink';
 import type { AuditEntry, Key, PriceDataStatus, Upstream } from '../api.js';
-import { clock, fitMiddle, money, padEnd, since, tailCells } from '../format.js';
+import { clock, fitMiddle, money, padEnd, since, tailCells, textWidth } from '../format.js';
 import { keyLabel } from '../keys.js';
-import { keyRisks, topRisk } from '../risk.js';
+import { keyRisks, topRisk, upstreamRisks } from '../risk.js';
 import type { Attention, Severity, Risk, UpstreamAttention } from '../risk.js';
 import { linkBadge, useTick } from '../ui/chrome.js';
 import { Frame, Strip, stripLabelWidth, subtitleFits } from '../ui/frame.js';
@@ -66,7 +66,7 @@ const position = (selected: number, count: number) => (count > 0 ? `${selected +
 
 // ---- Status ---------------------------------------------------------------
 
-const segLen = (segs: Seg[]) => segs.reduce((n, x) => n + [...x.t].length, 0);
+const segLen = (segs: Seg[]) => segs.reduce((n, x) => n + textWidth(x.t), 0);
 
 /** The segments padded with spaces to `w` columns. */
 const pad = (segs: Seg[], w: number): Seg[] => [...segs, { t: ' '.repeat(Math.max(0, w - segLen(segs))) }];
@@ -170,7 +170,10 @@ export function StatusPanel({
   const lead: Seg[] = strip ? [] : [{ t: ' ' }];
   // Who this is and where: in the top border when it fits, else a line of the summary.
   const where = `${actor ? `${actor} @ ` : ''}${shortUrl(url)}`;
+  // The whole of it if the border has room, else just the address; a line of the summary then says the rest.
+  const urlOnly = shortUrl(url);
   const inBorder = !strip && subtitleFits(where, title, count, width);
+  const borderText = inBorder ? where : !strip && subtitleFits(urlOnly, title, count, width) ? urlOnly : undefined;
 
   const linkText =
     link.state === 'ok'
@@ -262,13 +265,13 @@ export function StatusPanel({
   const sel = Math.min(selected, Math.max(0, items.length - 1));
   const start = windowStart(sel, items.length, Math.max(1, listRows));
   const shown = items.slice(start, start + listRows);
-  const nameW = Math.min(24, Math.max(4, ...shown.map((n) => [...n.name].length)));
+  const nameW = Math.min(24, Math.max(4, ...shown.map((n) => textWidth(n.name))));
 
   return (
     <Shell
       title={title}
       count={count}
-      subtitle={inBorder ? where : undefined}
+      subtitle={borderText}
       position={
         focused && items.length > 0 ? `${sel + 1} of ${items.length}` : items.length > 0 ? `${items.length} to review` : undefined
       }
@@ -291,7 +294,7 @@ export function StatusPanel({
               <Text color={color.ok}> ✔ every key is capped and current</Text>
             ) : (
               <Text dimColor wrap="truncate-end">
-                {keys.length > 0 ? ' no active keys: n creates one' : upstreamCount === 0 ? ' no upstream yet: kman upstream add' : ' no keys yet: n creates one'}
+                {keys.length > 0 ? ' No active keys. n creates one.' : upstreamCount === 0 ? ' No upstream yet: kman upstream add' : ' No keys yet. n creates one.'}
               </Text>
             )
           ) : (
@@ -376,13 +379,17 @@ export function KeysPanel({
     s: Math.max(0, ...rowsInfo.map((p) => segLen(p.status))),
     r: Math.max(0, ...rowsInfo.map((p) => segLen(p.risk))),
     c: Math.max(0, ...rowsInfo.map((p) => segLen(p.spend))),
-    mode: 'tight' as 'all' | 'noSpend' | 'tight',
+    mode: 'tight' as 'all' | 'noSpend' | 'marks' | 'tight',
   };
   {
-    const room = inner - 4 - Math.min(Math.max(0, ...rowsInfo.map((p) => [...p.label].length)), 20);
+    // The names get what they need (up to 20 cells) before a column does; as room runs
+    // out the spend goes, then the warning's words (its mark stays), always in columns.
+    const longest = Math.max(0, ...rowsInfo.map((p) => textWidth(p.label)));
+    const room = inner - 4 - Math.min(longest, 20);
     const base = cols.s + (cols.r ? 1 + cols.r : 0);
     if (base + (cols.c ? 1 + cols.c : 0) <= room) cols.mode = 'all';
-    else if (base <= room) cols.mode = 'noSpend';
+    else if (base <= inner - 4 - Math.min(longest, 12)) cols.mode = 'noSpend';
+    else if (cols.s + (cols.r ? 2 : 0) <= inner - 4 - Math.min(longest, 12)) cols.mode = 'marks';
   }
   return (
     <Shell
@@ -403,7 +410,7 @@ export function KeysPanel({
       ) : null}
       {(rows > 0 ? shown : []).map((k) => {
         const p = parts(k);
-        const nameLen = [...p.label].length;
+        const nameLen = textWidth(p.label);
         // Aligned columns when they fit beside a reasonable part of the names; if not the
         // spend goes, then the alignment: the mark, its word and the warning are never dropped.
         const right: Seg[] =
@@ -415,7 +422,9 @@ export function KeysPanel({
               ]
             : cols.mode === 'noSpend'
               ? [...pad(p.status, cols.s), ...(cols.r ? [{ t: ' ' }, ...pad(p.risk, cols.r)] : [])]
-              : fitParts([p.status, ...(p.risk.length ? [p.risk] : [])], Math.max(0, inner - 2 - Math.min(nameLen, 6) - 1));
+              : cols.mode === 'marks'
+                ? [...pad(p.status, cols.s), ...(cols.r ? [{ t: ' ' }, ...pad(p.risk.slice(0, 1).map((x) => ({ ...x, t: [...x.t][0] ?? ' ' })), 1)] : [])]
+                : fitParts([p.status, ...(p.risk.length ? [p.risk] : [])], Math.max(0, inner - 2 - Math.min(nameLen, 6) - 1));
         return (
           <Row
             key={k.id}
@@ -482,12 +491,13 @@ export function UpstreamsPanel({
             // The warnings are glyphs when the name needs the room: ▲ no credential, ▲ http.
             ...fitParts(
               [
-                ...(u.credentials.length === 0 ? [[{ t: '▲ no credential', color: color.warn }]] : []),
-                ...(u.tls === false ? [[{ t: '▲ http', color: color.warn }]] : []),
-                ...(u.update_available ? [[{ t: '▲ update', color: color.warn }]] : []),
+                // The same marks as Status gives them: no credential is ✖, plain http ▲, an update ○.
+                ...upstreamRisks(u).map((r) => [
+                  { t: `${severityGlyph[r.severity]} ${r.short === 'plain http' ? 'http' : r.short}`, color: severityColor[r.severity], dim: r.severity === 'info' },
+                ]),
                 [{ t: `${live(u)} active`, dim: true }],
               ],
-              Math.max(0, inner - 2 - Math.min([...u.name].length, 14) - 1),
+              Math.max(0, inner - 2 - Math.min(textWidth(u.name), 14) - 1),
             ),
             { t: ' ' },
           ]}
@@ -517,8 +527,8 @@ export function AuditPanel({
   const { shown } = windowed(audit, sel, rows);
   // The columns are as wide as what is shown needs, so the target, which is what tells
   // entries apart, keeps the rest. The action already names the kind, so only a name follows.
-  const timeW = Math.max(...shown.map((e) => [...clock(e.time, now)].length), 0) + 1;
-  const actionW = Math.max(...shown.map((e) => [...e.action].length), 0) + 1;
+  const timeW = Math.max(...shown.map((e) => textWidth(clock(e.time, now))), 0) + 1;
+  const actionW = Math.max(...shown.map((e) => textWidth(e.action)), 0) + 1;
   return (
     <Shell
       title={title}

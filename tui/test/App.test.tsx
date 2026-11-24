@@ -653,7 +653,7 @@ describe('App', () => {
       const s = m.screen();
       expect(s).toContain('Upstreams (14)');
       expect(s).toContain('1 of 14');
-      expect(lines(m).find((l) => l.includes('a-very') && l.includes('…'))).toContain('▲ update');
+      expect(lines(m).find((l) => l.includes('a-very') && l.includes('…'))).toContain('○ update');
       expect(lines(m).find((l) => l.includes('up-1 '))).toContain('▲ http');
       expect(lines(m).every((l) => [...l].length <= 100)).toBe(true);
       m.unmount();
@@ -1496,7 +1496,7 @@ describe('App', () => {
       const m = mount(client, { columns: 100, rows: 34 });
       await loaded(m);
       await m.press('3');
-      expect(lines(m).find((l) => /^[│┃] nocred/.test(l))).toContain('▲ no credential');
+      expect(lines(m).find((l) => /^[│┃] nocred/.test(l))).toContain('✖ no credential');
       expect(lines(m).find((l) => /^[│┃] healthy/.test(l))).not.toContain('▲');
       m.unmount();
     });
@@ -1876,7 +1876,7 @@ describe('review round 1', () => {
     await loaded(m);
     await m.press('3');
     const row = m.screen().split('\n').find((l) => /^[│┃] test-upstream/.test(l)) ?? '';
-    expect(row).toContain('▲ no credential');
+    expect(row).toContain('✖ no credential');
     m.unmount();
   });
 
@@ -2134,14 +2134,16 @@ describe('review round 2', () => {
     client.keys = client.keys.map((k) => ({ ...k, status: 'disabled' as const }));
     const m = mount(client, { columns: 100, rows: 30 });
     await loaded(m);
-    expect(m.screen()).toContain('no active keys');
+    expect(m.screen()).toContain('No active keys');
     m.unmount();
   });
 
   it('puts the install address in the top border of Status, and in the line when stacked short', async () => {
     const wide = mount(fakeClient(), { columns: 100, rows: 30 });
     await loaded(wide);
-    expect(lines(wide)[0]).toContain('owner @ 127.0.0.1:8081');
+    // At 100 columns the border has room for the address, and the summary has the rest.
+    expect(lines(wide)[0]).toContain('127.0.0.1:8081');
+    expect(wide.screen()).toContain('owner @ 127.0.0.1:8081');
     wide.unmount();
     const small = mount(fakeClient(), { columns: 80, rows: 24 });
     await loaded(small);
@@ -2327,6 +2329,97 @@ describe('review round 3', () => {
     await m.press(ESCAPE);
     await m.press('n');
     expect(m.screen()).toContain('New virtual key');
+    m.unmount();
+  });
+});
+
+describe('review round 4', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+  const ESCAPE = '\u001b';
+  const cjk = '東京の請求チーム'.repeat(4);
+
+  it('measures wide characters in cells, so a CJK key name cannot break the frame at 80x24', async () => {
+    const client = fakeClient();
+    client.keys[0]!.name = `${cjk}-east`;
+    for (const size of [{ columns: 80, rows: 24 }, { columns: 100, rows: 30 }]) {
+      const m = mount(client, size);
+      await loaded(m);
+      await m.press('2');
+      expect(lines(m).length).toBeLessThanOrEqual(size.rows);
+      const top = lines(m).find((l) => l.includes('Key: '))!;
+      expect(top).toMatch(/╭─ Key: .*─+╮$/);
+      expect(lines(m).find((l) => l.includes('● active'))).toBeDefined();
+      m.unmount();
+    }
+  });
+
+  it('shows the keys of the detail panel in help while it has the keyboard', async () => {
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('3');
+    await m.press(ENTER);
+    await m.press('?');
+    expect(m.screen()).toContain('DETAIL (focused)');
+    expect(m.screen()).not.toContain('KEYS (this panel)');
+    expect(m.screen()).not.toMatch(/^ *returns/m);
+    m.unmount();
+  });
+
+  it('offers only Esc in the new-key footer when there is no upstream to make a key on', async () => {
+    const client = fakeClient();
+    client.upstreams = [];
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('n');
+    expect(m.screen()).not.toContain('Ctrl+S');
+    expect(lines(m).at(-1)).toContain('Esc close');
+    expect(lines(m).at(-1)).not.toContain('next field');
+    m.unmount();
+  });
+
+  it('keeps the panels in view beside a popup when the main panel can hold it', async () => {
+    const m = mount(fakeClient(), { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('d');
+    expect(m.screen()).toContain('Disable this key?');
+    expect(m.screen()).toContain('[2] Keys');
+    expect(m.screen()).toContain('[4] Audit');
+    expect(lines(m).every((l) => [...l].length <= 140)).toBe(true);
+    await m.press('n');
+    m.unmount();
+    // Where the main panel is too narrow for it the popup takes the screen, as before.
+    const small = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(small);
+    await small.press('2');
+    await small.press('d');
+    expect(small.screen()).not.toContain('[4] Audit');
+    small.unmount();
+  });
+
+  it('marks the same problem the same way in Status, the Upstreams list and its detail', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 140, rows: 40 });
+    await loaded(m);
+    expect(lines(m).find((l) => l.includes('ollama'))).toContain('✖');
+    await m.press('3');
+    await m.press('j');
+    expect(lines(m).find((l) => /^[│┃] ollama/.test(l))).toContain('✖ no credential');
+    expect(m.screen()).toContain('✖ none: add one');
+    m.unmount();
+  });
+
+  it('puts no blank row above the first line of the confirmation', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('d');
+    const at = lines(m).findIndex((l) => l.includes('Disable this key?'));
+    expect(lines(m)[at + 1]).toMatch(/checkout/);
+    await m.press(ESCAPE);
     m.unmount();
   });
 });
