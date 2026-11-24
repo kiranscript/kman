@@ -126,9 +126,9 @@ The review checked each of SPEC §1's eight invariants against the code and by r
 **What is left.**
 
 - **A client is a claim, not proof.** It is as easy to change as the header; a holder of a leaked key can send the `User-Agent` of the key's own app. It is a signal for an operator and for the location rules, and no part of authentication.
-- **A first word that looks like a product but is not one survives.** An app that sends only its user's first name, or a project's code name, as its whole `User-Agent` has that word kept, in lower case and cut to 32 bytes. Nothing longer, and nothing with an address, a host or a key in it, does.
+- **A first word that looks like a product but is not one survives.** An app that sends only its user's first name, or a project's code name, as its whole `User-Agent` has that word kept, in lower case and cut to 32 bytes. What follows a first word that is an address, an email, a dotted host name or a URL is never kept, and neither is a `kmn_` key or a name of twenty characters or more holding a digit. A short dotless host label (`build-server-03`, an EC2 default such as `ip-10-0-0-1`) or a short token without a recognisable shape can survive, bounded to one word of 32 bytes.
 - **The `User-Agent` is still forwarded to the upstream as the app sent it,** as before: kman's header stripping removes a key at the start of a header's value (see above), not one inside a longer one. That is the app's own header going to the provider it chose, and not something kman records.
-- **A request with no key costs a little more.** Its client is reduced, in a few dozen nanoseconds; the made-up key itself still costs nothing further (`BenchmarkBadKey`).
+- **A request with no key costs a little more.** Its client is reduced, in about 60 nanoseconds for a real `User-Agent` (`BenchmarkClientOf`; `BenchmarkBadKey` builds its gateway without an event bus, so it does not reach the reduction); the made-up key itself still costs nothing further (`BenchmarkBadKey`).
 
 ## Assumptions
 
