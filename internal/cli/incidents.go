@@ -154,6 +154,16 @@ func incidentsFollow(ctx context.Context, c *call, cl *client, l login, req admi
 	}
 	watch := req
 	watch.Limit = followWindow
+	// What the wider window already holds is not news: only a change from here on is.
+	base, err := cl.ListIncidents(ctx, watch)
+	if err != nil {
+		return c.explain(err, l)
+	}
+	for _, i := range base.Incidents {
+		if _, ok := seen[i.ID]; !ok {
+			seen[i.ID] = i
+		}
+	}
 	timer := time.NewTimer(every)
 	defer timer.Stop()
 	for {
@@ -489,6 +499,11 @@ func incidentThisWasMe(ctx context.Context, c *call) error {
 		case "y", "yes":
 			req.AddKnownSources = true
 		}
+	}
+	if !req.AddKnownSources {
+		// Declined (or a canary's incident, which is never asked about): the options
+		// for adding belong to adding, and the server refuses them without it.
+		req.InstallWide, req.Kinds, req.Label = false, nil, ""
 	}
 	got, err := cl.ThisWasMe(ctx, req)
 	if err != nil {

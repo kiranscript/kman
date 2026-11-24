@@ -429,3 +429,47 @@ func TestIncidentsFollowEndsWithAnErrorWhenTheServerIsGone(t *testing.T) {
 		t.Errorf("exit %d, %s", r.code, r.stderr)
 	}
 }
+
+// Declining the prompt with options given still resolves: the options belong to
+// adding the sources, which was declined.
+func TestThisWasMeDecliningWithOptionsStillResolves(t *testing.T) {
+	in, _ := withIncident(t)
+	var stdout, stderr strings.Builder
+	env := in.env(nil, "n\n", &stdout, &stderr)
+	env.Interactive = true
+	args := []string{"incident", "this-was-me", "1", "--install-wide", "--kinds", "country", "--label", "home"}
+	if code := cli.Run(context.Background(), args, env); code != 0 {
+		t.Fatalf("exit %d, %s%s", code, stdout.String(), stderr.String())
+	}
+	var inc admin.Incident
+	in.kmanJSON(t, &inc, "incident", "show", "1", "--json")
+	if inc.Resolution != "false_positive" {
+		t.Errorf("the incident was resolved as %q, want false_positive", inc.Resolution)
+	}
+}
+
+// --follow starts after the incidents the wider window already holds: an older
+// incident past --limit is not news two seconds in.
+func TestIncidentsFollowDoesNotReprintIncidentsPastTheLimit(t *testing.T) {
+	in, k := withIncident(t)
+	in.detect(t, k.ID, "new_asn", store.SeverityHigh, store.Evidence{})
+	var second admin.CreatedKey
+	in.kmanJSON(t, &second, "key", "create", "second", "--upstream", "openai")
+	in.detect(t, second.Key.ID, "new_client", store.SeverityMedium, store.Evidence{})
+	ctx, cancel := context.WithCancel(context.Background())
+	stdout, stderr := &syncBuffer{}, &syncBuffer{}
+	env := in.env(nil, "", stdout, stderr)
+	env.FollowEvery = time.Millisecond
+	done := make(chan int)
+	go func() { done <- cli.Run(ctx, []string{"incidents", "--follow", "--limit", "1"}, env) }()
+	start := time.Now()
+	for !strings.Contains(stdout.String(), "#2") && time.Since(start) < 10*time.Second {
+		runtime.Gosched()
+	}
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	<-done
+	if strings.Contains(stdout.String(), "#1") {
+		t.Errorf("follow reprinted an older incident as a change:\n%s", stdout.String())
+	}
+}
