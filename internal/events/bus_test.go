@@ -182,3 +182,67 @@ func TestConcurrentEmittersAreSafe(t *testing.T) {
 		}
 	})
 }
+
+func TestUnsubscribeStopsDeliveryAndClosesTheChannel(t *testing.T) {
+	b := events.New(events.Options{})
+	gone := b.Subscribe("gone", events.SubOptions{Buffer: 8})
+	kept := b.Subscribe("kept", events.SubOptions{Buffer: 8})
+	stop := run(t, b)
+
+	b.Emit(events.Event{KeyID: "before"})
+	if e := <-gone.C; e.KeyID != "before" {
+		t.Fatalf("got %+v before unsubscribing", e)
+	}
+	b.Unsubscribe(gone)
+	b.Unsubscribe(gone) // a second time is harmless
+	b.Emit(events.Event{KeyID: "after"})
+	stop()
+
+	if got := drain(gone); len(got) != 0 {
+		t.Errorf("an unsubscribed subscription got %+v", got)
+	}
+	if got := drain(kept); len(got) != 2 {
+		t.Errorf("the other subscription got %d events, want 2", len(got))
+	}
+	if n := len(b.Subscriptions()); n != 0 {
+		t.Errorf("%d subscriptions remain after the bus stopped", n)
+	}
+}
+
+func TestUnsubscribeReleasesTheSubscriptionAndAfterTheBusStoppedIsHarmless(t *testing.T) {
+	b := events.New(events.Options{})
+	sub := b.Subscribe("s", events.SubOptions{Buffer: 1})
+	if n := len(b.Subscriptions()); n != 1 {
+		t.Fatalf("%d subscriptions, want 1", n)
+	}
+	b.Unsubscribe(sub)
+	if n := len(b.Subscriptions()); n != 0 {
+		t.Fatalf("%d subscriptions after Unsubscribe, want none", n)
+	}
+	other := b.Subscribe("other", events.SubOptions{Buffer: 1})
+	stop := run(t, b)
+	stop()
+	b.Unsubscribe(other) // the bus closed it already
+	b.Unsubscribe(sub)
+}
+
+func TestWhatAnUnsubscribedSubscriptionDroppedIsStillCountedByName(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		b := events.New(events.Options{Capacity: 16})
+		one := b.Subscribe("event-stream", events.SubOptions{Buffer: 1})
+		two := b.Subscribe("event-stream", events.SubOptions{Buffer: 1})
+		stop := run(t, b)
+		for range 3 {
+			b.Emit(events.Event{KeyID: "k"})
+		}
+		synctest.Wait() // the bus has handed all three on
+		if one.Dropped() != 2 || two.Dropped() != 2 {
+			t.Fatalf("drops %d and %d, want 2 each", one.Dropped(), two.Dropped())
+		}
+		b.Unsubscribe(one)
+		if got := b.SubscriberDrops()["event-stream"]; got != 4 {
+			t.Errorf("drops by name after one left = %d, want 4 (2 released and 2 live)", got)
+		}
+		stop()
+	})
+}
