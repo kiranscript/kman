@@ -2,7 +2,7 @@
 // across the whole width (inverse without colour); in an unfocused panel the
 // selected line is only bold, as in lazygit.
 import { Text } from 'ink';
-import { cellWidth, textWidth } from '../format.js';
+import { graphemes, graphemeWidth, textWidth } from '../format.js';
 import { color } from './theme.js';
 
 export interface Seg {
@@ -24,10 +24,10 @@ function clip(segs: Seg[], max: number): Seg[] {
     if (w >= left) {
       let used = 0;
       let text = '';
-      for (const ch of s.t) {
-        if (used + cellWidth(ch) > left) break;
+      for (const ch of graphemes(s.t)) {
+        if (used + graphemeWidth(ch) > left) break;
         text += ch;
-        used += cellWidth(ch);
+        used += graphemeWidth(ch);
       }
       out.push({ ...s, t: text + '…' });
       return out;

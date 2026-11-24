@@ -208,7 +208,8 @@ export function StatusPanel({
     ],
     inner - 1,
   );
-  const whereLine: Seg[] = [{ t: where, dim: true }];
+  // When the border carries the address the line says only who: not the address twice.
+  const whereLine: Seg[] = [{ t: borderText === urlOnly && actor ? `signed in as ${actor}` : where, dim: true }];
   const countsLine: Seg[] = [
     { t: `${live} active`, color: live > 0 ? color.ok : undefined },
     { t: ` · ${disabled} disabled · ${revoked} revoked`, dim: true },
@@ -294,7 +295,7 @@ export function StatusPanel({
               <Text color={color.ok}> ✔ every key is capped and current</Text>
             ) : (
               <Text dimColor wrap="truncate-end">
-                {keys.length > 0 ? ' No active keys. n creates one.' : upstreamCount === 0 ? ' No upstream yet: kman upstream add' : ' No keys yet. n creates one.'}
+                {keys.length > 0 ? ' No active keys. n creates one.' : upstreamCount === 0 ? ' No upstream yet: kman upstream add' : ' Nothing to review yet.'}
               </Text>
             )
           ) : (

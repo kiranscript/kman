@@ -305,7 +305,7 @@ export function UpstreamMain({
             'custom'
           )}
         </Field>
-        <Field label={u.credentials.length === 1 ? 'credential' : 'credentials'}>
+        <Field label="credentials">
           {u.credentials.length ? (
             u.credentials.map((c) => `${c.name} ····${c.last4 ?? ''}`).join('   ')
           ) : (

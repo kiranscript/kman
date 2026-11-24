@@ -55,18 +55,16 @@ export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, o
       <TextField value={typed} cursor={field.cursor} focused width={panelWidth - 6} />
       <Box marginTop={1} flexDirection="column">
         {tried ? (
-          <Text color={color.danger}>✖ That is not the {keyData.name ? 'name' : 'id'}. Type it exactly, or Esc to cancel.</Text>
+          <Text color={color.danger}>✖ That is not the {keyData.name ? 'name' : 'id'}. Type it exactly.</Text>
         ) : error ? (
           <>
             <Wrapped text={error} marker="✖ " width={panelWidth - 4} maxLines={errorLines} tone={color.danger} />
-            <Text dimColor>
-              {busy ? 'Revoking…' : matches ? 'Enter to try again · Esc to cancel' : `Type the ${keyData.name ? 'name' : 'id'} exactly · Esc to cancel`}
-            </Text>
+            <Text dimColor>{busy ? 'Revoking…' : matches ? 'Enter tries again.' : `Type the ${keyData.name ? 'name' : 'id'} exactly.`}</Text>
           </>
         ) : busy ? (
           <Text dimColor>Revoking…</Text>
         ) : (
-          <Text dimColor>{matches ? 'Press Enter to revoke · Esc to cancel' : 'Esc to cancel'}</Text>
+          <Text dimColor>{matches ? 'The name matches: Enter revokes.' : ' '}</Text>
         )}
       </Box>
     </Panel>

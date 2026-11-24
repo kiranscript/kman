@@ -140,9 +140,6 @@ export function CreateKeyDialog({ upstreams, defaultDays, busy, error, errorLine
         <Box flexDirection="column">
           <Text>A key belongs to an upstream, and there is none yet.</Text>
           <Text dimColor>Add one first: kman upstream add openai --preset openai</Text>
-          <Box marginTop={1}>
-            <Text dimColor>Esc to close</Text>
-          </Box>
         </Box>
       </Panel>
     );

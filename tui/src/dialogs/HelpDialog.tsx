@@ -13,7 +13,7 @@ const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
       ['Tab  ⇧Tab', 'next panel, previous panel'],
       ['↑ ↓  j k  PgUp PgDn', 'move in the focused panel'],
       ['g  G  Home  End', 'first, last'],
-      ['Enter', 'on Keys, Upstreams, Audit: focus the detail panel'],
+      ['Enter', 'on a list whose detail has more than it shows: focus it'],
       ['J  K', 'scroll the detail panel without leaving the list'],
       ['n  r', 'new key; refresh now'],
       ['q  Ctrl+C', 'quit (this help: Esc or ? closes)'],
@@ -44,13 +44,23 @@ const DETAIL = {
   ] as [string, string][],
 };
 
+// What still works while the detail has the keyboard: not the list's own keys.
+const DETAIL_GLOBAL = {
+  title: 'GLOBAL',
+  rows: [
+    ['1-4  h l  ← →  Tab', 'go to another panel (the list gets the keyboard)'],
+    ['r', 'refresh now'],
+    ['q  Ctrl+C', 'quit (this help: Esc or ? closes)'],
+  ] as [string, string][],
+};
+
 /** `focus` is the focused panel: its keys come first, as in lazygit's menu. */
 export function HelpDialog({ onClose, focus, detail }: { onClose: () => void; focus?: Tab; detail?: boolean }) {
   // The focused panel's keys first, then what works everywhere: other panels' keys
   // are on their own screens, which this dialog has no room for.
   // With the detail panel focused only its own keys work, so those come first.
   const mine = detail ? DETAIL : groups.find((g) => g.panel === focus);
-  const ordered = [...(mine ? [mine] : []), groups[0]!];
+  const ordered = detail ? [DETAIL, DETAIL_GLOBAL] : [...(mine ? [mine] : []), groups[0]!];
   useInput((_i, key) => {
     if (key.escape || key.return || _i === '?') onClose();
   });

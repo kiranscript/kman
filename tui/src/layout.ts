@@ -49,8 +49,7 @@ export function layout(columns: number, rows: number, focus: Tab, want: number |
 
   if (wide) {
     // First every panel gets what shows its first rows (up to FLOOR), so a problem is never
-    // hidden; then the focused one gets what it can use, then Keys and the rest. What nothing
-    // wants stays empty below the panels, unless a panel has no limit: then it takes it.
+    // hidden; then the focused one gets what it can use, then Keys and the rest.
     let spare = rows - COLLAPSED * PANELS.length;
     const give = (t: Tab, upTo: number) => {
       const n = Math.max(0, Math.min(spare, upTo - heights[t]));
@@ -60,7 +59,9 @@ export function layout(columns: number, rows: number, focus: Tab, want: number |
     const order = [focus, ...(['keys', 'status', 'upstreams', 'audit'] as Tab[]).filter((t) => t !== focus)];
     for (const t of order) give(t, Math.min(FLOOR, need(t)));
     for (const t of order) give(t, need(t));
-    if (!Number.isFinite(need(focus))) heights[focus] += spare;
+    // What nothing wants goes to the last panel (the log), so both columns end on the same row;
+    // a focused panel with no limit takes it instead.
+    heights[Number.isFinite(need(focus)) ? 'audit' : focus] += spare;
     return { wide, strips, leftW, mainW: columns - leftW, mainH: rows, heights };
   }
 

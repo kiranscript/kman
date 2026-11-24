@@ -101,9 +101,6 @@ export function ClientsDialog({ client, keyData, width, height, now, onClose }: 
         {state.kind === 'ok' && state.got.clients.length > 0 ? <Text dimColor>By address, from the events kman keeps</Text> : null}
         {body}
       </Box>
-      <Box marginTop={1}>
-        <Text dimColor>{maxScroll > 0 ? '↑↓ scroll · Esc close' : 'Esc close'}</Text>
-      </Box>
     </Panel>
   );
 }

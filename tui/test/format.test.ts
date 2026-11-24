@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ago, bar, capMoney, fit, money, padEnd, fitMiddle, wrapLines, packLines, shortCount, parseDays, parseDollars, until } from '../src/format.js';
+import { ago, bar, capMoney, fit, money, padEnd, fitMiddle, wrapLines, packLines, shortCount, parseDays, parseDollars, until, textWidth, tailCells } from '../src/format.js';
 
 describe('money', () => {
   it('shows more decimals for small amounts', () => {
@@ -117,5 +117,33 @@ describe('wrapLines', () => {
 
   it('splits a word longer than the width', () => {
     expect(wrapLines('abcdefghij', 4, 5)).toEqual(['abcd', 'efgh', 'ij']);
+  });
+});
+
+describe('terminal cells', () => {
+  const coder = '👩\u200d💻';
+
+  it('counts a joined emoji, a CJK character and a plain letter by the cells they take', () => {
+    expect(textWidth(coder)).toBe(2);
+    expect(textWidth('東京')).toBe(4);
+    expect(textWidth('ab')).toBe(2);
+  });
+
+  it('cuts at whole characters, never inside a joined emoji', () => {
+    const name = `${coder.repeat(18)}-team`;
+    for (const width of [6, 9, 12, 20]) {
+      for (const cut of [fit(name, width), fitMiddle(name, width), tailCells(name, width)]) {
+        expect(cut).not.toContain('\uFFFD');
+        expect(textWidth(cut)).toBeLessThanOrEqual(width);
+        // Every joiner is followed by its partner: no half of a pair is left.
+        expect(cut).not.toMatch(/\u200d(?!\p{Extended_Pictographic})/u);
+        expect(cut).not.toMatch(/\u200d$/);
+      }
+    }
+  });
+
+  it('pads and cuts CJK text to the cells', () => {
+    expect(textWidth(padEnd('東京', 7))).toBe(7);
+    expect(textWidth(fit('東京の請求', 7))).toBeLessThanOrEqual(7);
   });
 });

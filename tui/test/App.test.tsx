@@ -44,7 +44,8 @@ describe('App', () => {
     const m = mount();
     await loaded(m);
     const s = m.screen();
-    expect(s).toContain('owner @ 127.0.0.1:8081');
+    expect(s).toContain('127.0.0.1:8081');
+    expect(s).toContain('owner');
     expect(s).toContain('2 active');
     expect(s).toContain('NEEDS ATTENTION');
     expect(s).toContain('ci-evals');
@@ -1428,7 +1429,7 @@ describe('App', () => {
       await m.press('checkout');
       await m.press(ENTER);
       await until(() => m.screen().includes('something is in the way'), 'the error');
-      expect(m.screen()).toContain('Enter to try again · Esc to cancel');
+      expect(m.screen()).toContain('Enter tries again.');
       expect(lines(m).length).toBeLessThanOrEqual(24);
       m.unmount();
     });
@@ -1448,10 +1449,10 @@ describe('App', () => {
       await m.press('x');
       await m.press('checkout');
       await m.press(ENTER);
-      await until(() => m.screen().includes('Enter to try again'), 'the retry hint');
+      await until(() => m.screen().includes('Enter tries again'), 'the retry hint');
       await m.press('\u007f'); // backspace: the name no longer matches
       expect(m.screen()).toContain('Type the name exactly');
-      expect(m.screen()).not.toContain('Enter to try again');
+      expect(m.screen()).not.toContain('Enter tries again');
       await m.press(ENTER);
       expect(m.screen()).toContain('That is not the name');
       m.unmount();
@@ -2143,7 +2144,7 @@ describe('review round 2', () => {
     await loaded(wide);
     // At 100 columns the border has room for the address, and the summary has the rest.
     expect(lines(wide)[0]).toContain('127.0.0.1:8081');
-    expect(wide.screen()).toContain('owner @ 127.0.0.1:8081');
+    expect(wide.screen()).toContain('signed in as owner');
     wide.unmount();
     const small = mount(fakeClient(), { columns: 80, rows: 24 });
     await loaded(small);
@@ -2421,6 +2422,66 @@ describe('review round 4', () => {
     expect(lines(m)[at + 1]).toMatch(/checkout/);
     await m.press(ESCAPE);
     m.unmount();
+  });
+});
+
+describe('review round 5', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+  const ESCAPE = '\u001b';
+
+  it('keeps the revoke field on one row for a long wide-character name', async () => {
+    const client = fakeClient();
+    const name = '東京'.repeat(18);
+    client.keys[0]!.name = name;
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('x');
+    await m.press(name);
+    const field = lines(m).filter((l) => l.includes('['));
+    expect(field.length).toBeGreaterThan(0);
+    for (const l of field) expect(l).toMatch(/\[.*\]/);
+    expect(lines(m).length).toBeLessThanOrEqual(24);
+    m.unmount();
+  });
+
+  it('lists only what works while the detail has the keyboard, in help', async () => {
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('3');
+    await m.press(ENTER);
+    await m.press('?');
+    expect(m.screen()).not.toMatch(/\bn {2}r\b/);
+    expect(m.screen()).not.toContain('new key');
+    expect(m.screen()).toContain('give the keyboard back');
+    await m.press(ESCAPE);
+    m.unmount();
+  });
+
+  it('says only once, in the footer, that y confirms and n cancels', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('d');
+    const hints = lines(m).filter((l) => /\by yes\b/.test(l));
+    expect(hints).toHaveLength(1);
+    expect(hints[0]).toBe(lines(m).at(-1));
+    m.unmount();
+  });
+
+  it('ends the panels and the detail on the same row at 100x30 and 140x40', async () => {
+    for (const size of [{ columns: 100, rows: 30 }, { columns: 140, rows: 40 }]) {
+      const m = mount(fakeClient(), size);
+      await loaded(m);
+      const bottoms = lines(m).filter((l) => /[╯┛]/.test(l));
+      // The last panel and the detail close on the last row of the body.
+      const lastBody = lines(m).findLastIndex((l) => /[╯┛]/.test(l));
+      expect(lines(m)[lastBody]).toMatch(/[╯┛].*[╯┛]/);
+      expect(bottoms.length).toBeGreaterThan(0);
+      m.unmount();
+    }
   });
 });
 

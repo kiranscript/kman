@@ -44,9 +44,9 @@ describe('layout', () => {
     expect(layout(200, 40, 'keys').leftW).toBe(56);
   });
 
-  it('gives each wide panel what it can use, two lines at least, and leaves the rest empty', () => {
+  it('gives each wide panel what it can use, two lines at least, and the rest to the log so both columns end together', () => {
     const l = layout(140, 40, 'upstreams', { status: 5, keys: 3, upstreams: 1, audit: 1 });
-    expect([l.heights.status, l.heights.keys, l.heights.upstreams, l.heights.audit]).toEqual([7, 5, 3, 3]);
+    expect([l.heights.status, l.heights.keys, l.heights.upstreams, l.heights.audit]).toEqual([7, 5, 3, 3 + (40 - 7 - 5 - 3 - 3)]);
     // A focused list with more than the screen holds keeps the rest; the others keep their first rows.
     const busy = layout(140, 40, 'keys', { status: 5, keys: 100, upstreams: 1, audit: 100 });
     expect(busy.heights.status).toBe(5);

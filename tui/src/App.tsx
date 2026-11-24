@@ -520,11 +520,6 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
                 : 'It works again from its next request.'}
             </Text>
           </Box>
-          <Box marginTop={1}>
-            <Hint k="y">yes</Hint>
-            <Text>{'   '}</Text>
-            <Hint k="n">cancel</Hint>
-          </Box>
         </Panel>
       </Centered>
     );
@@ -671,9 +666,9 @@ function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canC
       { k: 'Esc', label: 'cancel', always: true },
     ];
   }
-  if (mode === 'revoke') return [{ k: 'Enter', label: 'revoke', always: true }, { k: 'Esc', label: 'cancel', always: true }];
+  if (mode === 'revoke') return [{ k: 'Enter', label: 'revoke once the name is typed', always: true }, { k: 'Esc', label: 'cancel', always: true }];
   if (mode === 'secret') return [{ k: 'c', label: 'copy' }, { k: 'Enter', label: 'done', always: true }];
-  if (mode === 'clients') return [{ k: 'Esc', label: 'close' }];
+  if (mode === 'clients') return [{ k: '↑↓', label: 'scroll', rank: 0 }, { k: 'Esc', label: 'close', always: true }];
   if (mode !== 'none') return [{ k: 'Esc', label: 'close' }];
   if (detail) {
     return [
