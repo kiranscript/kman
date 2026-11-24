@@ -94,18 +94,24 @@ func (c *client) do(ctx context.Context, method, path string, query url.Values, 
 		return fmt.Errorf("read the response from %s: %w", c.shown, err)
 	}
 	if resp.StatusCode >= 300 {
-		var e struct {
-			Error admin.Error `json:"error"`
-		}
-		if json.Unmarshal(raw, &e) == nil && e.Error.Message != "" {
-			return &e.Error
-		}
-		return fmt.Errorf("%s answered %s: is it a kman admin listener?", c.shown, resp.Status)
+		return c.responseError(resp.Status, raw)
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("%s answered what is not the admin API's JSON: %w", c.shown, err)
 	}
 	return nil
+}
+
+// responseError is the error an answer with a failing status carries: the
+// server's own, when it explained.
+func (c *client) responseError(status string, raw []byte) error {
+	var e struct {
+		Error admin.Error `json:"error"`
+	}
+	if json.Unmarshal(raw, &e) == nil && e.Error.Message != "" {
+		return &e.Error
+	}
+	return fmt.Errorf("%s answered %s: is it a kman admin listener?", c.shown, status)
 }
 
 func unwrapURLError(err error) error {

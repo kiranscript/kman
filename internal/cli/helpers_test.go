@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http/httptest"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
 	"github.com/kirank55/kman/internal/cli"
+	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
@@ -33,6 +35,7 @@ type install struct {
 	configDir string
 	dataDir   string
 	svc       *admin.Service
+	store     *store.Store
 	logs      *bytes.Buffer
 	serve     func(*testing.T, []registry.Preset)
 	// spend is what the meter says a key has spent, for a service made after it is set. Nil
@@ -43,6 +46,11 @@ type install struct {
 	// update is what the update check has learned, for a service made after it is set.
 	// Nil is a check that is off.
 	update func() admin.UpdateStatus
+	// events is the bus the live event stream subscribes to, for a service made after
+	// it is set. Nil is a process that serves no requests.
+	events *events.Bus
+	// now is the CLI's clock, for what takes a time from it. Nil is none.
+	now func() time.Time
 }
 
 // withUpdate restarts the API over an update check that says what update gives.
@@ -141,6 +149,7 @@ func newInstallWith(t *testing.T, presets []registry.Preset, opts ...func(*admin
 			o.Spend = in.spend
 			o.Alerts = in.alerts
 			o.Update = in.update
+			o.Events = in.events
 		}
 		return admin.New(o)
 	}
@@ -150,7 +159,7 @@ func newInstallWith(t *testing.T, presets []registry.Preset, opts ...func(*admin
 	if err != nil {
 		t.Fatal(err)
 	}
-	in = &install{owner: owner.Secret, configDir: t.TempDir(), dataDir: dataDir, svc: svc, logs: &bytes.Buffer{}}
+	in = &install{owner: owner.Secret, configDir: t.TempDir(), dataDir: dataDir, svc: svc, store: st, logs: &bytes.Buffer{}}
 	in.serve = func(t *testing.T, presets []registry.Preset) {
 		in.svc = newService(presets)
 		ts := httptest.NewServer(adminapi.Handler(in.svc, slog.New(slog.NewTextHandler(in.logs, nil))))
@@ -182,12 +191,17 @@ type result struct {
 func (in *install) run(t *testing.T, env map[string]string, stdin string, args ...string) result {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := cli.Run(context.Background(), args, cli.Env{
-		Stdout: &stdout, Stderr: &stderr, Stdin: strings.NewReader(stdin),
+	code := cli.Run(context.Background(), args, in.env(env, stdin, &stdout, &stderr))
+	return result{stdout.String(), stderr.String(), code}
+}
+
+func (in *install) env(env map[string]string, stdin string, stdout, stderr io.Writer) cli.Env {
+	return cli.Env{
+		Stdout: stdout, Stderr: stderr, Stdin: strings.NewReader(stdin),
 		Getenv:    func(k string) string { return env[k] },
 		ConfigDir: in.configDir,
-	})
-	return result{stdout.String(), stderr.String(), code}
+		Now:       in.now,
+	}
 }
 
 // status runs the status summary, with local as this binary's own price data.

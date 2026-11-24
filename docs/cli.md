@@ -21,6 +21,7 @@ Every command that talks to a running kman takes `--config-dir`, the directory h
 | [`kman admin-token`](#kman-admin-token) | create, list, rotate or revoke admin tokens |
 | [`kman settings`](#kman-settings) | get or set the install's settings |
 | [`kman audit`](#kman-audit) | list the audit log, or export it |
+| [`kman events`](#kman-events) | list recent requests through kman, or follow them live: which key, from where, what operation, the status and any refusal |
 | [`kman price`](#kman-price) | list the price table, and set, remove or import price overrides |
 | [`kman upstream`](#kman-upstream) | add, list, show, update, remove or sync upstreams |
 | [`kman credential`](#kman-credential) | add, update or remove credentials |
@@ -283,6 +284,32 @@ Writes every audit entry as JSON Lines, oldest first.
     	the config directory holding the credentials file (default "$HOME/.config/kman")
   -json
     	print the admin API's JSON response
+```
+
+## `kman events`
+
+List recent requests through kman, or follow them live: which key, from where, what operation, the status and any refusal.
+
+```
+usage: kman events [--key <name or key id>] [--refused] [--code <refusal code>] [--since <duration>] [--limit n] [--follow] [--json]
+
+Lists the requests kman saw, the newest first: when, which key, from where, what operation and model, the status, and the refusal code of a request kman refused. A request that presented no key kman could identify is listed too, as (no key), so probing shows. It never shows a request's content, a header, a query string or a secret. A client address is shown only with the expose_client_addresses setting on; country and AS always are. With --follow it prints the last few events, oldest first, and then each new one as it happens, until interrupted. Events are stored in batches every 5 seconds, so the list can trail the live feed; --json prints one event per line with --follow.
+  -code string
+    	only events with this refusal code, such as invalid_key
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -follow
+    	keep printing new events until interrupted
+  -json
+    	print the admin API's JSON response
+  -key string
+    	only this key's events, by name or key id
+  -limit int
+    	how many events to list, from 1 to 1000; with --follow, how many to start from (default 20)
+  -refused
+    	only requests kman refused
+  -since string
+    	only events from this long ago, such as 30m, 24h or 7d
 ```
 
 ## `kman price`
