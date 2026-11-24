@@ -621,6 +621,18 @@ usage: kman key show <name or key id> [--json]
     	print the admin API's JSON response
 ```
 
+### `kman key places`
+
+```
+usage: kman key places <name or key id> [--kind country|asn|network] [--json]
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+  -kind string
+    	only places of this kind: country, asn or network
+```
+
 ### `kman key clients`
 
 ```
@@ -720,7 +732,7 @@ Delete events, hourly usage and delivered alerts older than a date, and the audi
 ```
 usage: kman prune --before <date> [--audit-log] [--json]
 
-Deletes the events, the hourly usage and the alerts delivered before the date. Daily spend and incidents are kept forever. With --audit-log it also deletes the audit log's entries before the date, the one thing that ever deletes from the log; the prune itself is recorded in the log, and that record stays. Retention does the same for events, hourly usage and alerts by itself (see retention in kman.yaml); this is for a date you choose.
+Deletes the events, the hourly usage and the alerts delivered before the date. Daily spend, key places and incidents are kept forever. With --audit-log it also deletes the audit log's entries before the date, the one thing that ever deletes from the log; the prune itself is recorded in the log, and that record stays. Retention does the same for events, hourly usage and alerts by itself (see retention in kman.yaml); this is for a date you choose.
   -audit-log
     	also delete the audit log's entries before the date
   -before string

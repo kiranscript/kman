@@ -38,7 +38,7 @@ func (k sqliteSink) AddEvents(ctx context.Context, batch []Event) error {
 			ip = e.ClientIP.String()
 		}
 		rows[i] = store.EventRow{
-			Time: e.Time, Kind: string(e.Kind), KeyID: e.KeyID, ClientIP: ip, Country: e.Country, ASN: e.ASN,
+			Time: e.Time, Kind: string(e.Kind), KeyID: e.KeyID, ClientIP: ip, Country: e.Country, ASN: e.ASN, ASOrg: e.ASOrg,
 			UpstreamID: e.UpstreamID, Model: e.Model, Operation: e.Operation(),
 			Status: e.Status, BlockedCode: e.BlockedCode, LatencyMS: e.Latency.Milliseconds(),
 			ReqBytes: e.ReqBytes, RespBytes: e.RespBytes,

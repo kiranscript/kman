@@ -16,16 +16,15 @@ type Geo interface {
 // runs before the body is read, so an address that may not use the key is
 // refused without kman taking what it sends. With a GeoIP database it also
 // places every request, whether the key is locked or not, for the request's
-// event (#46).
+// event (#46). A request refused before this stage is placed when its event is
+// emitted, if it proved a key (see place).
 //
 // A country lock that kman has no way to check is refused, never allowed: with
 // no database, or with one that holds no country for the address. The first is
 // logged, since the operator has something to fix.
 func (g *Gateway) address(x *exchange) *refusal {
 	c := x.route.Key.Compiled
-	if g.opts.Geo != nil {
-		x.geo = g.opts.Geo.Lookup(x.ip)
-	}
+	g.place(x)
 	if !c.AddressLocked() {
 		return nil
 	}
@@ -36,4 +35,14 @@ func (g *Gateway) address(x *exchange) *refusal {
 		return &refusal{code: codeAddressNotAllowed}
 	}
 	return nil
+}
+
+// place looks up where the request came from, once. A request with no key it
+// proved is not placed: its event belongs to no key, and a flood of made-up keys
+// must stay cheap.
+func (g *Gateway) place(x *exchange) {
+	if x.placed || g.opts.Geo == nil || x.keyID == "" {
+		return
+	}
+	x.geo, x.placed = g.opts.Geo.Lookup(x.ip), true
 }

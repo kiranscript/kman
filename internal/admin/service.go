@@ -47,6 +47,7 @@ type API interface {
 	CreateKey(ctx context.Context, req CreateKeyRequest) (CreatedKey, error)
 	ListKeys(ctx context.Context, req KeyQuery) (KeyList, error)
 	GetKey(ctx context.Context, req KeyRef) (Key, error)
+	Places(ctx context.Context, req PlaceQuery) (KeyPlaces, error)
 	UpdateKey(ctx context.Context, req KeyUpdate) (Key, error)
 	DisableKey(ctx context.Context, req KeyRef) (Key, error)
 	EnableKey(ctx context.Context, req KeyRef) (Key, error)

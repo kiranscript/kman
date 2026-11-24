@@ -14,7 +14,10 @@ var m1Tables = []string{
 	"usage_hourly", "virtual_keys",
 }
 
-func TestMigration0001CreatesStrictTables(t *testing.T) {
+// m2Tables are the tables migration 0002 adds so far (#83).
+var m2Tables = []string{"baseline_places"}
+
+func TestEveryMigrationCreatesStrictTables(t *testing.T) {
 	s := openTest(t, t.TempDir())
 	rows, err := s.db.QueryContext(context.Background(),
 		`SELECT name, strict FROM pragma_table_list WHERE schema = 'main' AND type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
@@ -37,15 +40,16 @@ func TestMigration0001CreatesStrictTables(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(got, m1Tables) {
-		t.Errorf("tables = %v\nwant     %v", got, m1Tables)
+	want := slices.Sorted(slices.Values(slices.Concat(m1Tables, m2Tables)))
+	if !slices.Equal(got, want) {
+		t.Errorf("tables = %v\nwant     %v", got, want)
 	}
 }
 
 func TestOpenRecordsTheSchemaVersion(t *testing.T) {
 	s := openTest(t, t.TempDir())
-	if got := userVersion(t, s); got != 1 || SchemaVersion != 1 || len(migrations) != SchemaVersion {
-		t.Errorf("user_version = %d, SchemaVersion = %d, %d migrations; want 1 each", got, SchemaVersion, len(migrations))
+	if got := userVersion(t, s); got != 2 || SchemaVersion != 2 || len(migrations) != SchemaVersion {
+		t.Errorf("user_version = %d, SchemaVersion = %d, %d migrations; want 2 each", got, SchemaVersion, len(migrations))
 	}
 }
 

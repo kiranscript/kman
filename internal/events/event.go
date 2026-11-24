@@ -30,6 +30,9 @@ type Event struct {
 	ClientIP netip.Addr // the zero Addr for a Unix socket
 	Country  string     // ISO 3166-1 alpha-2, empty until a GeoIP database is configured
 	ASN      int64      // 0 when unknown
+	// ASOrg is the organisation the ASN belongs to, when the database names one.
+	// It labels the key's place and is not kept with the event.
+	ASOrg string
 	// UpstreamID and Model say where the request went and what it asked for.
 	UpstreamID, Model string
 	// Method and Path are the operation: the request's method and path, with no

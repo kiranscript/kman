@@ -19,8 +19,10 @@ import (
 type Info struct {
 	// Country is an ISO 3166-1 alpha-2 code in capitals, such as "US".
 	Country string
-	// ASN is the autonomous system number, such as 15169.
-	ASN uint32
+	// ASN is the autonomous system number, such as 15169, and ASOrg the
+	// organisation it belongs to, such as "Google LLC".
+	ASN   uint32
+	ASOrg string
 }
 
 // record is the part of a database record kman reads, in the shape MaxMind and
@@ -29,7 +31,8 @@ type record struct {
 	Country struct {
 		ISOCode string `maxminddb:"iso_code"`
 	} `maxminddb:"country"`
-	ASN uint32 `maxminddb:"autonomous_system_number"`
+	ASN   uint32 `maxminddb:"autonomous_system_number"`
+	ASOrg string `maxminddb:"autonomous_system_organization"`
 }
 
 // DB answers lookups from up to two databases, one for countries and one for
@@ -90,14 +93,14 @@ func (d *DB) Lookup(a netip.Addr) Info {
 		if err := d.country.Lookup(a).Decode(&rec); err == nil {
 			info.Country = strings.ToUpper(rec.Country.ISOCode)
 			if d.asn == d.country {
-				info.ASN = rec.ASN
+				info.ASN, info.ASOrg = rec.ASN, rec.ASOrg
 			}
 		}
 	}
 	if d.asn != nil && d.asn != d.country {
 		var rec record
 		if err := d.asn.Lookup(a).Decode(&rec); err == nil {
-			info.ASN = rec.ASN
+			info.ASN, info.ASOrg = rec.ASN, rec.ASOrg
 		}
 	}
 	return info

@@ -38,6 +38,7 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `GET /admin/v1/keys/{id}/clients` | List the client addresses a virtual key was used from, grouped, from the events kept; refused unless the expose_client_addresses setting is on |
 | `POST /admin/v1/keys/{id}/disable` | Stop a virtual key from the next request until it is enabled again |
 | `POST /admin/v1/keys/{id}/enable` | Let a disabled virtual key work again; a revoked key cannot be enabled |
+| `GET /admin/v1/keys/{id}/places` | List where a virtual key has been used from: each country, AS and network, with when it was first and last seen and how many requests were forwarded and refused |
 | `POST /admin/v1/keys/{id}/revoke` | End a virtual key for good, from the next request; it cannot be undone |
 | `POST /admin/v1/keys/{id}/rotate` | Replace a virtual key's secret and keep the key; the new secret is returned only this once |
 | `GET /admin/v1/openapi.json` | This document. It needs no admin token. |
@@ -262,6 +263,17 @@ Let a disabled virtual key work again; a revoked key cannot be enabled. Operatio
 | `id` | path | string | yes | The key id. |
 
 Response 200: [Key](#key).
+
+### `GET /admin/v1/keys/{id}/places`
+
+List where a virtual key has been used from: each country, AS and network, with when it was first and last seen and how many requests were forwarded and refused. Operation id `listKeyPlaces`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | The key id. |
+| `kind` | query | string | no | Only places of this kind: country, asn or network. |
+
+Response 200: [KeyPlaces](#keyplaces).
 
 ### `POST /admin/v1/keys/{id}/revoke`
 
@@ -705,6 +717,14 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `keys` | list of [Key](#key) | yes |  |
 
+### `KeyPlaces`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `key_id` | string | yes |  |
+| `networks_withheld` | boolean | no | Network places were left out because expose_client_addresses is off. |
+| `places` | list of [Place](#place) | yes | Most recently seen first. |
+
 ### `KeySpend`
 
 | Field | Type | Required | Description |
@@ -728,6 +748,19 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `name` | string | no | Defaults to the upstream's name. |
 | `secret` | string | yes | The real secret. kman seals it and never shows it again. For basic auth without a username, the whole user:password. |
+
+### `Place`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `first_seen` | string | yes |  |
+| `kind` | string | yes | country, asn or network. |
+| `label` | string | no | A name for the value, when kman has one: an AS's organisation, from the ASN database. |
+| `last_seen` | string | yes |  |
+| `other` | boolean | no | This row counts every place of its kind past the first 1,000 the key was seen from. |
+| `refused` | integer | yes | Requests kman refused from here. |
+| `requests` | integer | yes | Requests kman forwarded from here, and realtime sessions. |
+| `value` | string | yes | An ISO 3166-1 alpha-2 country code, an AS number, or an IPv4 /24 or IPv6 /64 network. Empty for the other row. |
 
 ### `PriceBand`
 
@@ -871,7 +904,7 @@ Response 200: [Whoami](#whoami).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `default_key_ttl_seconds` | integer | yes | How long a new virtual key stays valid unless told otherwise. At most the maximum key lifetime. Default 90 days. |
-| `expose_client_addresses` | boolean | yes | Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited. |
+| `expose_client_addresses` | boolean | yes | Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients), and the networks a key was used from (GET /keys/{id}/places). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited. |
 | `max_key_lifetime_seconds` | integer | yes | The longest any virtual key may stay valid. No key is created or extended past it. Default 365 days. |
 | `soft_budget_defaults` | list of integer | yes | The percentages of each spend cap or soft budget that raise a warning when crossed, rising, for keys whose policy sets none (soft_budget_percents). Each warns once per day or month. Default 50, 80, 100; an empty list warns for no key that sets none. A change takes effect at the next check, within a minute. |
 | `spend_timezone` | string | yes | The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC. A change takes effect when kman restarts. |

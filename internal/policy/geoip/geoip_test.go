@@ -19,7 +19,7 @@ func TestLookupReadsCountryAndASNFromSeparateDatabases(t *testing.T) {
 		geoiptest.Range{Network: "203.0.113.0/24", Country: "us"},
 		geoiptest.Range{Network: "2001:db8::/32", Country: "DE"})
 	asn := geoiptest.Write(t, dir, "asn.mmdb", "DBIP-ASN-Lite",
-		geoiptest.Range{Network: "203.0.113.0/24", ASN: 64500})
+		geoiptest.Range{Network: "203.0.113.0/24", ASN: 64500, ASOrg: "Example Net"})
 	db, err := geoip.Open(country, asn)
 	if err != nil {
 		t.Fatal(err)
@@ -30,9 +30,9 @@ func TestLookupReadsCountryAndASNFromSeparateDatabases(t *testing.T) {
 		ip   string
 		want geoip.Info
 	}{
-		{"203.0.113.9", geoip.Info{Country: "US", ASN: 64500}}, // the code is upper-cased
-		{"2001:db8::1", geoip.Info{Country: "DE"}},             // an address the ASN database doesn't hold
-		{"::ffff:203.0.113.9", geoip.Info{Country: "US", ASN: 64500}},
+		{"203.0.113.9", geoip.Info{Country: "US", ASN: 64500, ASOrg: "Example Net"}}, // the code is upper-cased
+		{"2001:db8::1", geoip.Info{Country: "DE"}},                                   // an address the ASN database doesn't hold
+		{"::ffff:203.0.113.9", geoip.Info{Country: "US", ASN: 64500, ASOrg: "Example Net"}},
 		{"198.51.100.1", geoip.Info{}}, // in neither
 		{"", geoip.Info{}},             // no address, as on a Unix socket
 	} {
@@ -54,7 +54,7 @@ func TestOneDatabaseMayHoldBoth(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if got, want := db.Lookup(addr("203.0.113.1")), (geoip.Info{Country: "FR", ASN: 64501}); got != want {
+	if got, want := db.Lookup(addr("203.0.113.1")), (geoip.Info{Country: "FR", ASN: 64501, ASOrg: "Test Network"}); got != want {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
 }
@@ -69,7 +69,7 @@ func TestAnASNOnlyDatabaseHasNoCountries(t *testing.T) {
 	if db.HasCountries() {
 		t.Error("HasCountries is true with no country database")
 	}
-	if got := db.Lookup(addr("203.0.113.1")); got != (geoip.Info{ASN: 64500}) {
+	if got := db.Lookup(addr("203.0.113.1")); got != (geoip.Info{ASN: 64500, ASOrg: "Test Network"}) {
 		t.Errorf("got %+v", got)
 	}
 }

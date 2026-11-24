@@ -20,6 +20,9 @@ type Range struct {
 	Network string // CIDR, such as "203.0.113.0/24"
 	Country string // ISO 3166-1 alpha-2 code
 	ASN     uint32
+	// ASOrg names the ASN's organisation. With an ASN and no ASOrg, the record
+	// says "Test Network".
+	ASOrg string
 }
 
 // Write writes a database holding ranges to dir and returns its path. kind is
@@ -45,7 +48,11 @@ func Write(tb testing.TB, dir, name, kind string, ranges ...Range) string {
 		}
 		if r.ASN != 0 {
 			rec["autonomous_system_number"] = mmdbtype.Uint32(r.ASN)
-			rec["autonomous_system_organization"] = mmdbtype.String("Test Network")
+			org := r.ASOrg
+			if org == "" {
+				org = "Test Network"
+			}
+			rec["autonomous_system_organization"] = mmdbtype.String(org)
 		}
 		if err := w.Insert(network, rec); err != nil {
 			tb.Fatal(err)

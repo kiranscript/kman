@@ -87,7 +87,7 @@ func TestPruneReportsWhatItDeletedAndRecordsIt(t *testing.T) {
 		t.Errorf("the date 2026-11-01 became %v, want midnight UTC", res.Before)
 	}
 	out := in.kman(t, "prune", "--before", "2026-11-01T00:00:00Z")
-	for _, want := range []string{"events", "hourly usage", "alerts", "audit log is untouched", "Daily spend and incidents are kept"} {
+	for _, want := range []string{"events", "hourly usage", "alerts", "audit log is untouched", "Daily spend, key places and incidents are kept"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("prune printed %q, which lacks %q", out, want)
 		}

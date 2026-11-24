@@ -194,3 +194,43 @@ func TestEventsCarryNoCountryOrASNWithNoDatabase(t *testing.T) {
 		t.Errorf("event = %+v, want no country or ASN", e)
 	}
 }
+
+// A key refused before the address stage, such as a disabled key or a canary,
+// is still placed for its event: where a key that should not be used turns up is
+// what an operator most needs to know (#84). A request with no key kman can
+// identify is not looked up, so a flood of made-up keys stays cheap.
+func TestARefusedKeyIsPlacedAndAMadeUpOneIsNot(t *testing.T) {
+	geo := &places{known: map[string]geoip.Info{"203.0.113.7": {Country: "US", ASN: 64500, ASOrg: "Example Net"}}}
+	w := watch(t, events.Options{})
+	s, _, secret := guarded(t, `{}`, []string{"* /**"}, withGeo(geo), trustLoopback, func(o *gateway.Options) { o.Events = w.bus })
+	spec := specOfRoute(t, s)
+	disabled, disabledSecret := newKey(t)
+	disabled.Status = "disabled"
+	canary, canarySecret := newKey(t)
+	canary.CredentialID = ""
+	s.publish(spec, disabled, canary)
+
+	for _, sec := range []string{disabledSecret, canarySecret} {
+		resp, body := s.send("GET", "/v1/x", "", forwardedFor(sec, "203.0.113.7"))
+		if resp.StatusCode < 400 {
+			t.Fatalf("= %d %s, want a refusal", resp.StatusCode, body)
+		}
+		if e := w.next(t); e.KeyID == "" || e.Country != "US" || e.ASN != 64500 || e.ASOrg != "Example Net" {
+			t.Errorf("refused key's event = %+v, want it placed in US, AS64500, Example Net", e)
+		}
+	}
+
+	geo.mu.Lock()
+	geo.asked = nil
+	geo.mu.Unlock()
+	resp, body := s.send("GET", "/v1/x", "", forwardedFor(secret[:len(secret)-4]+"AAAA", "203.0.113.7"))
+	wantRefusal(t, resp, body, http.StatusUnauthorized, "invalid_key")
+	if e := w.next(t); e.KeyID != "" || e.Country != "" {
+		t.Errorf("made-up key's event = %+v, want no key and no place", e)
+	}
+	geo.mu.Lock()
+	defer geo.mu.Unlock()
+	if len(geo.asked) != 0 {
+		t.Errorf("a made-up key was looked up: %v", geo.asked)
+	}
+}

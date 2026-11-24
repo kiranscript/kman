@@ -21,12 +21,12 @@ type migrationEnv struct {
 
 // SchemaVersion is the schema this kman migrates every database to: the
 // number of migrations.
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 // migrations are applied in order: migrations[i] takes user_version from i to
 // i+1. Once a release is tagged, its migrations never change; the schema
 // moves on only by appending a migration.
-var migrations = []migration{migrate0001}
+var migrations = []migration{migrate0001, migrate0002}
 
 // migrate applies every migration in ms that the database has not had yet.
 // It runs forward only: a database from a newer kman is refused.

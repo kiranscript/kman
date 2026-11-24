@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kirank55/kman/internal/admin"
 )
@@ -289,6 +290,59 @@ func TestKeyLifecycleCommandsNeedOneKeyAndKnowIt(t *testing.T) {
 		if r := in.run(t, nil, "", "key", action, "nobody"); r.code != 1 || !strings.Contains(r.stderr, "nobody") {
 			t.Errorf("key %s nobody: exit %d, %s", action, r.code, r.stderr)
 		}
+	}
+}
+
+func TestKeyPlacesSaysWhereAKeyWasUsedFromByNameOrKeyId(t *testing.T) {
+	in := withOpenAI(t)
+	var created admin.CreatedKey
+	in.kmanJSON(t, &created, "key", "create", "my-app", "--upstream", "openai")
+	id := created.Key.ID
+	seed := `INSERT INTO baseline_places (key_id, kind, value, label, first_seen, last_seen, count, blocked) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	in.sqlExec(t, seed, id, "asn", "3320", "Deutsche Telekom\x1b[31m AG", t0.UnixMilli(), t0.Add(time.Hour).UnixMilli(), 41, 0)
+	in.sqlExec(t, seed, id, "network", "198.51.100.0/24", nil, t0.Add(2*time.Hour).UnixMilli(), t0.Add(2*time.Hour).UnixMilli(), 0, 3)
+	in.sqlExec(t, seed, id, "network", "", nil, t0.UnixMilli(), t0.UnixMilli(), 5, 0)
+
+	// A network is a client's /24 or /64, so it stays out until client addresses are on.
+	out := in.kman(t, "key", "places", "my-app")
+	if strings.Contains(out, "198.51.100.0/24") || strings.Contains(out, "other") || !strings.Contains(out, "AS3320") || !strings.Contains(out, "expose_client_addresses") {
+		t.Errorf("key places with client addresses off:\n%s", out)
+	}
+	if r := in.run(t, nil, "", "key", "places", "my-app", "--kind", "network"); r.code != 1 || !strings.Contains(r.stderr, "kman settings set expose_client_addresses true") {
+		t.Errorf("--kind network with them off: exit %d, %s", r.code, r.stderr)
+	}
+	in.kman(t, "settings", "set", "expose_client_addresses", "on")
+
+	for _, ref := range []string{"my-app", id} {
+		out := in.kman(t, "key", "places", ref)
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		if len(lines) != 4 || !strings.HasPrefix(lines[0], "KIND") {
+			t.Fatalf("key places %s:\n%s", ref, out)
+		}
+		if !strings.Contains(lines[1], "198.51.100.0/24") || !strings.Contains(lines[1], "2026-11-04T14:00Z") || !strings.HasSuffix(strings.Join(strings.Fields(lines[1]), " "), " 0 3") {
+			t.Errorf("the most recent place, refused 3 times:\n%s", out)
+		}
+		if !strings.Contains(lines[2], "AS3320") || !strings.Contains(lines[2], "Deutsche Telekom [31m AG") || strings.Contains(out, "\x1b") {
+			t.Errorf("the ASN with its label, cleaned:\n%s", out)
+		}
+		if !strings.Contains(lines[3], "other") {
+			t.Errorf("the other row:\n%s", out)
+		}
+	}
+
+	var got admin.KeyPlaces
+	in.kmanJSON(t, &got, "key", "places", "my-app", "--kind", "network")
+	if got.KeyID != id || len(got.Places) != 2 {
+		t.Errorf("--kind network --json = %+v", got)
+	}
+	if r := in.run(t, nil, "", "key", "places", "my-app", "--kind", "city"); r.code != 1 || !strings.Contains(r.stderr, "country, asn or network") {
+		t.Errorf("--kind city: exit %d, %s", r.code, r.stderr)
+	}
+
+	var none admin.CreatedKey
+	in.kmanJSON(t, &none, "key", "create", "--upstream", "openai")
+	if out := in.kman(t, "key", "places", none.Key.ID); !strings.Contains(out, "has not been used") {
+		t.Errorf("an unused key:\n%s", out)
 	}
 }
 

@@ -6,3 +6,7 @@
 /e2e/testdata/sdk/python/.venv/
 __pycache__/
 *.pyc
+
+# SQLite sidecars: a fixture is just the .db file
+internal/store/fixtures/*.db-shm
+internal/store/fixtures/*.db-wal

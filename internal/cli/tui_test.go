@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -311,6 +312,49 @@ func TestDashboardNeedsTerminals(t *testing.T) {
 	}
 }
 
+func TestDashboardKeyDetailShowsWhereTheKeyIsUsedFrom(t *testing.T) {
+	m := demoModel(t, 120, 60)
+	i := slices.IndexFunc(m.keys, func(k admin.Key) bool { return k.ID == "k_0a44f9" })
+	m.cursor = i
+	m = press(t, m, "enter")
+	view := m.View()
+	for _, want := range []string{"WHERE IT IS USED FROM", "185.220.101.0/24", "AS60729 Stiftung Erneuerbare Freiheit", "0 forwarded, 57 refused"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("the key's detail lacks %q:\n%s", want, view)
+		}
+	}
+
+	m = press(t, m, "esc")
+	m.cursor = slices.IndexFunc(m.keys, func(k admin.Key) bool { return k.ID == "k_c81e55" })
+	if m = press(t, m, "enter"); !strings.Contains(m.View(), "Not used yet.") {
+		t.Errorf("a key with no places:\n%s", m.View())
+	}
+}
+
+func TestDashboardDropsTheAnswerForAKeyNoLongerOpen(t *testing.T) {
+	m := dashboard{width: 100, height: 40, keys: []admin.Key{{ID: "key-1"}, {ID: "key-2"}}, detail: true, openID: "key-2", placesFor: "key-2"}
+	next, _ := m.Update(dashboardPlaces{keyID: "key-1", places: []admin.Place{{Kind: "country", Value: "FR"}}})
+	if m = next.(dashboard); m.places != nil {
+		t.Fatalf("places of another key were kept: %+v", m.places)
+	}
+	m.cursor = 1
+	if !strings.Contains(m.View(), "Loading...") {
+		t.Errorf("places still on their way:\n%s", m.View())
+	}
+}
+
+func TestDashboardListsTenPlacesAndPointsAtTheRest(t *testing.T) {
+	var many []admin.Place
+	for i := range 13 {
+		many = append(many, admin.Place{Kind: "network", Value: fmt.Sprintf("10.0.%d.0/24", i)})
+	}
+	m := dashboard{width: 100, height: 60, keys: []admin.Key{{ID: "key-1", Name: "app"}}, detail: true, openID: "key-1", placesFor: "key-1", places: many}
+	view := m.View()
+	if !strings.Contains(view, "10.0.9.0/24") || strings.Contains(view, "10.0.10.0/24") || !strings.Contains(view, "...and 3 more: kman key places app") {
+		t.Errorf("view:\n%s", view)
+	}
+}
+
 func TestDashboardKeyDetailListsItsClientsByAddress(t *testing.T) {
 	m := press(t, demoModel(t, 100, 40), "enter")
 	if !m.detail || m.keys[m.cursor].ID != "k_9f2a1c" {
@@ -356,5 +400,17 @@ func TestDashboardClientsSectionSaysWhyThereAreNone(t *testing.T) {
 		if strings.Contains(out, "\x1b") {
 			t.Errorf("%s: a terminal control got through: %q", c.name, out)
 		}
+	}
+}
+
+func TestDashboardSaysNetworksAreNotShownInsteadOfNotUsedYet(t *testing.T) {
+	m := dashboard{width: 100, height: 40, keys: []admin.Key{{ID: "key-1", Name: "app"}}, detail: true, openID: "key-1", placesFor: "key-1", places: []admin.Place{}, placesHidden: true}
+	view := m.View()
+	if strings.Contains(view, "Not used yet.") || !strings.Contains(view, "Networks are not shown") {
+		t.Errorf("a key whose only places are withheld networks:\n%s", view)
+	}
+	m.places = []admin.Place{{Kind: "country", Value: "FR"}}
+	if view := m.View(); !strings.Contains(view, "FR") || !strings.Contains(view, "Networks are not shown") {
+		t.Errorf("places shown with networks withheld:\n%s", view)
 	}
 }

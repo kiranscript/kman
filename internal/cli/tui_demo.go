@@ -14,6 +14,8 @@ type demoData struct {
 	exposure  admin.Exposure
 	audit     []admin.AuditEntry
 	upstreams []admin.Upstream
+	places    map[string][]admin.Place // by key id
+
 	// clients is each key's client addresses, as if expose_client_addresses were on.
 	clients map[string]admin.KeyClients
 }
@@ -52,6 +54,9 @@ func newDemoData(now time.Time) *demoData {
 			client("10.0.4.18", 205, 0, 3*time.Hour, "", 0),
 			client("203.0.113.44", 15, 15, 26*time.Hour, "DE", 3320),
 		}},
+		"k_0a44f9": {KeyID: "k_0a44f9", Total: 1, Clients: []admin.KeyClient{
+			client("185.220.101.9", 0, 57, 40*time.Minute, "DE", 60729),
+		}},
 		"k_3b7d40": {KeyID: "k_3b7d40", Total: 2, Clients: []admin.KeyClient{
 			client("198.51.100.23", 8800, 0, time.Minute, "US", 16509),
 			client("2001:db8:85a3::8a2e:370:7334", 510, 2, 5*time.Hour, "NL", 1136),
@@ -82,6 +87,25 @@ func newDemoData(now time.Time) *demoData {
 	up := func(id, name, preset, profile, host string, paths ...string) admin.Upstream {
 		return admin.Upstream{ID: id, Name: name, Preset: preset, Profile: profile, Host: host, Port: 443, TLS: true,
 			Paths: paths, PriceMultiplierPPM: 1_000_000, CreatedAt: now.Add(-30 * day), UpdatedAt: now.Add(-30 * day)}
+	}
+	place := func(kind, value, label string, first, last time.Duration, fwd, refused int64) admin.Place {
+		return admin.Place{Kind: kind, Value: value, Label: label, FirstSeen: now.Add(-first), LastSeen: now.Add(-last), Requests: fwd, Refused: refused}
+	}
+	d.places = map[string][]admin.Place{
+		"k_9f2a1c": {
+			place("network", "10.0.4.0/24", "", 29*day, 2*time.Minute, 2125, 0),
+			place("network", "203.0.113.0/24", "", 29*day, 26*time.Hour, 0, 15),
+			place("asn", "3320", "Deutsche Telekom AG", 29*day, 26*time.Hour, 0, 15),
+			place("country", "DE", "", 29*day, 26*time.Hour, 0, 15),
+		},
+		"k_0a44f9": {
+			place("network", "185.220.101.0/24", "", 2*day, 40*time.Minute, 0, 57),
+			place("asn", "60729", "Stiftung Erneuerbare Freiheit", 2*day, 40*time.Minute, 0, 57),
+			place("country", "DE", "", 2*day, 40*time.Minute, 0, 57),
+			place("network", "10.20.4.0/24", "", 25*day, 9*day, 420, 0),
+			place("asn", "16509", "Amazon.com, Inc.", 25*day, 9*day, 420, 0),
+			place("country", "US", "", 25*day, 9*day, 420, 0),
+		},
 	}
 	d.upstreams = []admin.Upstream{
 		up("u_anthropic", "anthropic", "anthropic", "anthropic", "api.anthropic.com", "POST /v1/messages", "POST /v1/messages/count_tokens"),

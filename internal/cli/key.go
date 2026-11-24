@@ -13,7 +13,7 @@ import (
 )
 
 func cmdKey(ctx context.Context, c *call) error {
-	sub, err := c.sub("<create|list|show|clients|update|disable|enable|revoke|rotate> ...", "create", "list", "show", "clients", "update", "disable", "enable", "revoke", "rotate")
+	sub, err := c.sub("<create|list|show|places|clients|update|disable|enable|revoke|rotate> ...", "create", "list", "show", "places", "clients", "update", "disable", "enable", "revoke", "rotate")
 	if err != nil {
 		return err
 	}
@@ -24,6 +24,8 @@ func cmdKey(ctx context.Context, c *call) error {
 		return keyList(ctx, c)
 	case "show":
 		return keyShow(ctx, c)
+	case "places":
+		return keyPlaces(ctx, c)
 	case "clients":
 		return keyClients(ctx, c)
 	case "disable", "enable", "revoke":
@@ -238,6 +240,67 @@ func keyShow(ctx context.Context, c *call) error {
 	}
 	printKey(c, k)
 	return nil
+}
+
+// keyPlaces is where a key has been used from: each country, AS and network,
+// most recently seen first, with what kman forwarded from it and what it
+// refused.
+func keyPlaces(ctx context.Context, c *call) error {
+	fs := c.flags("key places <name or key id> [--kind country|asn|network] [--json]", true)
+	kind := fs.String("kind", "", "only places of this kind: country, asn or network")
+	pos, err := c.parse(fs, 1, 1)
+	if err != nil {
+		return err
+	}
+	cl, l, err := c.connect()
+	if err != nil {
+		return err
+	}
+	k, err := resolveKey(ctx, cl, pos[0])
+	if err != nil {
+		return c.explain(err, l)
+	}
+	got, err := cl.Places(ctx, admin.PlaceQuery{ID: k.ID, Kind: *kind})
+	if err != nil {
+		return c.explain(err, l)
+	}
+	if c.json {
+		return c.printJSON(got)
+	}
+	const withheld = "Networks are not shown: a network is a client's /24 or /64, which identifies a person or an office. kman settings set expose_client_addresses true shows them."
+	if len(got.Places) == 0 {
+		if got.NetworksWithheld {
+			fmt.Fprintln(c.env.Stdout, withheld)
+		} else {
+			fmt.Fprintf(c.env.Stdout, "Key %s has not been used yet.\n", keyLabel(k))
+		}
+		return nil
+	}
+	w := tabwriter.NewWriter(c.env.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "KIND\tVALUE\tLABEL\tFIRST SEEN\tLAST SEEN\tFORWARDED\tREFUSED")
+	for _, p := range got.Places {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%d\n", p.Kind, placeValue(p), orDash(cleanDashboard(p.Label)),
+			when(&p.FirstSeen), when(&p.LastSeen), p.Requests, p.Refused)
+	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	if got.NetworksWithheld {
+		fmt.Fprintln(c.env.Stdout, "\n"+withheld)
+	}
+	return nil
+}
+
+// placeValue is how a place reads: an AS as AS3320, and the row that counts
+// the places past the limit as other.
+func placeValue(p admin.Place) string {
+	switch {
+	case p.Other:
+		return "other"
+	case p.Kind == "asn":
+		return "AS" + p.Value
+	}
+	return cleanDashboard(p.Value)
 }
 
 // keyClients is key clients: the addresses a key was used from, grouped, from the
