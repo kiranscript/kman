@@ -16,7 +16,7 @@ import { Hint, Panel } from './ui/parts.js';
 import { editText } from './ui/TextField.js';
 import { color } from './ui/theme.js';
 import { AUDIT_LIMIT, useAdmin } from './useAdmin.js';
-import { AuditMain, KeyMain, StatusMain, UpstreamMain } from './views/detail.js';
+import { AuditMain, KeyMain, StartMain, StatusMain, UpstreamMain } from './views/detail.js';
 import type { Scroll } from './views/detail.js';
 import { attentionItems, AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
 
@@ -444,7 +444,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
             <Box flexDirection="column">
               <Text>{link.error}</Text>
               <Text dimColor>Is it running? Start it with: kman serve</Text>
-              <Text dimColor>Retrying every few seconds. r retries now, q quits.</Text>
+              <Text dimColor>Retrying every few seconds.</Text>
             </Box>
           </Panel>
         ) : (
@@ -534,6 +534,8 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
           <UpstreamMain upstream={undefined} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} none={NO_UPSTREAM} />
         ) : attnUp ? (
           <UpstreamMain key={attnUp.id} upstream={attnUp} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} />
+        ) : data.keys.length === 0 ? (
+          <StartMain width={lay.mainW} height={lay.mainH} scroll={scroll} canCreate={data.upstreams.length > 0} />
         ) : (
           <StatusMain width={lay.mainW} height={lay.mainH} audit={data.audit} names={names} now={now} scroll={scroll} />
         )
@@ -668,7 +670,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canC
   }
   if (mode === 'revoke') return [{ k: 'Enter', label: 'revoke once the name is typed', always: true }, { k: 'Esc', label: 'cancel', always: true }];
   if (mode === 'secret') return [{ k: 'c', label: 'copy' }, { k: 'Enter', label: 'done', always: true }];
-  if (mode === 'clients') return [{ k: '↑↓', label: 'scroll', rank: 0 }, { k: 'Esc', label: 'close', always: true }];
+  if (mode === 'clients') return [{ k: 'Esc', label: 'close', always: true }];
   if (mode !== 'none') return [{ k: 'Esc', label: 'close' }];
   if (detail) {
     return [

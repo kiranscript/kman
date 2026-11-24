@@ -2485,6 +2485,65 @@ describe('review round 5', () => {
   });
 });
 
+describe('review round 6', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+  const ESCAPE = '\u001b';
+
+  it('says what a key is where an empty install has nothing to show', async () => {
+    const client = fakeClient();
+    client.keys = [];
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(m.screen()).toContain('Getting started');
+    expect(m.screen()).toContain('Press n to create the first one.');
+    expect(m.screen()).not.toContain('Recent activity');
+    m.unmount();
+  });
+
+  it('keeps the filter prompt on the last row of the panel, with or without matches', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('/');
+    await m.press('ci-');
+    const withMatch = lines(m).findIndex((l) => l.includes('/ ci-'));
+    await m.press('zzz');
+    const none = lines(m).findIndex((l) => l.includes('/ ci-zzz'));
+    expect(none).toBe(withMatch);
+    m.unmount();
+  });
+
+  it('says the first thing to look at in a tall Status that is not focused', async () => {
+    const m = mount(fakeClient(), { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    expect(m.screen()).toMatch(/▲ ci-evals · near cap/);
+    m.unmount();
+  });
+
+  it('separates an upstream\'s warnings from its count', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('3');
+    expect(lines(m).find((l) => /^[│┃] ollama/.test(l))).toMatch(/http {2,}0 active/);
+    m.unmount();
+  });
+
+  it('wraps a help line under its meaning, not under the key', async () => {
+    const m = mount(fakeClient(), { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('4');
+    await m.press('?');
+    const at = lines(m).findIndex((l) => l.includes('focus the detail'));
+    expect(at).toBeGreaterThan(0);
+    expect(lines(m)[at]).toMatch(/Enter +focus the detail/);
+    await m.press(ESCAPE);
+    m.unmount();
+  });
+});
+
 describe('NO_COLOR', () => {
   it('removes every colour from the theme and leaves the rest of the styling to the app', async () => {
     const { vi } = await import('vitest');

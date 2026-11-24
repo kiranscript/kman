@@ -1,7 +1,7 @@
 // The panels down the left side: Status, Keys, Upstreams and Audit. Each is a
 // Frame with a list in it. The focused one is tall and shows its selected line as a
 // blue bar; the others shrink until only their selected line shows.
-import { Text } from 'ink';
+import { Box, Text } from 'ink';
 import type { AuditEntry, Key, PriceDataStatus, Upstream } from '../api.js';
 import { clock, fitMiddle, money, padEnd, since, tailCells, textWidth } from '../format.js';
 import { keyLabel } from '../keys.js';
@@ -261,7 +261,16 @@ export function StatusPanel({
   const needed = items.length === 0 ? 1 : header + items.length;
   const listArea = focused ? Math.min(needed, Math.max(header + 1, rows >= 8 ? rows - 3 : rows - 2)) : 0;
   const summaryRows = focused ? rows - listArea : rows;
-  const lines = summaryRows >= 5 ? fullLines : tierFor(summaryRows);
+  const base = summaryRows >= 5 ? fullLines : tierFor(summaryRows);
+  // A tall summary with a row to spare says what the list would: the first thing to look at.
+  const first = items[0];
+  const attentionLine: Seg[] = first
+    ? [
+        { t: severityGlyph[first.top], color: severityColor[first.top], dim: first.top === 'info' },
+        { t: ` ${first.name} · ${topRisk(first.risks)!.short}` + (items.length > 1 ? ` · +${items.length - 1} more` : ''), dim: first.top === 'info' },
+      ]
+    : [{ t: 'Nothing to review', dim: true }];
+  const lines = !focused && summaryRows > base.length && summaryRows >= 5 ? [...base, attentionLine] : base;
   const listRows = listArea - header;
   const sel = Math.min(selected, Math.max(0, items.length - 1));
   const start = windowStart(sel, items.length, Math.max(1, listRows));
@@ -386,11 +395,12 @@ export function KeysPanel({
     // The names get what they need (up to 20 cells) before a column does; as room runs
     // out the spend goes, then the warning's words (its mark stays), always in columns.
     const longest = Math.max(0, ...rowsInfo.map((p) => textWidth(p.label)));
-    const room = inner - 4 - Math.min(longest, 20);
+    // A row is: a space, the name, a space, the columns and a space.
+    const room = inner - 3 - Math.min(longest, 20);
     const base = cols.s + (cols.r ? 1 + cols.r : 0);
     if (base + (cols.c ? 1 + cols.c : 0) <= room) cols.mode = 'all';
-    else if (base <= inner - 4 - Math.min(longest, 12)) cols.mode = 'noSpend';
-    else if (cols.s + (cols.r ? 2 : 0) <= inner - 4 - Math.min(longest, 12)) cols.mode = 'marks';
+    else if (base <= inner - 3 - Math.min(longest, 12)) cols.mode = 'noSpend';
+    else if (cols.s + (cols.r ? 2 : 0) <= inner - 3 - Math.min(longest, 12)) cols.mode = 'marks';
   }
   return (
     <Shell
@@ -429,7 +439,7 @@ export function KeysPanel({
         return (
           <Row
             key={k.id}
-            left={[...lead, { t: fitMiddle(p.label, Math.max(6, inner - 2 - segLen(right) - 2)), dim: k.status === 'revoked' }]}
+            left={[...lead, { t: fitMiddle(p.label, Math.max(6, inner - 3 - segLen(right))), dim: k.status === 'revoked' }]}
             right={[...right, { t: ' ' }]}
             width={inner}
             selected={k.id === selectedId}
@@ -437,6 +447,8 @@ export function KeysPanel({
           />
         );
       })}
+      {/* The prompt is on the last row of the panel, whether or not anything matched. */}
+      {showFilter ? <Box flexGrow={1} /> : null}
       {showFilter ? (
         <Text wrap="truncate-end">
           <Text color={color.accent}> / </Text>
@@ -496,7 +508,7 @@ export function UpstreamsPanel({
                 ...upstreamRisks(u).map((r) => [
                   { t: `${severityGlyph[r.severity]} ${r.short === 'plain http' ? 'http' : r.short}`, color: severityColor[r.severity], dim: r.severity === 'info' },
                 ]),
-                [{ t: `${live(u)} active`, dim: true }],
+                [{ t: ` ${live(u)} active`, dim: true }],
               ],
               Math.max(0, inner - 2 - Math.min(textWidth(u.name), 14) - 1),
             ),

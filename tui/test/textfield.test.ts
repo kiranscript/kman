@@ -33,3 +33,23 @@ describe('editField', () => {
     expect(editField({ value: 'ab', cursor: 1 }, '', key({ return: true }))).toEqual({ value: 'ab', cursor: 1 });
   });
 });
+
+describe('editing beside a joined emoji', () => {
+  const coder = '👩\u200d💻';
+
+  it('moves, types and deletes by whole characters, never inside the emoji', () => {
+    let state = editField({ value: '', cursor: 0 }, `${coder}A`, key());
+    expect(state.cursor).toBe(2);
+    state = editField(state, '', key({ leftArrow: true }));
+    state = editField(state, '', key({ leftArrow: true }));
+    expect(state.cursor).toBe(0);
+    state = editField(state, '', key({ rightArrow: true }));
+    state = editField(state, 'Z', key());
+    expect(state.value).toBe(`${coder}ZA`);
+    expect(state.cursor).toBe(2);
+    state = editField(state, '', key({ backspace: true }));
+    expect(state.value).toBe(`${coder}A`);
+    state = editField({ value: coder, cursor: 1 }, '', key({ backspace: true }));
+    expect(state.value).toBe('');
+  });
+});

@@ -13,7 +13,7 @@ const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
       ['Tab  ⇧Tab', 'next panel, previous panel'],
       ['↑ ↓  j k  PgUp PgDn', 'move in the focused panel'],
       ['g  G  Home  End', 'first, last'],
-      ['Enter', 'on a list whose detail has more than it shows: focus it'],
+      ['Enter', 'focus the detail, when it has more than it shows'],
       ['J  K', 'scroll the detail panel without leaving the list'],
       ['n  r', 'new key; refresh now'],
       ['q  Ctrl+C', 'quit (this help: Esc or ? closes)'],
@@ -30,8 +30,6 @@ const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
       ['x', 'revoke the key (type its name to confirm)'],
     ],
   },
-  { title: 'UPSTREAMS', panel: 'upstreams', rows: [['Enter', 'read the whole upstream; they are added with kman upstream add']] },
-  { title: 'AUDIT', panel: 'audit', rows: [['Enter', 'read the whole entry; the log is read-only']] },
 ];
 
 const DETAIL = {
@@ -70,12 +68,17 @@ export function HelpDialog({ onClose, focus, detail }: { onClose: () => void; fo
         <Box key={g.title} flexDirection="column" marginTop={i === 0 ? 0 : 1}>
           <SectionTitle>{g === mine && !detail ? `${g.title} (this panel)` : g.title}</SectionTitle>
           {g.rows.map(([k, what]) => (
-            <Text key={k + what}>
-              <Text bold color={color.key}>
-                {k.padEnd(KEY_W)}
-              </Text>
-              {what}
-            </Text>
+            // The meaning wraps under itself, not under the key.
+            <Box key={k + what}>
+              <Box width={KEY_W} flexShrink={0}>
+                <Text bold color={color.key}>
+                  {k}
+                </Text>
+              </Box>
+              <Box flexGrow={1} flexShrink={1}>
+                <Text wrap="wrap">{what}</Text>
+              </Box>
+            </Box>
           ))}
         </Box>
       ))}

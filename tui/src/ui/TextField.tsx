@@ -9,7 +9,7 @@ import { color } from './theme.js';
  * the caller can use those keys for navigation.
  */
 export function editText(value: string, input: string, key: Key, max = 64): string {
-  if (key.backspace || key.delete) return [...value].slice(0, -1).join('');
+  if (key.backspace || key.delete) return graphemes(value).slice(0, -1).join('');
   if (key.ctrl) return input === 'u' ? '' : value;
   if (key.meta || key.escape || key.return || key.tab || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
     return value;
@@ -17,7 +17,7 @@ export function editText(value: string, input: string, key: Key, max = 64): stri
   // Pasted text arrives as one chunk. Control characters are dropped, never typed in.
   // eslint-disable-next-line no-control-regex
   const clean = input.replace(/[\u0000-\u001f\u007f]/g, '');
-  return clean ? [...(value + clean)].slice(0, max).join('') : value;
+  return clean ? graphemes(value + clean).slice(0, max).join('') : value;
 }
 
 export interface Edit {
@@ -33,7 +33,9 @@ export interface Edit {
  * down, tab, enter and escape are left to the caller.
  */
 export function editField(state: Edit, input: string, key: Key, max = 64, accept: (text: string) => string = (t) => t): Edit {
-  const chars = [...state.value];
+  // Whole characters as a person sees them: a joined emoji is one, so the cursor, delete
+  // and typing never land inside it.
+  const chars = graphemes(state.value);
   const at = Math.min(state.cursor, chars.length);
   const make = (c: string[], cursor: number): Edit => ({ value: c.join(''), cursor });
   if (key.leftArrow) return make(chars, Math.max(0, at - 1));
@@ -47,7 +49,7 @@ export function editField(state: Edit, input: string, key: Key, max = 64, accept
   if (key.meta || key.escape || key.return || key.tab || key.upArrow || key.downArrow) return make(chars, at);
   // Pasted text arrives as one chunk. Control characters are dropped, never typed in.
   // eslint-disable-next-line no-control-regex
-  const typed = [...accept(input.replace(/[\u0000-\u001f\u007f]/g, ''))];
+  const typed = graphemes(accept(input.replace(/[\u0000-\u001f\u007f]/g, '')));
   if (typed.length === 0) return make(chars, at);
   const room = Math.max(0, max - chars.length);
   const added = typed.slice(0, room);

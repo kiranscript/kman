@@ -66,6 +66,27 @@ export function StatusMain({
   );
 }
 
+// ---- An install with nothing in it yet ---------------------------------------
+
+/** The main panel for an install with no keys: what a key is and how to make one. */
+export function StartMain({ width, height, scroll, canCreate }: Size & { scroll: Scroll; canCreate: boolean }) {
+  const { onMax } = scroll;
+  useEffect(() => onMax(0));
+  return (
+    <Frame title="Getting started" width={width} height={height}>
+      <Box flexDirection="column" paddingX={1}>
+        <Text wrap="wrap">No keys yet.</Text>
+        <Text dimColor wrap="wrap">
+          A virtual key is what an app uses in place of your real API key: kman checks it, applies its limits, and forwards the request.
+        </Text>
+        <Box marginTop={1}>
+          <Text wrap="wrap">{canCreate ? 'Press n to create the first one.' : 'Add an upstream first: kman upstream add openai --preset openai'}</Text>
+        </Box>
+      </Box>
+    </Frame>
+  );
+}
+
 // ---- A panel whose content scrolls -----------------------------------------
 
 export interface Scroll {
