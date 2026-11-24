@@ -713,7 +713,7 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `base_url` | string | no | kman's proxy URL, as an app would be told it. When given, the snippet sets the variable's base URL too, so a thief who finds the snippet alone can reach kman with it. |
 | `format` | string | no | The snippet to plant: env (a .env line), mcp (an MCP server config's env block), shell (an export line) or ci (a gh secret set command). Defaults to env. |
-| `ignore` | list of string | no | Addresses and networks (CIDR) whose use does not fire the canary. At most 100, none wider than an IPv4 /8 or an IPv6 /16. |
+| `ignore` | list of string | no | Addresses and networks (CIDR) whose use does not fire the canary. At most 100, none wider than an IPv4 /16 or an IPv6 /32. |
 | `name` | string | no | An optional label: 1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit, unique among keys not revoked. It stays out of the snippet. |
 | `planted` | string | yes | Where it will be planted: 1 to 200 characters, with no control characters. An alert names it. |
 | `tags` | list of string | no | At most 32 labels of a-z, 0-9, '.', '_', ':' and '-'. |
@@ -851,7 +851,7 @@ Response 200: [Whoami](#whoami).
 | `credential` | string | no | The credential's name. Absent once a revoked key's credential is deleted. |
 | `credential_id` | string | no |  |
 | `expired` | boolean | yes | Whether its expiry has passed, whatever its status. |
-| `expires_at` | string | yes | When the key stops working. Every key has one: there is no never. |
+| `expires_at` | string | yes | When the key stops working. Every key has one: there is no never. A canary has none, and shows the zero time. |
 | `id` | string | yes | The key id: the non-secret handle inside the key, and how this API addresses it. |
 | `kind` | string | yes | standard, or canary: a key with no credential that forwards nothing and raises an alert when used. A canary is not in the list of keys; GET /canaries lists them. |
 | `name` | string | no | An optional label, unique among keys not revoked. |

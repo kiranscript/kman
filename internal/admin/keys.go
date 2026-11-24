@@ -41,7 +41,7 @@ type Key struct {
 	Tags          []string        `json:"tags"`
 	Policy        json.RawMessage `json:"policy" doc:"The key's policy, a JSON object: empty until it is edited."`
 	PolicyVersion int             `json:"policy_version" doc:"The version of the policy format the policy is in."`
-	ExpiresAt     time.Time       `json:"expires_at" doc:"When the key stops working. Every key has one: there is no never."`
+	ExpiresAt     time.Time       `json:"expires_at" doc:"When the key stops working. Every key has one: there is no never. A canary has none, and shows the zero time."`
 	CreatedAt     time.Time       `json:"created_at"`
 	Spend         *KeySpend       `json:"spend,omitempty" doc:"What the key has spent today and this month, beside its caps. Shown when the key is read, and not in the audit log."`
 }

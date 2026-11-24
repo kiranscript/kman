@@ -51,6 +51,14 @@ func (s *Service) priorityEvent(held map[string]*throttled, e events.Event) {
 	}
 	t := held[id]
 	inWindow := t != nil && now.Sub(t.at) < s.o.ThrottleWindow
+	if inWindow && !e.Canary {
+		// A disabled key's use inside its window only adds to the count. It must
+		// not wait for the store, which the event writer shares: a client that
+		// hammers a disabled key would fill this subscription and drop a canary's
+		// first use behind it.
+		t.suppressed++
+		return
+	}
 	var queued, ignored bool
 	var suppressed int
 	err := s.o.Store.Do(context.Background(), func(tx *store.Tx) error {

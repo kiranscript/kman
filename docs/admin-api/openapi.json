@@ -561,7 +561,7 @@
             "type": "string"
           },
           "ignore": {
-            "description": "Addresses and networks (CIDR) whose use does not fire the canary. At most 100, none wider than an IPv4 /8 or an IPv6 /16.",
+            "description": "Addresses and networks (CIDR) whose use does not fire the canary. At most 100, none wider than an IPv4 /16 or an IPv6 /32.",
             "items": {
               "type": "string"
             },
@@ -982,7 +982,7 @@
             "type": "boolean"
           },
           "expires_at": {
-            "description": "When the key stops working. Every key has one: there is no never.",
+            "description": "When the key stops working. Every key has one: there is no never. A canary has none, and shows the zero time.",
             "format": "date-time",
             "type": "string"
           },

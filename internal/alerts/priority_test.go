@@ -484,3 +484,36 @@ func TestCanaryAndDisabledKeyAlertsWaitOnNothingUnder256WayLoad(t *testing.T) {
 		}
 	})
 }
+
+// A disabled key's repeat uses inside its window are counted without waiting for
+// the store, which the event writer shares: an operator who disables a leaked key
+// that is still in use must not make the lane drop the next canary's first use.
+func TestRepeatUsesOfADisabledKeyAreCountedAndStillSayHowManyWereHeldBack(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		in := newInstall(t, func(o *alerts.Options) { o.ThrottleWindow = 10 * time.Minute })
+		in.channel("ch_1", "slack", "hooks.test", "low", true, "")
+		in.withKey("abcd1234", "ci-bot")
+		in.withCanary("cafe0001", "decoy", "the wiki")
+		bus, stop := in.priorityLane()
+		defer stop()
+		for range 200 {
+			bus.Emit(disabledUse("abcd1234", "203.0.113.8"))
+		}
+		synctest.Wait()
+		if n := len(in.net.received("hooks.test")); n != 1 {
+			t.Fatalf("%d alerts for 200 uses of a disabled key, want 1", n)
+		}
+		bus.Emit(canaryUse("cafe0001", "203.0.113.7"))
+		synctest.Wait()
+		if n := len(in.net.received("hooks.test")); n != 2 {
+			t.Fatalf("%d alerts after a canary's first use behind the disabled key's, want 2", n)
+		}
+		time.Sleep(11 * time.Minute)
+		bus.Emit(disabledUse("abcd1234", "203.0.113.8"))
+		synctest.Wait()
+		got := in.net.received("hooks.test")
+		if len(got) != 3 || !strings.Contains(got[2].Body, "199 more") {
+			t.Fatalf("got %d alerts, want a third saying 199 more uses were held back:\n%v", len(got), got)
+		}
+	})
+}

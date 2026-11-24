@@ -39,8 +39,8 @@ const (
 	// minIgnoreBits4 and minIgnoreBits6 are the widest network an ignore list
 	// takes: a list that held every address would silence the canary, which is
 	// the one thing it must not do.
-	minIgnoreBits4 = 8
-	minIgnoreBits6 = 16
+	minIgnoreBits4 = 16
+	minIgnoreBits6 = 32
 	maxBaseURL     = 256
 	defaultVar     = "OPENAI_API_KEY"
 )
@@ -86,7 +86,7 @@ type CreateCanaryRequest struct {
 	Var     string   `json:"var,omitempty" doc:"The variable the snippet sets, such as OPENAI_API_KEY (the default). A thief finds a key by the name it is under."`
 	BaseURL string   `json:"base_url,omitempty" doc:"kman's proxy URL, as an app would be told it. When given, the snippet sets the variable's base URL too, so a thief who finds the snippet alone can reach kman with it."`
 	Tags    []string `json:"tags,omitempty" doc:"At most 32 labels of a-z, 0-9, '.', '_', ':' and '-'."`
-	Ignore  []string `json:"ignore,omitempty" doc:"Addresses and networks (CIDR) whose use does not fire the canary. At most 100, none wider than an IPv4 /8 or an IPv6 /16."`
+	Ignore  []string `json:"ignore,omitempty" doc:"Addresses and networks (CIDR) whose use does not fire the canary. At most 100, none wider than an IPv4 /16 or an IPv6 /32."`
 }
 
 // CreatedCanary is a new canary, its secret and the snippet that plants it. The

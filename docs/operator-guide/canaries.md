@@ -71,7 +71,7 @@ A secret scanner that sweeps the repository the canary is planted in will read i
 kman canary update deploy-env --ignore 192.0.2.0/24 --ignore 198.51.100.7
 ```
 
-The list is addresses and networks (CIDR), at most 100, none wider than an IPv4 /8 or an IPv6 /16: a list that held everything would silence the canary. A use from an address on it is still an event, so it is in `kman events`, but it does not fire the canary, count as a use or alert. `--ignore` replaces the list, and `--no-ignore` empties it. **Nothing else silences a canary:** not an address it has been used from before, and not a [known source](../../GLOSSARY.md) of the detection rules, which never apply to one.
+The list is addresses and networks (CIDR), at most 100, none wider than an IPv4 /16 or an IPv6 /32: a list that held everything would silence the canary. A use from an address on it is still an event, so it is in `kman events`, but it does not fire the canary, count as a use or alert. `--ignore` replaces the list, and `--no-ignore` empties it. **Nothing else silences a canary:** not an address it has been used from before, and not a [known source](../../GLOSSARY.md) of the detection rules, which never apply to one.
 
 ## Keys and canaries
 
