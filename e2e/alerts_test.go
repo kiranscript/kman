@@ -28,6 +28,7 @@ type sink struct {
 type sunk struct {
 	header http.Header
 	body   string
+	at     time.Time // when it arrived
 }
 
 func newSink(t *testing.T, status int) *sink {
@@ -36,7 +37,7 @@ func newSink(t *testing.T, status int) *sink {
 	k.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		k.mu.Lock()
-		k.got = append(k.got, sunk{r.Header.Clone(), string(b)})
+		k.got = append(k.got, sunk{r.Header.Clone(), string(b), time.Now()})
 		st := k.status
 		k.mu.Unlock()
 		if st == 0 {

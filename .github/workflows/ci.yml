@@ -8,7 +8,7 @@
 # protection requires the "required" job, which passes only when every other
 # job passed.
 #
-# The canary deadline gate (internal/alerts, TestCanaryDeadlineGate) is its own
+# The canary deadline gate (e2e, TestCanaryDeadlineGate) is its own
 # job below, and also runs with go test. Two gates of SPEC §17 join later, with
 # the code they check: templ generate with no diff (the dashboard, M3), and the
 # secret-leak sweep (after v0.1.0).
@@ -113,8 +113,9 @@ jobs:
 
   canary-deadline:
     # SPEC §17, M2: a canary's alert, and a disabled key's, arrive within 5 s under
-    # 256-way load with another channel hung. A job of its own, so that a slow alert
-    # is named in the checks and not lost among the unit tests.
+    # 256-way load with another channel hung, on the real binary and the real clock.
+    # A job of its own, so that a slow alert is named in the checks and not lost
+    # among the unit tests.
     runs-on: ubuntu-latest
     steps:
       - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -128,7 +129,7 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: "**/go.sum"
       - name: Canary deadline gate
-        run: go test -count=1 -v -run '^TestCanaryDeadlineGate$' ./internal/alerts
+        run: go test -count=1 -v -run '^TestCanaryDeadlineGate$' ./e2e
 
   race:
     runs-on: ubuntu-latest

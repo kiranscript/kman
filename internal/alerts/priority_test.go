@@ -419,3 +419,68 @@ func TestADisabledKeyAlertSaysWhereTheRequestCameFromToo(t *testing.T) {
 		}
 	})
 }
+
+// The canary deadline gate itself is in e2e, on the real binary and the real
+// clock (TestCanaryDeadlineGate). This is its logic on a fake one: with 256
+// clients emitting events through the bus into the store writer, and a channel
+// that never answers, a canary's alert and a disabled key's reach the healthy
+// channel with no time having passed at all, so nothing in the path waits on a
+// timer, a batch or the hung channel.
+func TestCanaryAndDisabledKeyAlertsWaitOnNothingUnder256WayLoad(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		in := newInstall(t)
+		in.channel("ch_hung", "slack", "hung.test", "low", true, "")
+		in.channel("ch_ok", "slack", "ok.test", "low", true, "")
+		in.net.on("hung.test", hang)
+		in.withCanary("cafe0001", "decoy", "the deploy repo's .env")
+		in.withKey("abcd1234", "ci-bot")
+
+		bus := events.New(events.Options{})
+		writer := events.NewWriter(events.WriterOptions{Sink: events.SQLite(in.store)})
+		storeSub := bus.Subscribe("store", events.SubOptions{Buffer: 4 * events.DefaultCapacity})
+		alertSub := bus.Subscribe("alerts", events.SubOptions{PriorityOnly: true, Buffer: events.DefaultPriorityCapacity})
+		ctx, cancel := context.WithCancel(context.Background())
+		var pipeline sync.WaitGroup
+		pipeline.Go(func() { bus.Run(ctx) })
+		pipeline.Go(func() { writer.Run(storeSub) })
+		pipeline.Go(func() { in.svc.RunPriority(alertSub) })
+		stopDelivery := in.run()
+		defer func() { cancel(); pipeline.Wait(); stopDelivery() }()
+
+		start := time.Now()
+		var clients sync.WaitGroup
+		for i := range 256 {
+			clients.Go(func() {
+				ip := netip.AddrFrom4([4]byte{10, 0, byte(i / 250), byte(i%250 + 1)})
+				for range 20 {
+					bus.Emit(events.Event{Time: time.Now(), Kind: events.KindRequest, KeyID: "load0001", ClientIP: ip, Status: 200, Method: "POST", Path: "/v1/chat/completions"})
+				}
+				if i == 100 {
+					bus.Emit(canaryUse("cafe0001", "203.0.113.7"))
+				}
+				if i == 200 {
+					bus.Emit(disabledUse("abcd1234", "203.0.113.8"))
+				}
+			})
+		}
+		clients.Wait()
+		synctest.Wait()
+		if got := time.Since(start); got != 0 {
+			t.Errorf("the alerts took %v of fake time: something in the path waited", got)
+		}
+		var canary, disabled bool
+		for _, r := range in.net.received("ok.test") {
+			canary = canary || (strings.Contains(r.Body, "A canary key was used") && strings.Contains(r.Body, "cafe0001"))
+			disabled = disabled || (strings.Contains(r.Body, "A disabled key was used") && strings.Contains(r.Body, "abcd1234"))
+		}
+		if !canary || !disabled {
+			t.Errorf("the healthy channel got canary=%v, disabled key=%v of %d alerts", canary, disabled, len(in.net.received("ok.test")))
+		}
+		if c := in.outbox("ch_hung"); c.Pending < 2 {
+			t.Errorf("the hung channel's outbox = %+v, want the alerts held for it", c)
+		}
+		if s := bus.Stats(); s.DroppedPriority != 0 {
+			t.Errorf("the priority lane dropped %d events", s.DroppedPriority)
+		}
+	})
+}
