@@ -22,7 +22,8 @@ export function linkBadge(link: Link): { glyph: string; word: string; color?: st
     case 'down':
       // The server answered, so it is there: say what kind of answer, not "offline".
       if (link.answered) {
-        const word = (link.status ?? 500) >= 500 ? 'server error' : link.status === 429 ? 'rate limited' : 'refused';
+        const st = link.status ?? 500;
+        const word = st < 400 ? 'invalid reply' : st >= 500 ? 'server error' : st === 429 ? 'rate limited' : 'refused';
         return { glyph: '✖', word, color: color.danger };
       }
       return { glyph: '◌', word: link.lastOk ? 'offline' : 'cannot connect', color: color.warn };

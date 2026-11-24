@@ -196,17 +196,15 @@ export function CreateKeyDialog({ upstreams, defaultDays, busy, error, errorLine
           <Wrapped text={warning} marker="▲ " width={64} maxLines={2} tone={color.warn} />
         ) : !text.daily && !text.monthly ? (
           <Text color={color.warn}>▲ With no cap, a leaked key can spend without limit.</Text>
-        ) : (
-          <Text> </Text>
-        )}
+        ) : null}
         {problem || error ? (
           <Wrapped text={problem ?? error ?? ''} marker="✖ " width={64} maxLines={Math.max(3, errorLines - extraRows)} tone={color.danger} />
-        ) : (
-          <Text> </Text>
-        )}
-        <Text color={discardArmed ? color.warn : undefined} dimColor={!discardArmed}>
-          {busy ? 'Creating…' : discardArmed ? 'Esc again discards · any other key keeps editing' : ' '}
-        </Text>
+        ) : null}
+        {busy || discardArmed ? (
+          <Text color={discardArmed ? color.warn : undefined} dimColor={!discardArmed}>
+            {busy ? 'Creating…' : 'Esc again discards · any other key keeps editing'}
+          </Text>
+        ) : null}
       </Box>
     </Panel>
   );

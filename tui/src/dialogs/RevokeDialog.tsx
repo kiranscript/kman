@@ -64,7 +64,7 @@ export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, o
         ) : busy ? (
           <Text dimColor>Revoking…</Text>
         ) : (
-          <Text dimColor>{matches ? 'Name matches.' : ' '}</Text>
+          <Text dimColor>{matches ? 'Name matches.' : 'Not matching yet.'}</Text>
         )}
       </Box>
     </Panel>

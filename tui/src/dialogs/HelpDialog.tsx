@@ -88,7 +88,7 @@ export function HelpDialog({ onClose, focus, detail }: { onClose: () => void; fo
       <Box marginTop={1} flexDirection="column">
         <SectionTitle>MARKS</SectionTitle>
         <Text dimColor>● active   ◐ disabled   ✖ revoked or danger   ▲ warning</Text>
-        <Text dimColor>○ note   ◆ new entry   ◌ not connected</Text>
+        <Text dimColor>○ note   ◆ new entry   ◌ not connected   · message</Text>
       </Box>
     </Panel>
   );

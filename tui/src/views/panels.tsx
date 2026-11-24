@@ -209,6 +209,7 @@ export function StatusPanel({
   // One line that carries the connection, the count, the spend, who and where, and the
   // price: the summary when there is room for only one line. What does not fit is dropped
   // from the end.
+  const noKeys = keys.length === 0;
   const topItem = items[0];
   const attentionPart: Seg[] | undefined = topItem
     ? [
@@ -224,8 +225,12 @@ export function StatusPanel({
       ...priceStale,
       // The first thing to look at comes ahead of the counts: it cannot be seen from another panel.
       ...(strip && attentionPart ? [attentionPart] : []),
-      [dot, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
-      [dot, { t: ` ${money(spend('today'))} today`, bold: true }],
+      ...(noKeys
+        ? [[dot, { t: ' no keys yet', dim: true }]]
+        : [
+            [dot, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
+            [dot, { t: ` ${money(spend('today'))} today`, bold: true }],
+          ]),
       ...(inBorder ? [] : [whereSeg]),
       ...priceOk,
     ],
@@ -233,31 +238,46 @@ export function StatusPanel({
   );
   // When the border carries the address the line says only who: not the address twice.
   const whereLine: Seg[] = [{ t: borderText === urlOnly && actor ? `signed in as ${actor}` : where, dim: true }];
-  const countsLine: Seg[] = [
-    { t: `${live} active`, color: live > 0 ? color.ok : undefined },
-    { t: ` · ${disabled} disabled · ${revoked} revoked`, dim: true },
-  ];
+  // Zeros tell nothing: an install with no keys says so once.
+  const countsLine: Seg[] = noKeys
+    ? [{ t: 'no keys yet', dim: true }]
+    : [
+        { t: `${live} active`, color: live > 0 ? color.ok : undefined },
+        { t: ` · ${disabled} disabled · ${revoked} revoked`, dim: true },
+      ];
+  // A fresh price joins the first line; a stale or unknown one keeps a line to itself.
+  const priceJoins = link.state === 'ok' && price !== undefined && !price.stale;
   const fullLines: Seg[][] = [
-    link.state === 'ok' ? [{ t: linkText, dim: true }] : [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }],
+    link.state === 'ok'
+      ? [{ t: linkText, dim: true }, ...(priceJoins ? [{ t: ' ' }, dot, { t: ' ' }, ...priceSeg(true)] : [])]
+      : [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }],
     ...(inBorder ? [] : [whereLine]),
     countsLine,
-    [
-      { t: `${money(spend('today'))} today`, bold: true },
-      { t: ` · ${money(spend('month'))} this month`, dim: true },
-    ],
-    priceSeg(false),
+    ...(noKeys
+      ? []
+      : [
+          [
+            { t: `${money(spend('today'))} today`, bold: true },
+            { t: ` · ${money(spend('month'))} this month`, dim: true },
+          ],
+        ]),
+    ...(priceJoins ? [] : [priceSeg(false)]),
   ];
-  const activePart: Seg[] = [
-    dot,
-    { t: ` ${live} active`, color: live > 0 ? color.ok : undefined },
-    { t: ` · ${disabled} disabled · ${revoked} revoked`, dim: true },
-  ];
+  const activePart: Seg[] = noKeys
+    ? [dot, { t: ' no keys yet', dim: true }]
+    : [
+        dot,
+        { t: ` ${live} active`, color: live > 0 ? color.ok : undefined },
+        { t: ` · ${disabled} disabled · ${revoked} revoked`, dim: true },
+      ];
   /** The connection, a stale price, and the count when `withCount`. */
   const head = (withCount: boolean): Seg[] =>
     fitParts([...(link.state === 'ok' ? [[{ t: linkText, dim: true }]] : badgePart), ...priceStale, ...(withCount ? [activePart] : []), ...priceOk], inner - 1);
   /** The spend, with the price when the line above does not already carry it. */
   const money2 = (above: Seg[]): Seg[] =>
-    fitParts(
+    noKeys
+      ? []
+      : fitParts(
       [
         [{ t: `${money(spend('today'))} today`, bold: true }],
         ...(above.some((x) => x.t.includes('price')) ? [] : price ? [[dot, { t: ' ' }, ...priceSeg(true)]] : []),
@@ -284,7 +304,7 @@ export function StatusPanel({
   const needed = items.length === 0 ? 1 : header + items.length;
   const listArea = focused ? Math.min(needed, Math.max(header + 1, rows >= 6 ? rows - 3 : rows - 2)) : 0;
   const summaryRows = focused ? rows - listArea : rows;
-  const base = summaryRows >= fullLines.length ? fullLines : tierFor(summaryRows);
+  const base = (summaryRows >= fullLines.length ? fullLines : tierFor(summaryRows)).filter((l) => l.length > 0);
   // A tall summary with a row to spare says what the list would: the first thing to look at.
   const first = items[0];
   const attentionLine: Seg[] = first
@@ -353,7 +373,7 @@ export function StatusPanel({
                 ]}
                 right={[
                   { t: topRisk(risks)!.short, color: severityColor[top], dim: top === 'info' },
-                  { t: risks.length > 1 ? ` +${risks.length - 1} more ` : ' ', dim: true },
+                  { t: risks.length > 1 ? ` +${risks.length - 1} ${risks.length === 2 ? 'issue' : 'issues'} ` : ' ', dim: true },
                 ]}
               />
             ))

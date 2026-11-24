@@ -702,7 +702,8 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, offline, work
   }
   const common: HintItem[] = [
     { k: 'r', label: offline ? 'retry' : 'refresh', always: offline, rank: 2 },
-    ...(scrollable ? [{ k: 'J/K', label: 'scroll', rank: 3.5 }] : []),
+    // The detail's border already says how to scroll, so this is the first of these to go.
+    ...(scrollable ? [{ k: 'J/K', label: 'scroll', rank: 2.9 }] : []),
     { k: '1-4', label: 'panels', rank: 3.2 },
     { k: '?', label: 'help', always: true },
     { k: 'q', label: 'quit', always: true },

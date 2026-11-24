@@ -1775,7 +1775,8 @@ describe('review round 1', () => {
       // One line is all the strip has: the price goes before the address, and shows when there is room.
       [SMALL, /owner @ 127\.0\.0\.1:8081/],
       [{ columns: 100, rows: 24 }, /price (3d|data 3 days old)/],
-      [SIZE, /price data 3 days old/],
+      // A fresh price joins the first line, in its short form.
+      [SIZE, /updated .* · price 3d/],
     ] as const) {
       const m = mount(fakeClient(), size);
       await loaded(m);
@@ -2730,6 +2731,59 @@ describe('review round 9', () => {
     await m.press('2');
     expect(m.screen()).not.toMatch(/\(in [23]d\)/);
     expect(m.screen()).toMatch(/expires in \d days/);
+    m.unmount();
+  });
+});
+
+describe('review round 10', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+
+  it('says an unreadable successful reply is an invalid reply', async () => {
+    const client = fakeClient();
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    client.fail = new ApiError('internal', 'the admin API sent a reply that is not JSON', 200);
+    await m.press('r');
+    await until(() => m.screen().includes('invalid reply'), 'the invalid reply flag');
+    m.unmount();
+  });
+
+  it('keeps the panel keys ahead of J/K in the footer when the detail scrolls at 80x24', async () => {
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('3');
+    expect(lines(m).at(-1)).toContain('1-4 panels');
+    m.unmount();
+  });
+
+  it('collapses the zeros of an empty install to one line', async () => {
+    const client = fakeClient();
+    client.keys = [];
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    expect(m.screen()).toContain('no keys yet');
+    expect(m.screen()).not.toContain('0 disabled');
+    expect(m.screen()).not.toContain('$0 today');
+    m.unmount();
+  });
+
+  it('puts the price on the first line of Status at 80x24 when it is fresh', async () => {
+    const m = mount(fakeClient(), { columns: 80, rows: 24 });
+    await loaded(m);
+    expect(lines(m).find((l) => l.includes('updated'))).toMatch(/price 3d/);
+    m.unmount();
+  });
+
+  it('says what a second problem on a row is, and what the more in the Status line are', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(lines(m).find((l) => l.includes('✖ ollama'))).toContain('+1 issue');
+    await m.press('2');
+    expect(m.screen()).toMatch(/· \+1 more/);
     m.unmount();
   });
 });
