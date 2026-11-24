@@ -16,7 +16,7 @@ import (
 // it off this list.
 var unshipped = []string{
 	"dashboard", "demo",
-	"incident", "incidents", "detection", "detections", "known-source", "metrics",
+	"detection", "detections", "metrics",
 }
 
 var namesUnshipped = regexp.MustCompile("`?\\bkman (" + strings.Join(unshipped, "|") + ")\\b")

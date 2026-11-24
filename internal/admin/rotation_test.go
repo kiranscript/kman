@@ -284,7 +284,7 @@ func TestRotationRefusesWhatCannotBeRotated(t *testing.T) {
 		{"a negative grace", admin.RotateKeyRequest{ID: k.ID, GraceSeconds: -1}, nil, admin.CodeInvalid},
 		{"a grace over 30 days", admin.RotateKeyRequest{ID: k.ID, GraceSeconds: 31 * 24 * 3600}, nil, admin.CodeInvalid},
 		{"a revoked key", admin.RotateKeyRequest{ID: k.ID}, func() {
-			if _, err := in.svc.RevokeKey(as("owner"), admin.KeyRef{ID: k.ID}); err != nil {
+			if _, err := in.svc.RevokeKey(as("owner"), admin.ContainKeyRequest{ID: k.ID}); err != nil {
 				t.Fatal(err)
 			}
 		}, admin.CodeConflict},
@@ -303,7 +303,7 @@ func TestRotationRefusesWhatCannotBeRotated(t *testing.T) {
 
 func TestRotatingADisabledKeyLeavesItDisabled(t *testing.T) {
 	in, created := rotatable(t)
-	if _, err := in.svc.DisableKey(as("owner"), admin.KeyRef{ID: created.Key.ID}); err != nil {
+	if _, err := in.svc.DisableKey(as("owner"), admin.ContainKeyRequest{ID: created.Key.ID}); err != nil {
 		t.Fatal(err)
 	}
 	got := in.rotate(t, created.Key.ID, 0)

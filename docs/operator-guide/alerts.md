@@ -35,6 +35,7 @@ kman channel rm ops        # remove it, wipe its address, give up what still wai
 | **The audit log** | by action, below | Every change made through the admin API |
 | **A disabled key in use** | high | A request arrived with the secret of a disabled key |
 | **A canary key in use** | critical | A request arrived with the secret of a [canary key](canaries.md), the first time since it was armed, and then at most once per 10 minutes while it stays fired |
+| **An incident** | its severity | An [incident](incidents.md) opened for a key, or escalated: a higher severity, a new rule, or a firing after it was quiet for an hour. A repeat does not alert. High and critical take the priority lane |
 | **Spend** | medium, high at 100% | A key's spend reaches a threshold of a cap or soft budget, or the month is on course to pass it |
 | **Key expiry** | medium, then high | A key is about to expire, or has |
 | **A refused credential** | high | An upstream answered 401 to the credential kman presented |
@@ -44,10 +45,12 @@ The two key-use rows go beyond the producers SPEC §9 lists for the first releas
 The audit log is a producer, so the change and its alert commit in one transaction: an alert is never lost with a change that went through. The severity of an audit entry follows its action:
 
 - **high:** `admin_token.create|rotate|revoke`, `credential.compromise`, `key.revoke`
-- **medium:** `key.disable`, `key.enable`, `key.rotate`, `canary.reset`, `credential.create|update|delete`, `alert_channel.create|delete`, `backup.create`, `data.prune`
-- **low:** `key.create`, `key.update`, `canary.create`, `canary.update`, `upstream.*`, `settings.set`, `price_override.*`, and any action this kman does not know
+- **medium:** `key.disable`, `key.enable`, `key.rotate`, `canary.reset`, `incident.resolve`, `incident.this_was_me`, `known_source.create`, `credential.create|update|delete`, `alert_channel.create|delete`, `backup.create`, `data.prune`
+- **low:** `key.create`, `key.update`, `canary.create`, `canary.update`, `incident.acknowledge`, `known_source.delete`, `upstream.*`, `settings.set`, `price_override.*`, and any action this kman does not know
 
 With the default `--min-severity medium`, a channel hears about the first two groups. A key that is used again and again alerts once per 10 minutes, and the next alert says how many uses it held back.
+
+An incident's own alert (`kind` `incident`) says whether it opened or escalated, its severity, the key, the rules that fired, what the detection saw (the client address too: it goes only to the channel you added), the incident id, and the commands to respond: `kman incident show N`, `ack N`, `key disable <key> --incident N` and `this-was-me N`. A canary's use alerts as before and names its incident, so one use is one alert.
 
 Retention's own pass (`data.prune`, actor `system:retention`) is alerted on like any other entry. `kman restore` and `kman rekey` run with the server stopped: they are audited, but no alert is queued or sent for them.
 
@@ -120,7 +123,7 @@ A webhook channel gets a signing secret, `kmwhsec_` and 64 hex digits, printed o
 }
 ```
 
-`kind` is `audit`, `disabled_key`, `canary`, `budget`, `budget_projection`, `key_expiry` or `credential_refused`, and `key` is absent in an alert that is not about one key.
+`kind` is `audit`, `disabled_key`, `canary`, `incident`, `budget`, `budget_projection`, `key_expiry` or `credential_refused`, and `key` is absent in an alert that is not about one key.
 
 with these headers:
 

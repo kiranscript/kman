@@ -400,7 +400,7 @@ func TestKeyCommandsThatWouldDisarmACanaryAreRefusedButRevokeRetiresIt(t *testin
 	c := in.createCanary(t, admin.CreateCanaryRequest{Name: "decoy", Planted: "x"}).Canary
 	name := "other"
 	for what, run := range map[string]func() error{
-		"disable": func() error { _, err := in.svc.DisableKey(as("owner"), admin.KeyRef{ID: c.ID}); return err },
+		"disable": func() error { _, err := in.svc.DisableKey(as("owner"), admin.ContainKeyRequest{ID: c.ID}); return err },
 		"enable":  func() error { _, err := in.svc.EnableKey(as("owner"), admin.KeyRef{ID: c.ID}); return err },
 		"rotate":  func() error { _, err := in.svc.RotateKey(as("owner"), admin.RotateKeyRequest{ID: c.ID}); return err },
 		"update": func() error {
@@ -421,7 +421,7 @@ func TestKeyCommandsThatWouldDisarmACanaryAreRefusedButRevokeRetiresIt(t *testin
 		t.Errorf("canary after the refused commands = %+v, %v", got, err)
 	}
 
-	if _, err := in.svc.RevokeKey(as("owner"), admin.KeyRef{ID: c.ID}); err != nil {
+	if _, err := in.svc.RevokeKey(as("owner"), admin.ContainKeyRequest{ID: c.ID}); err != nil {
 		t.Fatal(err)
 	}
 	got, err = in.svc.GetCanary(as("owner"), admin.CanaryRef{ID: c.ID})

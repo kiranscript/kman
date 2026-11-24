@@ -163,13 +163,21 @@ func TestTheOpenAPIDocumentDescribesTheTypes(t *testing.T) {
 		"get /admin/v1/canaries/{id}":                 "getCanary",
 		"patch /admin/v1/canaries/{id}":               "updateCanary",
 		"post /admin/v1/canaries/{id}/reset":          "resetCanary",
+		"get /admin/v1/incidents":                     "listIncidents",
+		"get /admin/v1/incidents/{id}":                "getIncident",
+		"post /admin/v1/incidents/{id}/acknowledge":   "acknowledgeIncident",
+		"post /admin/v1/incidents/{id}/resolve":       "resolveIncident",
+		"post /admin/v1/incidents/{id}/this-was-me":   "thisWasMe",
+		"get /admin/v1/known-sources":                 "listKnownSources",
+		"post /admin/v1/known-sources":                "addKnownSource",
+		"delete /admin/v1/known-sources/{id}":         "removeKnownSource",
 	} {
 		if ops[want] != id {
 			t.Errorf("%s has operationId %q, want %q", want, ops[want], id)
 		}
 	}
-	if len(ops) != 50 {
-		t.Errorf("the document has %d operations, want 50: %v", len(ops), ops)
+	if len(ops) != 58 {
+		t.Errorf("the document has %d operations, want 58: %v", len(ops), ops)
 	}
 	// The live feed is server-sent events, not JSON.
 	if _, ok := doc.Paths["/admin/v1/events/stream"]["get"].Responses["200"].Content["text/event-stream"]; !ok {

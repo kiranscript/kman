@@ -169,6 +169,10 @@ func networkOf(ip string) string {
 	return p.String()
 }
 
+// NetworkOf is the network an address is counted in: its /24 for IPv4, its /64
+// for IPv6, and "" for no address or one that does not parse.
+func NetworkOf(ip string) string { return networkOf(ip) }
+
 func minTime(a, b time.Time) time.Time {
 	if b.Before(a) {
 		return b

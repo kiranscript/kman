@@ -43,6 +43,12 @@ type Env struct {
 	// Now is the time, for the sample data of kman tui --demo. Nil means the
 	// zero time.
 	Now func() time.Time
+	// Interactive says that Stdin and Stdout are a terminal, so a command may
+	// ask a question. False asks none: a script gets a flag for each answer.
+	Interactive bool
+	// FollowEvery is how often kman incidents --follow asks for changes.
+	// Zero is 2 seconds.
+	FollowEvery time.Duration
 }
 
 // command is one online command.
@@ -59,6 +65,9 @@ var commands = []command{
 	{"admin-token", "create, list, rotate or revoke admin tokens", cmdAdminToken},
 	{"settings", "get or set the install's settings", cmdSettings},
 	{"audit", "list the audit log, or export it", cmdAudit},
+	{"incidents", "list incidents, the open case for each key whose detection rules fired, or follow them as they change", cmdIncidents},
+	{"incident", "show, acknowledge or resolve an incident, or say this was me", cmdIncident},
+	{"known-source", "add, list or remove known sources: networks, countries, ASNs and clients you say are legitimate", cmdKnownSource},
 	{"events", "list recent requests through kman, or follow them live: which key, from where, what operation, the status and any refusal", cmdEvents},
 	{"price", "list the price table, and set, remove or import price overrides", cmdPrice},
 	{"upstream", "add, list, show, update, remove or sync upstreams", cmdUpstream},

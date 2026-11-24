@@ -41,7 +41,8 @@ type schemaPart struct{ table, column string }
 // touches what is missing. When a release is tagged, take its version off this
 // list: its migration is then fixed, and a later one is appended instead.
 var unreleased = map[int][]schemaPart{
-	2: {{"events", "client"}, {"baseline_places", ""}, {"canaries", ""}},
+	2: {{"events", "client"}, {"baseline_places", ""}, {"canaries", ""},
+		{"incidents", ""}, {"detections", ""}, {"known_sources", ""}},
 }
 
 // checkUnreleased refuses a database that is at a version listed in unreleased

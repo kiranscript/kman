@@ -23,6 +23,7 @@ const settleEvery = time.Hour
 type RotateKeyRequest struct {
 	ID           string `json:"-" path:"id" doc:"The key id."`
 	GraceSeconds int64  `json:"grace_seconds,omitempty" doc:"How long the old secret keeps working beside the new one, at most 30 days. Absent or 0 ends it at once, on the next request."`
+	IncidentID   int64  `json:"incident_id,omitempty" doc:"The incident this is done for. It must exist, be about this key and be unresolved. The rotation is audited with its id and resolves it as confirmed."`
 }
 
 // RotatedKey is a key after rotation, with its new secret, which is shown only this once.
@@ -60,10 +61,26 @@ func (s *Service) RotateKey(ctx context.Context, req RotateKeyRequest) (RotatedK
 	}
 	var out RotatedKey
 	fx := &effects{}
-	err := s.commandWith(ctx, fx, func(tx *store.Tx, now time.Time) ([]audit, error) {
+	c, err := caller(ctx)
+	if err != nil {
+		return RotatedKey{}, err
+	}
+	err = s.commandWith(ctx, fx, func(tx *store.Tx, now time.Time) ([]audit, error) {
+		var inc store.Incident
+		if req.IncidentID != 0 {
+			var err error
+			if inc, err = incidentForKey(tx, req.IncidentID, req.ID); err != nil {
+				return nil, err
+			}
+		}
 		entry, rotated, err := s.rotateKey(tx, fx, now, req.ID, seconds(req.GraceSeconds))
 		out = rotated
-		return []audit{entry}, err
+		if err != nil || req.IncidentID == 0 {
+			return []audit{entry}, err
+		}
+		entry.incident = req.IncidentID
+		resolved, err := resolveIncident(tx, inc, store.ResolutionConfirmed, "incident.resolve", c.Actor, now)
+		return []audit{entry, resolved}, err
 	})
 	if err != nil {
 		return RotatedKey{}, err

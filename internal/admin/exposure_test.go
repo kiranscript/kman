@@ -188,10 +188,10 @@ func TestExposureLooksOnlyAtKeysThatWorkNow(t *testing.T) {
 	revoked := in.createKey(t, admin.CreateKeyRequest{Name: "revoked", Upstream: "openai"}).Key
 	short := in.createKey(t, admin.CreateKeyRequest{Name: "short", Upstream: "openai", TTLSeconds: seconds(24 * time.Hour)}).Key
 	in.createKey(t, admin.CreateKeyRequest{Name: "live", Upstream: "openai"})
-	if _, err := in.svc.DisableKey(as("owner"), admin.KeyRef{ID: disabled.ID}); err != nil {
+	if _, err := in.svc.DisableKey(as("owner"), admin.ContainKeyRequest{ID: disabled.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := in.svc.RevokeKey(as("owner"), admin.KeyRef{ID: revoked.ID}); err != nil {
+	if _, err := in.svc.RevokeKey(as("owner"), admin.ContainKeyRequest{ID: revoked.ID}); err != nil {
 		t.Fatal(err)
 	}
 	in.now = t0.Add(2 * days)

@@ -32,6 +32,14 @@ var auditActions = map[string]auditAction{
 	"canary.create":         {Low, "Canary made"},
 	"canary.update":         {Low, "Canary changed"},
 	"canary.reset":          {Medium, "Canary armed again"},
+	"incident.acknowledge":  {Low, "Incident acknowledged"},
+	"incident.resolve":      {Medium, "Incident resolved"},
+	"incident.this_was_me":  {Medium, "Incident resolved as this was me"},
+	"incident.open":         {Medium, "Incident opened"},
+	"incident.escalate":     {Medium, "Incident escalated"},
+	"incident.expire":       {Low, "Incident expired"},
+	"known_source.create":   {Medium, "Known source added"},
+	"known_source.delete":   {Low, "Known source removed"},
 	"data.prune":            {Medium, "Data pruned"},
 	"backup.create":         {Medium, "Backup taken"},
 	"alert_channel.create":  {Medium, "Alert channel added"},
@@ -80,6 +88,10 @@ func (s *Service) AlertAudit(tx *store.Tx, e store.AuditEntry) error {
 			return err
 		}
 		a.Commands = append(a.Commands, "kman canary list")
+	case "incident":
+		a.Commands = append(a.Commands, "kman incident show "+e.TargetID)
+	case "known_source":
+		a.Commands = append(a.Commands, "kman known-source list")
 	case "admin_token":
 		a.Commands = append(a.Commands, "kman admin-token list")
 	}

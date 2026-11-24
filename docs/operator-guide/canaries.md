@@ -55,6 +55,8 @@ The alert is critical, so every channel takes it, and it names:
 
 It arrives within 5 seconds under load, even if another channel is not answering (the canary deadline gate).
 
+A canary's use also opens an [incident](incidents.md) for the canary, which the alert names (`kman incident show N`). The incident is critical, so it never expires: more uses count on it, and you end it with `kman incident resolve N`, or with `kman key revoke <canary> --incident N` when you retire the canary because of it.
+
 The **first** use after a canary was armed always alerts. While it stays fired, further uses are counted and alert at most once every 10 minutes, and the next alert says how many it held back, so a leak that is being hammered is one message and a count, not a flood. Once you have found and fixed the leak:
 
 ```sh
@@ -71,7 +73,7 @@ A secret scanner that sweeps the repository the canary is planted in will read i
 kman canary update deploy-env --ignore 192.0.2.0/24 --ignore 198.51.100.7
 ```
 
-The list is addresses and networks (CIDR), at most 100, none wider than an IPv4 /16 or an IPv6 /32: a list that held everything would silence the canary. A use from an address on it is still an event, so it is in `kman events`, but it does not fire the canary, count as a use or alert. `--ignore` replaces the list, and `--no-ignore` empties it. **Nothing else silences a canary:** not an address it has been used from before, and not a [known source](../../GLOSSARY.md) of the detection rules, which never apply to one.
+The list is addresses and networks (CIDR), at most 100, none wider than an IPv4 /16 or an IPv6 /32: a list that held everything would silence the canary. A use from an address on it is still an event, so it is in `kman events`, but it does not fire the canary, count as a use or alert. `--ignore` replaces the list, and `--no-ignore` empties it. **Nothing else silences a canary:** not an address it has been used from before, and not a [known source](incidents.md#known-sources), which never apply to one.
 
 ## Keys and canaries
 

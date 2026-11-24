@@ -37,9 +37,24 @@ func cmdKey(ctx context.Context, c *call) error {
 }
 
 // keyLifecycle is key disable, enable or revoke: one key, by name or key id,
-// stopped or restored from the next request.
+// stopped or restored from the next request. Disable and revoke take --incident,
+// the incident they are done for.
 func keyLifecycle(ctx context.Context, c *call, action string) error {
-	fs := c.flags("key "+action+" <name or key id> [--json]", true)
+	usage := "key " + action + " <name or key id> [--json]"
+	if action != "enable" {
+		usage = "key " + action + " <name or key id> [--incident <id>] [--json]"
+		switch action {
+		case "disable":
+			usage += "\n\nWith --incident the action is recorded on that incident's timeline, and the incident stays open: disabling is a pause, and kman incident resolve ends it."
+		default:
+			usage += "\n\nWith --incident the action is recorded on that incident's timeline and the incident is resolved as confirmed."
+		}
+	}
+	fs := c.flags(usage, true)
+	var incident *int64
+	if action != "enable" {
+		incident = fs.Int64("incident", 0, "the incident this is done for, by id: it must be about this key and unresolved")
+	}
 	pos, err := c.parse(fs, 1, 1)
 	if err != nil {
 		return err
@@ -52,14 +67,19 @@ func keyLifecycle(ctx context.Context, c *call, action string) error {
 	if err != nil {
 		return c.explain(err, l)
 	}
-	run, done := cl.DisableKey, "Disabled"
+	var got admin.Key
+	var done string
 	switch action {
 	case "enable":
-		run, done = cl.EnableKey, "Enabled"
+		got, err = cl.EnableKey(ctx, admin.KeyRef{ID: k.ID})
+		done = "Enabled"
 	case "revoke":
-		run, done = cl.RevokeKey, "Revoked"
+		got, err = cl.RevokeKey(ctx, admin.ContainKeyRequest{ID: k.ID, IncidentID: *incident})
+		done = "Revoked"
+	default:
+		got, err = cl.DisableKey(ctx, admin.ContainKeyRequest{ID: k.ID, IncidentID: *incident})
+		done = "Disabled"
 	}
-	got, err := run(ctx, admin.KeyRef{ID: k.ID})
 	if err != nil {
 		return c.explain(err, l)
 	}
@@ -67,7 +87,19 @@ func keyLifecycle(ctx context.Context, c *call, action string) error {
 		return c.printJSON(got)
 	}
 	fmt.Fprintf(c.env.Stdout, "%s key %s.\n", done, keyLabel(got))
+	if incident != nil && *incident != 0 {
+		incidentNote(c, *incident, action)
+	}
 	return nil
+}
+
+// incidentNote says what a containment command did to its incident.
+func incidentNote(c *call, id int64, action string) {
+	if action == "disable" {
+		fmt.Fprintf(c.env.Stdout, "Recorded on incident %d, which stays open: kman incident resolve %d ends it.\n", id, id)
+		return
+	}
+	fmt.Fprintf(c.env.Stdout, "Resolved incident %d as confirmed.\n", id)
 }
 
 // ttlFlag parses --ttl into seconds, and policyValue checks --policy is JSON

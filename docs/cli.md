@@ -21,6 +21,9 @@ Every command that talks to a running kman takes `--config-dir`, the directory h
 | [`kman admin-token`](#kman-admin-token) | create, list, rotate or revoke admin tokens |
 | [`kman settings`](#kman-settings) | get or set the install's settings |
 | [`kman audit`](#kman-audit) | list the audit log, or export it |
+| [`kman incidents`](#kman-incidents) | list incidents, the open case for each key whose detection rules fired, or follow them as they change |
+| [`kman incident`](#kman-incident) | show, acknowledge or resolve an incident, or say this was me |
+| [`kman known-source`](#kman-known-source) | add, list or remove known sources: networks, countries, ASNs and clients you say are legitimate |
 | [`kman events`](#kman-events) | list recent requests through kman, or follow them live: which key, from where, what operation, the status and any refusal |
 | [`kman price`](#kman-price) | list the price table, and set, remove or import price overrides |
 | [`kman upstream`](#kman-upstream) | add, list, show, update, remove or sync upstreams |
@@ -281,6 +284,136 @@ usage: kman audit export [--after id]
 Writes every audit entry as JSON Lines, oldest first.
   -after int
     	start after this entry id
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+## `kman incidents`
+
+List incidents, the open case for each key whose detection rules fired, or follow them as they change.
+
+```
+usage: kman incidents [--open] [--key <name or key id>] [--limit n] [--follow] [--json]
+
+Lists incidents, the newest first: the open case kman keeps for a key when a detection rule fires, with its state, severity, the rules that fired and how many detections it has. A key has at most one unresolved incident. An incident is open until someone acknowledges it (kman incident ack) and resolved by kman incident resolve, this-was-me, or a containment command given --incident. It is quiet after an hour without a firing, and an unacknowledged one quiet for 7 days expires; acknowledged and critical (canary) incidents never do. With --follow it prints the newest incidents, oldest first, and then a line each time an incident opens, escalates (a higher severity or a new rule), is acknowledged or is resolved, until interrupted. A repeat of a rule the incident already has only counts, and is not a change.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -follow
+    	keep printing changes until interrupted
+  -json
+    	print the admin API's JSON response
+  -key string
+    	only this key's incidents, by name or key id
+  -limit int
+    	how many incidents to list, from 1 to 500; with --follow, how many to start from (default 20)
+  -open
+    	only incidents that are not resolved
+```
+
+## `kman incident`
+
+Show, acknowledge or resolve an incident, or say this was me.
+
+### `kman incident show`
+
+```
+usage: kman incident show <id> [--json]
+
+Shows an incident: its key, state, severity and rules, each detection with what it saw, and the actions taken, which are its timeline. It also lists the places the incident saw, which kman incident this-was-me can add as known sources.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+### `kman incident ack`
+
+```
+usage: kman incident ack <id> [--json]
+
+Acknowledges an incident: its repeats stop alerting, and an escalation (a higher severity or a new rule) still does.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+### `kman incident resolve`
+
+```
+usage: kman incident resolve <id> [--as false-positive|confirmed] [--json]
+
+Ends an incident. confirmed (the default) says it was real: what it held out of the key's baseline is dropped. false-positive says it was not: that is the operator's call, and kman incident this-was-me also offers to add its places as known sources. Rotating or revoking a key, or a credential compromise, given --incident, resolves it as confirmed.
+  -as string
+    	how it ended: confirmed or false-positive (default "confirmed")
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+### `kman incident this-was-me`
+
+```
+usage: kman incident this-was-me <id> [--add-known-sources] [--install-wide] [--kinds country,asn,client,network] [--label <text>] [--json]
+
+Says you caused the incident: it is resolved as a false positive. With --add-known-sources the places it saw (its countries, ASNs, clients and networks) are also added as known sources, so they stop counting as new: for the key, or for every key with --install-wide; --kinds picks which. On a terminal, without --add-known-sources, kman shows the places and asks. A network is added only with the expose_client_addresses setting on. A known source never silences a canary, so none is added for a canary's incident.
+  -add-known-sources
+    	also add the places the incident saw as known sources
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -install-wide
+    	add them for every key, not just this one
+  -json
+    	print the admin API's JSON response
+  -kinds string
+    	add only these kinds, separated by commas: country, asn, client, network
+  -label string
+    	the label for the known sources (default: says which incident they came from)
+```
+
+## `kman known-source`
+
+Add, list or remove known sources: networks, countries, ASNs and clients you say are legitimate.
+
+### `kman known-source add`
+
+```
+usage: kman known-source add <cidr|country|asn|client> <value> --label <text> [--key <name or key id>] [--json]
+
+Says a place is legitimate: use from it never counts as a new location. It is labelled, and applies to every key, or to one with --key. cidr is a network such as 203.0.113.0/24, no wider than an IPv4 /16 or an IPv6 /32, or one address; country is an ISO code such as DE; asn is a number such as 3320 or AS3320; client is what kman records for a caller, such as curl/8 (none and unknown are refused). A known source never silences a canary.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+  -key string
+    	apply it to this key only, by name or key id (default: every key)
+  -label string
+    	what it is, such as "CI runners" (required)
+```
+
+### `kman known-source list`
+
+```
+usage: kman known-source list [--key <name or key id>] [--json]
+
+Lists the known sources, the ones for every key first. With --key, only those that apply to that key.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+  -key string
+    	only those that apply to this key, by name or key id
+```
+
+### `kman known-source rm`
+
+```
+usage: kman known-source rm <id> [--json]
+
+Removes a known source: use from that place counts as new again.
   -config-dir string
     	the config directory holding the credentials file (default "$HOME/.config/kman")
   -json
@@ -590,15 +723,17 @@ usage: kman credential rm <name> [--json]
 ### `kman credential compromise`
 
 ```
-usage: kman credential compromise <name> [--credential-env VAR] [--json]
+usage: kman credential compromise <name> [--credential-env VAR] [--incident <id>] [--json]
 
-For a real credential that leaked. First revoke it at the provider and make a new one there: that is what stops the damage. Then this replaces the credential's secret and rotates every virtual key on it at once, with no grace, and lists the apps that need new keys. The credential keeps its id; the keys keep theirs, with their spend, policy and history.
+For a real credential that leaked. First revoke it at the provider and make a new one there: that is what stops the damage. Then this replaces the credential's secret and rotates every virtual key on it at once, with no grace, and lists the apps that need new keys. The credential keeps its id; the keys keep theirs, with their spend, policy and history. With --incident the compromise and the rotation of the incident's key are recorded on that incident's timeline, and it is resolved as confirmed.
 
 The secret is asked for without echo, or read as one line of stdin when piped, or from the variable --credential-env names. It is never an argument, which would end up in shell history and process lists.
   -config-dir string
     	the config directory holding the credentials file (default "$HOME/.config/kman")
   -credential-env string
     	read the secret from this environment variable
+  -incident int
+    	the incident this is done for, by id: it must be unresolved and about a key on this credential
   -json
     	print the admin API's JSON response
 ```
@@ -698,9 +833,13 @@ usage: kman key update <name or key id> [--name <name>] [--note <text>] [--tag <
 ### `kman key disable`
 
 ```
-usage: kman key disable <name or key id> [--json]
+usage: kman key disable <name or key id> [--incident <id>] [--json]
+
+With --incident the action is recorded on that incident's timeline, and the incident stays open: disabling is a pause, and kman incident resolve ends it.
   -config-dir string
     	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -incident int
+    	the incident this is done for, by id: it must be about this key and unresolved
   -json
     	print the admin API's JSON response
 ```
@@ -718,9 +857,13 @@ usage: kman key enable <name or key id> [--json]
 ### `kman key revoke`
 
 ```
-usage: kman key revoke <name or key id> [--json]
+usage: kman key revoke <name or key id> [--incident <id>] [--json]
+
+With --incident the action is recorded on that incident's timeline and the incident is resolved as confirmed.
   -config-dir string
     	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -incident int
+    	the incident this is done for, by id: it must be about this key and unresolved
   -json
     	print the admin API's JSON response
 ```
@@ -728,13 +871,15 @@ usage: kman key revoke <name or key id> [--json]
 ### `kman key rotate`
 
 ```
-usage: kman key rotate <name or key id> [--grace <duration>] [--json]
+usage: kman key rotate <name or key id> [--grace <duration>] [--incident <id>] [--json]
 
-Replaces the key's secret and keeps the key: its id, spend, policy and history stay. The new secret is printed once. With --grace the old secret keeps working that long, at most 30 days, so an app can be moved over without a gap; with none, the old secret stops at the next request. A second rotation inside a grace ends the older secret at once.
+Replaces the key's secret and keeps the key: its id, spend, policy and history stay. The new secret is printed once. With --grace the old secret keeps working that long, at most 30 days, so an app can be moved over without a gap; with none, the old secret stops at the next request. A second rotation inside a grace ends the older secret at once. With --incident the rotation is recorded on that incident's timeline and resolves it as confirmed.
   -config-dir string
     	the config directory holding the credentials file (default "$HOME/.config/kman")
   -grace string
     	how long the old secret keeps working, such as 24h; 0 ends it at once (default "0")
+  -incident int
+    	the incident this is done for, by id: it must be about this key and unresolved
   -json
     	print the admin API's JSON response
 ```

@@ -132,3 +132,68 @@ func TestADatabaseMissingAnEarlierColumnOfMigration0002IsRefusedToo(t *testing.T
 		t.Errorf("Open = %v, want ErrStaleSchema for a database with no events.client", err)
 	}
 }
+
+func TestMigration0002AddsIncidentsDetectionsAndKnownSources(t *testing.T) {
+	s := openTest(t, t.TempDir())
+	ctx := context.Background()
+	for table, columns := range map[string][]string{
+		"incidents": {"id", "key_id", "state", "severity", "alerted_severity", "rules_json", "detection_count", "opened_at", "last_fired_at",
+			"acknowledged_at", "acknowledged_by", "resolved_at", "resolved_by", "resolution", "would_disable_at", "would_block_count", "generation"},
+		"detections":    {"id", "incident_id", "key_id", "ts", "rule", "severity", "evidence_json"},
+		"known_sources": {"id", "scope", "kind", "value", "label", "created_by", "created_at", "generation"},
+	} {
+		var n int
+		q := `SELECT count(*) FROM pragma_table_info('` + table + `') WHERE name IN ('` + strings.Join(columns, `', '`) + `')`
+		if err := s.db.QueryRowContext(ctx, q).Scan(&n); err != nil || n != len(columns) {
+			t.Errorf("%s has %d of its %d columns (%v)", table, n, len(columns), err)
+		}
+	}
+}
+
+func TestIncidentsRefuseWhatBreaksTheStateMachine(t *testing.T) {
+	s := openTest(t, t.TempDir())
+	ctx := context.Background()
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO upstreams (id, name, preset, preset_version, profile, host, port, tls, path_allowlist_json, price_multiplier_ppm, created_at, updated_at, generation)
+		VALUES ('up_1', 'u', 'openai', 1, 'openai', 'h', 443, 1, '[]', 1000000, 1, 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO virtual_keys (key_id, kind, status, tags_json, policy_json, policy_version, created_at, generation)
+		VALUES ('kkkk1111', 'canary', 'active', '[]', '{}', 1, 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	const cols = `(key_id, state, severity, opened_at, last_fired_at, generation`
+	cases := map[string]string{
+		"an unknown severity":           `INSERT INTO incidents ` + cols + `) VALUES ('kkkk1111', 'open', 'urgent', 1, 1, 1)`,
+		"an unknown state":              `INSERT INTO incidents ` + cols + `) VALUES ('kkkk1111', 'closed', 'low', 1, 1, 1)`,
+		"a resolved incident with none": `INSERT INTO incidents ` + cols + `) VALUES ('kkkk1111', 'resolved', 'low', 1, 1, 1)`,
+		"an open one with a resolution": `INSERT INTO incidents ` + cols + `, resolution) VALUES ('kkkk1111', 'open', 'low', 1, 1, 1, 'expired')`,
+		"an unknown resolution":         `INSERT INTO incidents ` + cols + `, resolution) VALUES ('kkkk1111', 'resolved', 'low', 1, 1, 1, 'whatever')`,
+		"a key that does not exist":     `INSERT INTO incidents ` + cols + `) VALUES ('nokey000', 'open', 'low', 1, 1, 1)`,
+	}
+	for name, q := range cases {
+		if _, err := s.db.ExecContext(ctx, q); err == nil {
+			t.Errorf("incidents accepts %s", name)
+		}
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO known_sources (scope, kind, value, label, created_by, created_at, generation) VALUES ('', 'asn_range', '1', 'x', 'owner', 1, 1)`); err == nil {
+		t.Error("known_sources accepts a kind it does not know")
+	}
+}
+
+func TestADatabaseWithoutTheIncidentTablesIsRefusedWithTheFix(t *testing.T) {
+	for _, table := range []string{"incidents", "detections", "known_sources"} {
+		dir := t.TempDir()
+		ctx := context.Background()
+		s := openTest(t, dir)
+		if _, err := s.db.ExecContext(ctx, `DROP TABLE `+table); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Open(ctx, Options{Dir: dir, Now: testNow})
+		if !errors.Is(err, ErrStaleSchema) || !strings.Contains(err.Error(), table) {
+			t.Errorf("Open without %s = %v, want ErrStaleSchema naming it", table, err)
+		}
+	}
+}

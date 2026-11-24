@@ -22,6 +22,9 @@ type sys struct {
 	// echo. It is nil when stdin is not a terminal, so the CLI reads a
 	// line of stdin instead.
 	readSecret func(prompt string) ([]byte, error)
+	// interactive says stdin and stdout are a terminal, so a command may ask a
+	// question and read the answer.
+	interactive bool
 	// stopSignals restores the default handling of SIGINT and SIGTERM, so
 	// a second signal during a graceful shutdown ends the process.
 	stopSignals func()

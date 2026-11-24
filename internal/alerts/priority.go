@@ -64,6 +64,7 @@ func (s *Service) priorityEvent(held map[string]*throttled, e events.Event) {
 	err := s.o.Store.Do(context.Background(), func(tx *store.Tx) error {
 		queued, ignored = false, false
 		var canary *store.Canary
+		var incident int64
 		firedNow := false
 		if e.Canary {
 			c, err := tx.Canary(e.KeyID)
@@ -80,6 +81,18 @@ func (s *Service) priorityEvent(held map[string]*throttled, e events.Event) {
 					return err
 				}
 				canary = &c
+				if s.o.CanaryIncident != nil {
+					// The use is a detection: it opens or escalates the canary's
+					// incident in this transaction, so the incident, the canary's
+					// row and the alert are never apart. The alert below is still
+					// the canary's own, with its own throttle (ADR 0013).
+					if incident, err = s.o.CanaryIncident(tx, e.KeyID, e.Time, store.Evidence{
+						Address: addressOf(e), Country: usableCountry(e.Country), ASN: e.ASN, ASOrg: clean(e.ASOrg), Client: clean(e.Client),
+						Detail: plantedDetail(c),
+					}); err != nil {
+						return err
+					}
+				}
 			case !errors.Is(err, store.ErrNotFound):
 				return err
 			}
@@ -90,7 +103,7 @@ func (s *Service) priorityEvent(held map[string]*throttled, e events.Event) {
 		if t != nil {
 			suppressed = t.suppressed
 		}
-		a := usedKeyAlert(e, canary, suppressed)
+		a := usedKeyAlert(e, canary, suppressed, incident)
 		if err := nameKey(tx, &a); err != nil {
 			return err
 		}
@@ -128,7 +141,7 @@ type throttled struct {
 // where the request came from and its method, never anything the request said:
 // the path is the caller's to write, so it stays out of what goes to a channel.
 // canary is the canary's row when the use was of one that has a row.
-func usedKeyAlert(e events.Event, canary *store.Canary, held int) Alert {
+func usedKeyAlert(e events.Event, canary *store.Canary, held int, incident int64) Alert {
 	a := Alert{Kind: "disabled_key", Severity: High, Priority: true, Title: "A disabled key was used", KeyID: e.KeyID, Time: e.Time}
 	if e.Canary {
 		a.Kind, a.Severity, a.Title = "canary", Critical, "A canary key was used"
@@ -162,7 +175,27 @@ func usedKeyAlert(e events.Event, canary *store.Canary, held int) Alert {
 	if e.Canary {
 		a.Commands = []string{"kman key places " + e.KeyID, "kman canary list", "kman canary reset " + e.KeyID}
 	}
+	if incident != 0 {
+		a.IncidentID = incident
+		a.Commands = append([]string{"kman incident show " + strconv.FormatInt(incident, 10)}, a.Commands...)
+	}
 	return a
+}
+
+// addressOf is the client address of an event as text, "" for none.
+func addressOf(e events.Event) string {
+	if !e.ClientIP.IsValid() {
+		return ""
+	}
+	return e.ClientIP.Unmap().String()
+}
+
+// plantedDetail is what a canary's incident says of where it was planted.
+func plantedDetail(c store.Canary) string {
+	if c.Planted == "" {
+		return ""
+	}
+	return "Planted: " + cleanTo(c.Planted, maxPlanted)
 }
 
 // maxLabel bounds a label that came from a file or a header, and maxPlanted what

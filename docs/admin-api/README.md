@@ -38,6 +38,11 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `GET /admin/v1/events` | List stored events, newest first: which key, from where, by what client, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on |
 | `GET /admin/v1/events/stream` | Follow new events as they happen, as server-sent events, with the filters of the list. A client that cannot keep up loses events and is told how many |
 | `GET /admin/v1/exposure` | List the keys that work now and would be easy to abuse: open to every address, never expiring, or unused for 30 days, each with the command that fixes it |
+| `GET /admin/v1/incidents` | List incidents, newest first: the open case for each key whose rules fired, with its state, severity, rules and how many detections it has; filtered by open, and key, and paged |
+| `GET /admin/v1/incidents/{id}` | Read one incident with its detections and the actions taken on it, which are its timeline, and the places it saw that this was me could add as known sources. A client address or network in the evidence is left out unless the expose_client_addresses setting is on |
+| `POST /admin/v1/incidents/{id}/acknowledge` | Acknowledge an incident: its repeats stop alerting, and an escalation still alerts |
+| `POST /admin/v1/incidents/{id}/resolve` | Resolve an incident as confirmed (the default) or false_positive |
+| `POST /admin/v1/incidents/{id}/this-was-me` | Resolve an incident as a false positive and, if asked, add the places it saw as known sources, for its key or for every key. Never for a canary |
 | `GET /admin/v1/keys` | List every virtual key, or the one with a name, never their secrets |
 | `POST /admin/v1/keys` | Create a virtual key on an upstream; its secret is returned only this once |
 | `GET /admin/v1/keys/{id}` | Read one virtual key, by key id |
@@ -48,6 +53,9 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `GET /admin/v1/keys/{id}/places` | List where a virtual key has been used from: each country, AS and network, and each client (the User-Agent reduced to a product and major version) that used it, with when it was first and last seen and how many requests were forwarded and refused |
 | `POST /admin/v1/keys/{id}/revoke` | End a virtual key for good, from the next request; it cannot be undone |
 | `POST /admin/v1/keys/{id}/rotate` | Replace a virtual key's secret and keep the key; the new secret is returned only this once |
+| `GET /admin/v1/known-sources` | List the known sources: labelled networks, countries, ASNs and clients the operator says are legitimate, for every key or one. They never silence a canary |
+| `POST /admin/v1/known-sources` | Add a known source: a labelled CIDR, country, ASN or client, for every key or one |
+| `DELETE /admin/v1/known-sources/{id}` | Remove a known source |
 | `GET /admin/v1/openapi.json` | This document. It needs no admin token. |
 | `DELETE /admin/v1/price-overrides` | Remove a price override |
 | `PUT /admin/v1/price-overrides` | Set a price override, install-wide or on one upstream; it wins over the built-in entries until removed |
@@ -275,6 +283,63 @@ List the keys that work now and would be easy to abuse: open to every address, n
 
 Response 200: [Exposure](#exposure).
 
+### `GET /admin/v1/incidents`
+
+List incidents, newest first: the open case for each key whose rules fired, with its state, severity, rules and how many detections it has; filtered by open, and key, and paged. Operation id `listIncidents`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `open` | query | boolean | no | Only incidents that are not resolved. |
+| `key` | query | string | no | Only this key's incidents, by key id. |
+| `before` | query | integer | no | Only incidents with an id below this: the cursor for paging. |
+| `limit` | query | integer | no | The most incidents to return, 1 to 500. Default 50. |
+
+Response 200: [IncidentList](#incidentlist).
+
+### `GET /admin/v1/incidents/{id}`
+
+Read one incident with its detections and the actions taken on it, which are its timeline, and the places it saw that this was me could add as known sources. A client address or network in the evidence is left out unless the expose_client_addresses setting is on. Operation id `getIncident`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | integer | yes | The incident's id. |
+
+Response 200: [IncidentDetail](#incidentdetail).
+
+### `POST /admin/v1/incidents/{id}/acknowledge`
+
+Acknowledge an incident: its repeats stop alerting, and an escalation still alerts. Operation id `acknowledgeIncident`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | integer | yes | The incident's id. |
+
+Response 200: [Incident](#incident).
+
+### `POST /admin/v1/incidents/{id}/resolve`
+
+Resolve an incident as confirmed (the default) or false_positive. Operation id `resolveIncident`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | integer | yes | The incident's id. |
+
+Request body: [ResolveIncidentRequest](#resolveincidentrequest).
+
+Response 200: [Incident](#incident).
+
+### `POST /admin/v1/incidents/{id}/this-was-me`
+
+Resolve an incident as a false positive and, if asked, add the places it saw as known sources, for its key or for every key. Never for a canary. Operation id `thisWasMe`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | integer | yes | The incident's id. |
+
+Request body: [ThisWasMeRequest](#thiswasmerequest).
+
+Response 200: [ThisWasMeResult](#thiswasmeresult).
+
 ### `GET /admin/v1/keys`
 
 List every virtual key, or the one with a name, never their secrets. Operation id `listKeys`.
@@ -333,6 +398,8 @@ Stop a virtual key from the next request until it is enabled again. Operation id
 |---|---|---|---|---|
 | `id` | path | string | yes | The key id. |
 
+Request body: [ContainKeyRequest](#containkeyrequest).
+
 Response 200: [Key](#key).
 
 ### `POST /admin/v1/keys/{id}/enable`
@@ -364,6 +431,8 @@ End a virtual key for good, from the next request; it cannot be undone. Operatio
 |---|---|---|---|---|
 | `id` | path | string | yes | The key id. |
 
+Request body: [ContainKeyRequest](#containkeyrequest).
+
 Response 200: [Key](#key).
 
 ### `POST /admin/v1/keys/{id}/rotate`
@@ -377,6 +446,34 @@ Replace a virtual key's secret and keep the key; the new secret is returned only
 Request body: [RotateKeyRequest](#rotatekeyrequest).
 
 Response 200: [RotatedKey](#rotatedkey).
+
+### `GET /admin/v1/known-sources`
+
+List the known sources: labelled networks, countries, ASNs and clients the operator says are legitimate, for every key or one. They never silence a canary. Operation id `listKnownSources`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `key` | query | string | no | Only those that apply to this key, by key id: the install-wide ones and its own. |
+
+Response 200: [KnownSourceList](#knownsourcelist).
+
+### `POST /admin/v1/known-sources`
+
+Add a known source: a labelled CIDR, country, ASN or client, for every key or one. Operation id `addKnownSource`.
+
+Request body: [AddKnownSourceRequest](#addknownsourcerequest).
+
+Response 201: [KnownSource](#knownsource).
+
+### `DELETE /admin/v1/known-sources/{id}`
+
+Remove a known source. Operation id `removeKnownSource`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | integer | yes | The known source's id. |
+
+Response 200: [KnownSource](#knownsource).
 
 ### `GET /admin/v1/openapi.json`
 
@@ -552,6 +649,15 @@ Response 200: [Whoami](#whoami).
 | `secret` | string | yes | The real secret. kman seals it and never shows it again. For basic auth without a username, the whole user:password. |
 | `upstream` | string | yes | The upstream's name or id. |
 
+### `AddKnownSourceRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | no | The key id it applies to. Absent: every key. A canary has none. |
+| `kind` | string | yes | cidr, country, asn or client. |
+| `label` | string | yes | What it is, 1 to 64 characters with no control characters. |
+| `value` | string | yes | cidr: a network no wider than an IPv4 /16 or an IPv6 /32, or one address. country: two capital letters. asn: a number, with or without AS. client: a product and major version as events record it, such as curl/8; none and unknown are refused, since they would silence every request that does not say what it is. |
+
 ### `AddUpstreamRequest`
 
 | Field | Type | Required | Description |
@@ -692,6 +798,7 @@ Response 200: [Whoami](#whoami).
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `incident_id` | integer | no | The incident this is done for. It must exist, be unresolved and be about a key on this credential. The compromise and that key's rotation are audited with its id, and it is resolved as confirmed. |
 | `secret` | string | yes | The new real secret, made at the provider after the leaked one was revoked there. kman seals it and never shows it again. |
 
 ### `CompromisedCredential`
@@ -700,6 +807,12 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `credential` | [Credential](#credential) | yes |  |
 | `rotated_keys` | list of [RotatedKey](#rotatedkey) | yes | Every virtual key on the credential that was not revoked, oldest first, with its new secret, shown only this once. Each is an app that needs its new key. |
+
+### `ContainKeyRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `incident_id` | integer | no | The incident this is done for. It must exist, be about this key and be unresolved. The audit entry carries its id, so the incident's timeline shows the action. Disabling leaves the incident open; revoking resolves it as confirmed. |
 
 ### `CreateAdminTokenRequest`
 
@@ -843,6 +956,82 @@ Response 200: [Whoami](#whoami).
 | `name` | string | no |  |
 | `rule` | string | yes | open_to_every_address, never_expires or unused. |
 
+### `Incident`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `acknowledged_at` | string | no |  |
+| `acknowledged_by` | string | no |  |
+| `detection_count` | integer | yes | Every detection raised, repeats included. The detail lists the first 100 of them. |
+| `id` | integer | yes | A plain integer, as alerts and commands name it. |
+| `key_id` | string | yes |  |
+| `key_name` | string | no |  |
+| `last_fired_at` | string | yes |  |
+| `opened_at` | string | yes |  |
+| `quiet` | boolean | no | Nothing has fired for an hour. Display only: the incident is still unresolved, and a new firing on a quiet incident alerts again. |
+| `resolution` | string | no | confirmed, false_positive or expired. |
+| `resolved_at` | string | no |  |
+| `resolved_by` | string | no | An admin token's name, or system:detect when it expired. |
+| `rules` | list of string | yes | The rules that have fired, in the order they first did. |
+| `severity` | string | yes | low, medium, high or critical: the highest of its detections. |
+| `state` | string | yes | open, acknowledged or resolved. |
+
+### `IncidentDetail`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `acknowledged_at` | string | no |  |
+| `acknowledged_by` | string | no |  |
+| `actions` | list of [AuditEntry](#auditentry) | yes | The audit entries that carry the incident's id: its opening and escalations by system:detect, and what operators did about it. With the detections, the timeline. |
+| `addresses_withheld` | boolean | no | A client address or network was left out of the evidence because expose_client_addresses is off. |
+| `detection_count` | integer | yes | Every detection raised, repeats included. The detail lists the first 100 of them. |
+| `detections` | list of [IncidentDetection](#incidentdetection) | yes | What fired, oldest first, at most 100. |
+| `id` | integer | yes | A plain integer, as alerts and commands name it. |
+| `key_id` | string | yes |  |
+| `key_name` | string | no |  |
+| `known_source_candidates` | list of [KnownSourceCandidate](#knownsourcecandidate) | yes | The places the detections saw, which this was me can add as known sources. None for a canary. |
+| `last_fired_at` | string | yes |  |
+| `opened_at` | string | yes |  |
+| `quiet` | boolean | no | Nothing has fired for an hour. Display only: the incident is still unresolved, and a new firing on a quiet incident alerts again. |
+| `resolution` | string | no | confirmed, false_positive or expired. |
+| `resolved_at` | string | no |  |
+| `resolved_by` | string | no | An admin token's name, or system:detect when it expired. |
+| `rules` | list of string | yes | The rules that have fired, in the order they first did. |
+| `severity` | string | yes | low, medium, high or critical: the highest of its detections. |
+| `state` | string | yes | open, acknowledged or resolved. |
+
+### `IncidentDetection`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `evidence` | [IncidentEvidence](#incidentevidence) | yes |  |
+| `id` | integer | yes |  |
+| `rule` | string | yes |  |
+| `severity` | string | yes |  |
+| `time` | string | yes |  |
+
+### `IncidentEvidence`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `address` | string | no | The client address. Left out unless expose_client_addresses is on. |
+| `address_withheld` | boolean | no | There is an address or network, which is left out because expose_client_addresses is off. |
+| `as_org` | string | no |  |
+| `asn` | integer | no |  |
+| `baseline` | string | no | What the key normally does. |
+| `client` | string | no | What called: the User-Agent reduced to a product and major version. |
+| `country` | string | no |  |
+| `detail` | string | no |  |
+| `network` | string | no | The network (IPv4 /24, IPv6 /64). Left out unless expose_client_addresses is on. |
+| `observed` | string | no | What the rule saw, for a rule that compares: a rate, a spend, a place. |
+
+### `IncidentList`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `incidents` | list of [Incident](#incident) | yes |  |
+| `more` | boolean | yes | There are older incidents beyond this page: pass the last id as before. |
+
 ### `Key`
 
 | Field | Type | Required | Description |
@@ -916,6 +1105,34 @@ Response 200: [Whoami](#whoami).
 | `policy` |  | no | The new policy, a JSON object, which replaces the old one. |
 | `tags` | list of string | no | The new tags, which replace the old ones. |
 | `ttl_seconds` | integer | no | A new expiry, this long from now. It may not be later than the key's creation plus the maximum key lifetime, unless that shortens the key's life. |
+
+### `KnownSource`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `created_at` | string | yes |  |
+| `created_by` | string | yes |  |
+| `id` | integer | yes | A plain integer. |
+| `key_name` | string | no |  |
+| `kind` | string | yes | cidr, country, asn or client. |
+| `label` | string | yes | What the operator calls it. |
+| `scope` | string | no | The key id it applies to. Empty: every key. |
+| `value` | string | yes | A network in CIDR form, an ISO 3166-1 country code, an AS number without the AS, or a client (a User-Agent reduced to a product and major version, such as curl/8). |
+
+### `KnownSourceCandidate`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `kind` | string | yes | cidr, country, asn or client. |
+| `label` | string | no |  |
+| `value` | string | no | The value to add. Empty for a network while expose_client_addresses is off. |
+| `withheld` | boolean | no |  |
+
+### `KnownSourceList`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `known_sources` | list of [KnownSource](#knownsource) | yes |  |
 
 ### `NewCredential`
 
@@ -1059,11 +1276,18 @@ Response 200: [Whoami](#whoami).
 | `events` | integer | yes | Events deleted. |
 | `hourly_usage` | integer | yes | Hourly usage rows deleted: those whose hour ended before the date. |
 
+### `ResolveIncidentRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `as` | string | no | confirmed (the default) or false_positive (false-positive is accepted). A false positive lets what the incident held out of the key's baseline back in, so it is the operator's call. expired is only ever set by kman. |
+
 ### `RotateKeyRequest`
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `grace_seconds` | integer | no | How long the old secret keeps working beside the new one, at most 30 days. Absent or 0 ends it at once, on the next request. |
+| `incident_id` | integer | no | The incident this is done for. It must exist, be about this key and be unresolved. The rotation is audited with its id and resolves it as confirmed. |
 
 ### `RotatedKey`
 
@@ -1105,6 +1329,24 @@ Response 200: [Whoami](#whoami).
 | `requests` | integer | yes | Requests charged. |
 | `reserved_micro` | integer | yes | Held for requests in flight. A cap counts it as it counts cost_micro. |
 | `unmetered_requests` | integer | yes | Requests forwarded that could not be metered, whose cost is unknown and so is not in cost_micro. |
+
+### `ThisWasMeRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `add_known_sources` | boolean | no | Also add the places the incident saw as known sources, so they stop counting as new. Never for a canary. |
+| `install_wide` | boolean | no | Add them for every key, not just this one. Needs add_known_sources. |
+| `kinds` | list of string | no | Add only these kinds: country, asn, client, network. Default all. Needs add_known_sources. |
+| `label` | string | no | The label for the known sources. Default says which incident they came from. Needs add_known_sources. |
+
+### `ThisWasMeResult`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `added` | list of [KnownSource](#knownsource) | yes | The known sources added. |
+| `already_known` | integer | no | Places that were already known sources in that scope, so none was added. |
+| `incident` | [Incident](#incident) | yes |  |
+| `withheld_networks` | integer | no | Networks that were not added, because adding one would give it out while expose_client_addresses is off. |
 
 ### `UpdateStatus`
 

@@ -292,8 +292,9 @@ func (s *Service) StreamEvents(ctx context.Context, q EventStreamQuery) (EventSt
 	ctx, cancel := context.WithCancel(ctx)
 	st := &serviceStream{out: make(chan Event), sub: s.bus.Subscribe(streamName, events.SubOptions{Buffer: buffer}), cancel: cancel}
 	go func() {
-		defer s.streams.release()
+		// Closing out comes last: a reader that sees it close can open a new stream.
 		defer close(st.out)
+		defer s.streams.release()
 		defer s.bus.Unsubscribe(st.sub)
 		s.pump(ctx, st, f)
 	}()

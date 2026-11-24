@@ -25,11 +25,13 @@ func graceFlag(v string) (int64, error) {
 
 // keyRotate is key rotate: a new secret for one key, by name or key id.
 func keyRotate(ctx context.Context, c *call) error {
-	fs := c.flags("key rotate <name or key id> [--grace <duration>] [--json]\n\n"+
+	fs := c.flags("key rotate <name or key id> [--grace <duration>] [--incident <id>] [--json]\n\n"+
 		"Replaces the key's secret and keeps the key: its id, spend, policy and history stay. The new secret is printed once. "+
 		"With --grace the old secret keeps working that long, at most 30 days, so an app can be moved over without a gap; "+
-		"with none, the old secret stops at the next request. A second rotation inside a grace ends the older secret at once.", true)
+		"with none, the old secret stops at the next request. A second rotation inside a grace ends the older secret at once. "+
+		"With --incident the rotation is recorded on that incident's timeline and resolves it as confirmed.", true)
 	grace := fs.String("grace", "0", "how long the old secret keeps working, such as 24h; 0 ends it at once")
+	incident := fs.Int64("incident", 0, "the incident this is done for, by id: it must be about this key and unresolved")
 	pos, err := c.parse(fs, 1, 1)
 	if err != nil {
 		return err
@@ -46,7 +48,7 @@ func keyRotate(ctx context.Context, c *call) error {
 	if err != nil {
 		return c.explain(err, l)
 	}
-	got, err := cl.RotateKey(ctx, admin.RotateKeyRequest{ID: k.ID, GraceSeconds: seconds})
+	got, err := cl.RotateKey(ctx, admin.RotateKeyRequest{ID: k.ID, GraceSeconds: seconds, IncidentID: *incident})
 	if err != nil {
 		return c.explain(err, l)
 	}
@@ -62,17 +64,22 @@ func keyRotate(ctx context.Context, c *call) error {
 	} else {
 		fmt.Fprintln(c.env.Stdout, "The old secret stopped working.")
 	}
+	if *incident != 0 {
+		incidentNote(c, *incident, "rotate")
+	}
 	return nil
 }
 
 // credentialCompromise is credential compromise: the answer to a leaked real
 // credential.
 func credentialCompromise(ctx context.Context, c *call) error {
-	fs := c.flags("credential compromise <name> [--credential-env VAR] [--json]\n\n"+
+	fs := c.flags("credential compromise <name> [--credential-env VAR] [--incident <id>] [--json]\n\n"+
 		"For a real credential that leaked. First revoke it at the provider and make a new one there: that is what stops the damage. "+
 		"Then this replaces the credential's secret and rotates every virtual key on it at once, with no grace, and lists the apps that need new keys. "+
-		"The credential keeps its id; the keys keep theirs, with their spend, policy and history."+credentialHelp, true)
+		"The credential keeps its id; the keys keep theirs, with their spend, policy and history. "+
+		"With --incident the compromise and the rotation of the incident's key are recorded on that incident's timeline, and it is resolved as confirmed."+credentialHelp, true)
 	envName := credentialEnvFlag(fs)
+	incident := fs.Int64("incident", 0, "the incident this is done for, by id: it must be unresolved and about a key on this credential")
 	pos, err := c.parse(fs, 1, 1)
 	if err != nil {
 		return err
@@ -88,7 +95,7 @@ func credentialCompromise(ctx context.Context, c *call) error {
 	if err != nil {
 		return err
 	}
-	got, err := cl.CompromiseCredential(ctx, admin.CompromiseCredentialRequest{Ref: pos[0], Secret: admin.Secret(secret)})
+	got, err := cl.CompromiseCredential(ctx, admin.CompromiseCredentialRequest{Ref: pos[0], Secret: admin.Secret(secret), IncidentID: *incident})
 	if err != nil {
 		return c.explain(err, l)
 	}
@@ -97,6 +104,9 @@ func credentialCompromise(ctx context.Context, c *call) error {
 	}
 	w := c.env.Stdout
 	fmt.Fprintf(w, "Replaced the secret of credential %s on upstream %s.\n", got.Credential.Name, got.Credential.Upstream)
+	if *incident != 0 {
+		incidentNote(c, *incident, "compromise")
+	}
 	if len(got.RotatedKeys) == 0 {
 		fmt.Fprintln(w, "No virtual key used it, so none was rotated.")
 		return nil

@@ -21,6 +21,7 @@ import (
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/cli"
 	"github.com/kirank55/kman/internal/vault"
+	"golang.org/x/term"
 )
 
 // Set with -ldflags -X by the release build. When they are empty, the values
@@ -42,6 +43,7 @@ func main() {
 		passphrase:  func(prompt string) ([]byte, error) { return terminalPassphrase(prompt, os.Stderr) },
 		stdin:       os.Stdin,
 		readSecret:  terminalSecret(os.Stderr),
+		interactive: term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())),
 		stopSignals: stop,
 	}
 	os.Exit(run(ctx, os.Args[1:], s))
@@ -93,7 +95,7 @@ func cliEnv(s *sys) cli.Env {
 		configDir = "" // the CLI asks for --config-dir
 	}
 	return cli.Env{Stdout: s.stdout, Stderr: s.stderr, Stdin: s.stdin, Getenv: s.getenv,
-		ConfigDir: configDir, ReadSecret: s.readSecret,
+		ConfigDir: configDir, ReadSecret: s.readSecret, Interactive: s.interactive,
 		LocalPriceData: func() admin.PriceDataStatus { return builtinPrices().Status(s.now()) },
 		BinaryAge:      func() (time.Time, int, bool) { return binaryAge(s.now()) },
 		Now:            s.now,

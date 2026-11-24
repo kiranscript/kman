@@ -9,8 +9,9 @@ import (
 
 // CompromiseCredentialRequest replaces a leaked credential.
 type CompromiseCredentialRequest struct {
-	Ref    string `json:"-" path:"ref" doc:"The credential's name or id."`
-	Secret Secret `json:"secret" doc:"The new real secret, made at the provider after the leaked one was revoked there. kman seals it and never shows it again."`
+	Ref        string `json:"-" path:"ref" doc:"The credential's name or id."`
+	Secret     Secret `json:"secret" doc:"The new real secret, made at the provider after the leaked one was revoked there. kman seals it and never shows it again."`
+	IncidentID int64  `json:"incident_id,omitempty" doc:"The incident this is done for. It must exist, be unresolved and be about a key on this credential. The compromise and that key's rotation are audited with its id, and it is resolved as confirmed."`
 }
 
 // CompromisedCredential is what a credential compromise did: the credential,
@@ -29,10 +30,20 @@ type CompromisedCredential struct {
 func (s *Service) CompromiseCredential(ctx context.Context, req CompromiseCredentialRequest) (CompromisedCredential, error) {
 	var out CompromisedCredential
 	fx := &effects{}
-	err := s.commandWith(ctx, fx, func(tx *store.Tx, now time.Time) ([]audit, error) {
+	c0, err := caller(ctx)
+	if err != nil {
+		return CompromisedCredential{}, err
+	}
+	err = s.commandWith(ctx, fx, func(tx *store.Tx, now time.Time) ([]audit, error) {
 		before, err := credentialByRef(tx, req.Ref)
 		if err != nil {
 			return nil, err
+		}
+		var inc store.Incident
+		if req.IncidentID != 0 {
+			if inc, err = incidentForCredential(tx, req.IncidentID, before.ID); err != nil {
+				return nil, err
+			}
 		}
 		u, err := tx.Upstream(before.UpstreamID)
 		if err != nil {
@@ -56,7 +67,7 @@ func (s *Service) CompromiseCredential(ctx context.Context, req CompromiseCreden
 		fx.seal = append(fx.seal, sealedSecret{c.ID, sealed})
 		fx.change.Credentials = append(fx.change.Credentials, publishedCredential(c))
 		out.Credential = credentialDTO(c, u.Name)
-		entries := []audit{{action: "credential.compromise", kind: "credential", id: c.ID, before: credentialDTO(before, u.Name), after: out.Credential}}
+		entries := []audit{{action: "credential.compromise", kind: "credential", id: c.ID, before: credentialDTO(before, u.Name), after: out.Credential, incident: req.IncidentID}}
 
 		keys, err := tx.Keys()
 		if err != nil {
@@ -71,8 +82,18 @@ func (s *Service) CompromiseCredential(ctx context.Context, req CompromiseCreden
 			if err != nil {
 				return nil, err
 			}
+			if k.ID == inc.KeyID && req.IncidentID != 0 {
+				entry.incident = req.IncidentID
+			}
 			entries = append(entries, entry)
 			out.RotatedKeys = append(out.RotatedKeys, rotated)
+		}
+		if req.IncidentID != 0 {
+			resolved, err := resolveIncident(tx, inc, store.ResolutionConfirmed, "incident.resolve", c0.Actor, now)
+			if err != nil {
+				return nil, err
+			}
+			entries = append(entries, resolved)
 		}
 		return entries, nil
 	})

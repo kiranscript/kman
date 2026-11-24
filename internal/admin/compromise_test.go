@@ -32,10 +32,10 @@ func withCompromisableCredential(t *testing.T) compromised {
 	}
 	c.myApp, c.otherApp, c.paused = make("my-app", "main"), make("other-app", "main"), make("paused", "main")
 	c.gone, c.safe = make("gone", "main"), make("safe", "spare")
-	if _, err := in.svc.DisableKey(as("owner"), admin.KeyRef{ID: c.paused.Key.ID}); err != nil {
+	if _, err := in.svc.DisableKey(as("owner"), admin.ContainKeyRequest{ID: c.paused.Key.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := in.svc.RevokeKey(as("owner"), admin.KeyRef{ID: c.gone.Key.ID}); err != nil {
+	if _, err := in.svc.RevokeKey(as("owner"), admin.ContainKeyRequest{ID: c.gone.Key.ID}); err != nil {
 		t.Fatal(err)
 	}
 	return c

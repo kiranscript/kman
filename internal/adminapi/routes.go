@@ -132,6 +132,15 @@ var routes = []route{
 	op("PATCH", "/canaries/{id}", "updateCanary", "Change where a canary was planted, its tags and its ignore list", http.StatusOK, Service.UpdateCanary),
 	op("POST", "/canaries/{id}/reset", "resetCanary", "Arm a fired canary again, so its next use alerts; what it recorded stays", http.StatusOK, Service.ResetCanary),
 
+	op("GET", "/incidents", "listIncidents", "List incidents, newest first: the open case for each key whose rules fired, with its state, severity, rules and how many detections it has; filtered by open, and key, and paged", http.StatusOK, Service.ListIncidents),
+	op("GET", "/incidents/{id}", "getIncident", "Read one incident with its detections and the actions taken on it, which are its timeline, and the places it saw that this was me could add as known sources. A client address or network in the evidence is left out unless the expose_client_addresses setting is on", http.StatusOK, Service.GetIncident),
+	op("POST", "/incidents/{id}/acknowledge", "acknowledgeIncident", "Acknowledge an incident: its repeats stop alerting, and an escalation still alerts", http.StatusOK, Service.AckIncident),
+	op("POST", "/incidents/{id}/resolve", "resolveIncident", "Resolve an incident as confirmed (the default) or false_positive", http.StatusOK, Service.ResolveIncident),
+	op("POST", "/incidents/{id}/this-was-me", "thisWasMe", "Resolve an incident as a false positive and, if asked, add the places it saw as known sources, for its key or for every key. Never for a canary", http.StatusOK, Service.ThisWasMe),
+	op("GET", "/known-sources", "listKnownSources", "List the known sources: labelled networks, countries, ASNs and clients the operator says are legitimate, for every key or one. They never silence a canary", http.StatusOK, Service.ListKnownSources),
+	op("POST", "/known-sources", "addKnownSource", "Add a known source: a labelled CIDR, country, ASN or client, for every key or one", http.StatusCreated, Service.AddKnownSource),
+	op("DELETE", "/known-sources/{id}", "removeKnownSource", "Remove a known source", http.StatusOK, Service.RemoveKnownSource),
+
 	op("GET", "/events", "listEvents", "List stored events, newest first: which key, from where, by what client, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on", http.StatusOK, Service.Events),
 	opStream("GET", "/events/stream", "streamEvents", "Follow new events as they happen, as server-sent events, with the filters of the list. A client that cannot keep up loses events and is told how many", Service.StreamEvents),
 

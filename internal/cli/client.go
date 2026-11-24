@@ -321,21 +321,21 @@ func (c *client) ResetCanary(ctx context.Context, req admin.CanaryRef) (admin.Ca
 	return out, c.do(ctx, "POST", "/canaries/"+url.PathEscape(req.ID)+"/reset", nil, nil, &out)
 }
 
-func (c *client) DisableKey(ctx context.Context, req admin.KeyRef) (admin.Key, error) {
-	return c.keyAction(ctx, req, "disable")
+func (c *client) DisableKey(ctx context.Context, req admin.ContainKeyRequest) (admin.Key, error) {
+	return c.keyAction(ctx, req.ID, "disable", req)
 }
 
 func (c *client) EnableKey(ctx context.Context, req admin.KeyRef) (admin.Key, error) {
-	return c.keyAction(ctx, req, "enable")
+	return c.keyAction(ctx, req.ID, "enable", nil)
 }
 
-func (c *client) RevokeKey(ctx context.Context, req admin.KeyRef) (admin.Key, error) {
-	return c.keyAction(ctx, req, "revoke")
+func (c *client) RevokeKey(ctx context.Context, req admin.ContainKeyRequest) (admin.Key, error) {
+	return c.keyAction(ctx, req.ID, "revoke", req)
 }
 
-func (c *client) keyAction(ctx context.Context, req admin.KeyRef, action string) (admin.Key, error) {
+func (c *client) keyAction(ctx context.Context, id, action string, body any) (admin.Key, error) {
 	var out admin.Key
-	return out, c.do(ctx, "POST", "/keys/"+url.PathEscape(req.ID)+"/"+action, nil, nil, &out)
+	return out, c.do(ctx, "POST", "/keys/"+url.PathEscape(id)+"/"+action, nil, body, &out)
 }
 
 func (c *client) UpdateKey(ctx context.Context, req admin.KeyUpdate) (admin.Key, error) {

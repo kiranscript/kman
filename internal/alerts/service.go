@@ -66,6 +66,12 @@ type Options struct {
 	// check. The composition root fills it from admin's settings (alerts may not
 	// import it). Without it, or when it fails, the defaults apply.
 	Settings func(context.Context) (Settings, error)
+	// CanaryIncident records a canary's use as a detection: it opens or escalates
+	// the canary key's incident in the transaction that records the use, and
+	// returns the incident's id, which the canary's alert then names. The
+	// composition root fills it from detect, which alerts may not import. Nil
+	// records no incident, and the alert is as before.
+	CanaryIncident func(tx *store.Tx, keyID string, at time.Time, ev store.Evidence) (incidentID int64, err error)
 	// CredentialWarningWindow is how long an upstream's refused credential is held
 	// to one warning. Default DefaultCredentialWarningWindow.
 	CredentialWarningWindow time.Duration
