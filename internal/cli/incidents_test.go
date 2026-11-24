@@ -466,7 +466,12 @@ func TestIncidentsFollowDoesNotReprintIncidentsPastTheLimit(t *testing.T) {
 	for !strings.Contains(stdout.String(), "#2") && time.Since(start) < 10*time.Second {
 		runtime.Gosched()
 	}
-	time.Sleep(200 * time.Millisecond)
+	// A change to #2 is only printed by a poll after the first listing, which has
+	// looked at #1 too by then.
+	in.kman(t, "incident", "ack", "2")
+	for !strings.Contains(stdout.String(), "acknowledged") && time.Since(start) < 10*time.Second {
+		runtime.Gosched()
+	}
 	cancel()
 	<-done
 	if strings.Contains(stdout.String(), "#1") {
