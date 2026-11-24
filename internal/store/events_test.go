@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -194,5 +195,108 @@ func TestAKeyIsGroupedByTheAddressesItWasUsedFrom(t *testing.T) {
 	})
 	if len(got) != 1 || total != 2 {
 		t.Fatalf("with a limit of 1: %d rows of %d, want 1 of 2", len(got), total)
+	}
+}
+
+// listFixture is a store holding two keys and five events, the oldest first:
+// two of my-app's forwarded and one refused, a refusal with no key, and a
+// realtime session of the other key.
+func listFixture(t *testing.T) (*store.Store, time.Time) {
+	t.Helper()
+	s := open(t)
+	t0 := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	do(t, s, func(tx *store.Tx) error {
+		if _, err := tx.CreateKey(store.VirtualKey{ID: "kkkk1111", Name: "my-app", PolicyVersion: 1, CreatedAt: t0}, []byte("h1")); err != nil {
+			return err
+		}
+		if _, err := tx.CreateKey(store.VirtualKey{ID: "kkkk2222", Name: "other", PolicyVersion: 1, CreatedAt: t0}, []byte("h2")); err != nil {
+			return err
+		}
+		return tx.AddEvents([]store.EventRow{
+			{Time: t0, Kind: "request", KeyID: "kkkk1111", ClientIP: "203.0.113.7", Country: "DE", ASN: 3320, ASOrg: "Deutsche Telekom AG", Model: "gpt-5.4", Operation: "POST /v1/chat/completions", Status: 200},
+			{Time: t0.Add(time.Minute), Kind: "blocked", KeyID: "kkkk1111", ClientIP: "198.51.100.9", Country: "US", Operation: "POST /v1/chat/completions", Status: 403, BlockedCode: "address_not_allowed"},
+			{Time: t0.Add(2 * time.Minute), Kind: "blocked", ClientIP: "192.0.2.4", Status: 401, BlockedCode: "invalid_key", Operation: "GET /v1/models"},
+			{Time: t0.Add(3 * time.Minute), Kind: "session", KeyID: "kkkk2222", Status: 101, Operation: "GET /v1/realtime"},
+			{Time: t0.Add(4 * time.Minute), Kind: "request", KeyID: "kkkk1111", ClientIP: "203.0.113.8", Country: "DE", ASN: 3320, Status: 502, BlockedCode: "upstream_unavailable"},
+		})
+	})
+	return s, t0
+}
+
+func listEvents(t *testing.T, s *store.Store, f store.EventFilter, limit int) []store.StoredEvent {
+	t.Helper()
+	var out []store.StoredEvent
+	do(t, s, func(tx *store.Tx) (err error) { out, err = tx.ListEvents(f, limit); return })
+	return out
+}
+
+func codes(es []store.StoredEvent) []string {
+	var out []string
+	for _, e := range es {
+		out = append(out, e.Kind+"/"+e.BlockedCode)
+	}
+	return out
+}
+
+func TestListEventsReturnsTheNewestFirstWithTheKeyNameAndAnASNLabel(t *testing.T) {
+	s, t0 := listFixture(t)
+	got := listEvents(t, s, store.EventFilter{}, 10)
+	if want := []string{"request/upstream_unavailable", "session/", "blocked/invalid_key", "blocked/address_not_allowed", "request/"}; !slices.Equal(codes(got), want) {
+		t.Fatalf("events = %v, want %v", codes(got), want)
+	}
+	last := got[4]
+	if last.ID == 0 || !last.Time.Equal(t0) || last.KeyID != "kkkk1111" || last.KeyName != "my-app" || last.ASN != 3320 || last.ASOrg != "Deutsche Telekom AG" ||
+		last.ClientIP != "203.0.113.7" || last.Country != "DE" || last.Model != "gpt-5.4" || last.Operation != "POST /v1/chat/completions" || last.Status != 200 {
+		t.Errorf("the oldest event = %+v", last)
+	}
+	// The ASN's label belongs to the key's place, so a later event from the same
+	// AS has it too.
+	if got[0].ASOrg != "Deutsche Telekom AG" {
+		t.Errorf("a later event from AS3320 has the label %q, want the place's", got[0].ASOrg)
+	}
+	// An event that presented no key is listed, with no key.
+	if probe := got[2]; probe.KeyID != "" || probe.KeyName != "" || probe.BlockedCode != "invalid_key" {
+		t.Errorf("the event with no key = %+v", probe)
+	}
+}
+
+func TestListEventsFiltersByKeyKindRefusalCodeAndTime(t *testing.T) {
+	s, t0 := listFixture(t)
+	for _, c := range []struct {
+		name string
+		f    store.EventFilter
+		want []string
+	}{
+		{"a key", store.EventFilter{KeyID: "kkkk1111"}, []string{"request/upstream_unavailable", "blocked/address_not_allowed", "request/"}},
+		{"refused", store.EventFilter{Kinds: []string{"blocked"}}, []string{"blocked/invalid_key", "blocked/address_not_allowed"}},
+		{"forwarded", store.EventFilter{Kinds: []string{"request", "session"}}, []string{"request/upstream_unavailable", "session/", "request/"}},
+		{"a code", store.EventFilter{BlockedCode: "invalid_key"}, []string{"blocked/invalid_key"}},
+		{"a code on a forwarded event", store.EventFilter{BlockedCode: "upstream_unavailable"}, []string{"request/upstream_unavailable"}},
+		{"since", store.EventFilter{Since: t0.Add(2 * time.Minute)}, []string{"request/upstream_unavailable", "session/", "blocked/invalid_key"}},
+		{"until", store.EventFilter{Until: t0.Add(2 * time.Minute)}, []string{"blocked/address_not_allowed", "request/"}},
+		{"all of them", store.EventFilter{KeyID: "kkkk1111", Kinds: []string{"blocked"}, BlockedCode: "address_not_allowed", Since: t0, Until: t0.Add(time.Hour)}, []string{"blocked/address_not_allowed"}},
+		{"nothing", store.EventFilter{KeyID: "nokey"}, nil},
+	} {
+		if got := codes(listEvents(t, s, c.f, 10)); !slices.Equal(got, c.want) {
+			t.Errorf("%s: events = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestListEventsPagesBackwardsFromACursor(t *testing.T) {
+	s, _ := listFixture(t)
+	first := listEvents(t, s, store.EventFilter{}, 2)
+	if len(first) != 2 {
+		t.Fatalf("first page = %v", codes(first))
+	}
+	second := listEvents(t, s, store.EventFilter{BeforeID: first[1].ID}, 2)
+	third := listEvents(t, s, store.EventFilter{BeforeID: second[1].ID}, 2)
+	var all []store.StoredEvent
+	all = append(append(append(all, first...), second...), third...)
+	if want := []string{"request/upstream_unavailable", "session/", "blocked/invalid_key", "blocked/address_not_allowed", "request/"}; !slices.Equal(codes(all), want) {
+		t.Errorf("pages joined = %v, want %v", codes(all), want)
+	}
+	if len(third) != 1 {
+		t.Errorf("last page has %d events, want the 1 left", len(third))
 	}
 }
