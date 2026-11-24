@@ -686,7 +686,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('2');
       // What can be done to the selected key is dropped last; scrolling and selecting go first.
-      for (const hint of ['↑↓ select', 'd disable', 'x revoke', '/ filter', '? help', 'q quit']) expect(lines(m).at(-1)).toContain(hint);
+      for (const hint of ['↑↓ select', 'd disable', '1-4 panels', '/ filter', '? help', 'q quit']) expect(lines(m).at(-1)).toContain(hint);
       await m.press('d');
       expect(m.screen()).toContain('Disable this key?');
       expect(m.screen()).toContain('you can enable it again');
@@ -2664,6 +2664,72 @@ describe('review round 8', () => {
     await loaded(m);
     await m.press('2');
     expect(lines(m).at(-1)).toContain('select');
+    m.unmount();
+  });
+});
+
+describe('review round 9', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+
+  it('puts the first thing to look at on the one-line Status at 80x24', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).find((l) => l.includes('[1] Status'))).toContain('✖ ollama · no credential');
+    m.unmount();
+  });
+
+  it('keeps the panel keys in the footer ahead of revoke at 80x24, and a gap before the connection', async () => {
+    const m = mount(fakeClient(), { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).at(-1)).toContain('1-4 panels');
+    expect(lines(m).at(-1)).toMatch(/q quit {2,}● live/);
+    m.unmount();
+  });
+
+  it('names a refused answer by its kind, not as a server error', async () => {
+    const client = fakeClient();
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    client.fail = new ApiError('conflict', 'busy', 409);
+    await m.press('r');
+    await until(() => m.screen().includes('refused'), 'the refused flag');
+    expect(m.screen()).not.toContain('server error');
+    client.fail = new ApiError('internal', 'boom', 500);
+    await m.press('r');
+    await until(() => m.screen().includes('server error'), 'the server error flag');
+    m.unmount();
+  });
+
+  it('keeps updated first and the same row order in a focused and an unfocused Status', async () => {
+    const client = fakeClient();
+    client.keys.push(key({ id: 'k_n', name: 'n', spend: undefined }), key({ id: 'k_m', name: 'm', spend: undefined }));
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    expect(lines(m)[1]).toContain('updated');
+    m.unmount();
+  });
+
+  it('says so when Enter has nothing more to show', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    await m.press(ENTER);
+    expect(m.screen()).toContain('The whole detail is already showing.');
+    m.unmount();
+  });
+
+  it('gives the relative time of an expiring key once', async () => {
+    const client = fakeClient();
+    client.keys[0]!.expires_at = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const m = mount(client, { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    expect(m.screen()).not.toMatch(/\(in [23]d\)/);
+    expect(m.screen()).toMatch(/expires in \d days/);
     m.unmount();
   });
 });

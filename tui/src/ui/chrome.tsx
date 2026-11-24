@@ -20,7 +20,11 @@ export function linkBadge(link: Link): { glyph: string; word: string; color?: st
     case 'ok':
       return { glyph: '●', word: 'live', color: color.ok };
     case 'down':
-      if (link.answered) return { glyph: '✖', word: 'server error', color: color.danger };
+      // The server answered, so it is there: say what kind of answer, not "offline".
+      if (link.answered) {
+        const word = (link.status ?? 500) >= 500 ? 'server error' : link.status === 429 ? 'rate limited' : 'refused';
+        return { glyph: '✖', word, color: color.danger };
+      }
       return { glyph: '◌', word: link.lastOk ? 'offline' : 'cannot connect', color: color.warn };
     case 'denied':
       return { glyph: '✖', word: 'token refused', color: color.danger };
@@ -98,7 +102,8 @@ export function noticeRows(notice: Notice | undefined, width: number): number {
 export function Footer({ notice, hints, link, width }: { notice?: Notice; hints: HintItem[]; link: Link; width: number }) {
   const badge = linkBadge(link);
   const tail = ` ${badge.glyph} ${badge.word} `;
-  const shown = fitHints(hints, width - [...tail].length - 1);
+  // Two spaces at least between the last hint and the connection.
+  const shown = fitHints(hints, width - [...tail].length - 3);
   const tone = notice?.tone === 'ok' ? color.ok : notice?.tone === 'error' ? color.danger : undefined;
   const lines = notice ? noticeLines(notice, width) : [' '];
   return (

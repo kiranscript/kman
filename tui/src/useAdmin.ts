@@ -18,7 +18,7 @@ export type Link =
   | { state: 'connecting' }
   | { state: 'ok'; at: number }
   /** The API did not answer; `lastOk` is when it last did. */
-  | { state: 'down'; error: string; lastOk?: number; answered?: boolean }
+  | { state: 'down'; error: string; lastOk?: number; answered?: boolean; status?: number }
   /** The API refused the token: retrying cannot help. */
   | { state: 'denied'; error: string };
 
@@ -66,7 +66,7 @@ export function useAdmin(client: AdminClient, intervalMs = 3000) {
       const message = err instanceof Error ? err.message : String(err);
       // An answer that is an error (a 500) is not the same as no answer: the server is there.
       const answered = err instanceof ApiError && err.code !== 'unreachable';
-      setLink({ state: 'down', error: message, lastOk: lastOk.current, answered });
+      setLink({ state: 'down', error: message, lastOk: lastOk.current, answered, status: err instanceof ApiError ? err.status : undefined });
       return message;
     }
   }, [client]);

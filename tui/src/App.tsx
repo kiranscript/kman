@@ -329,7 +329,10 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
         return goTab('keys');
       }
       // Enter only hands the keyboard over when there is something to scroll to.
-      if (key.return && tab !== 'status' && selectable && scrollMax > 0) return setDetail(true);
+      if (key.return && tab !== 'status' && selectable) {
+        if (scrollMax > 0) return setDetail(true);
+        return setNotice({ tone: 'info', text: 'The whole detail is already showing.' });
+      }
       if (tab === 'keys') {
         if (input === '/') return setMode({ kind: 'filter' });
         if (key.escape && filter) {
@@ -719,7 +722,8 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, offline, work
     return [
       ...select,
       ...open,
-      ...(canChange ? [...create, ...act, ...(key && key.status !== 'revoked' ? [{ k: 'x', label: 'revoke', rank: 5 }] : [])] : []),
+      // Revoke is documented in help and confirmed in a dialog, so it goes before the panel keys do.
+      ...(canChange ? [...create, ...act, ...(key && key.status !== 'revoked' ? [{ k: 'x', label: 'revoke', rank: 3.1 }] : [])] : []),
       ...(key && !offline ? [{ k: 'c', label: 'IPs', rank: 3 }] : []),
       ...(filtered ? [{ k: 'Esc', label: 'clear filter', always: true }] : hasKeys ? [{ k: '/', label: 'filter', rank: 6 }] : []),
       ...common,

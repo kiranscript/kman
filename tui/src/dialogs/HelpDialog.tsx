@@ -25,6 +25,7 @@ const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
     panel: 'keys',
     rows: [
       ['/   Esc', 'filter by name, id, tag or upstream; clear it'],
+      ['Enter', 'focus the detail, when it has more than it shows'],
       ['d  e', 'disable, enable the key (y confirms, n cancels)'],
       ['c', 'the addresses a key was used from'],
       ['x', 'revoke the key (type its name to confirm)'],
@@ -59,7 +60,7 @@ export function HelpDialog({ onClose, focus, detail }: { onClose: () => void; fo
   // With the detail panel focused only its own keys work, so those come first.
   const mine = detail ? DETAIL : groups.find((g) => g.panel === focus);
   // On Status Enter opens the selected item, so the list-with-a-detail line does not apply there.
-  const global = focus === 'status' ? { ...groups[0]!, rows: groups[0]!.rows.filter(([k]) => k !== 'Enter') } : groups[0]!;
+  const global = focus === 'status' || focus === 'keys' ? { ...groups[0]!, rows: groups[0]!.rows.filter(([k]) => k !== 'Enter') } : groups[0]!;
   const ordered = detail ? [DETAIL, DETAIL_GLOBAL] : [...(mine ? [mine] : []), global];
   useInput((_i, key) => {
     if (key.escape || key.return || _i === '?') onClose();

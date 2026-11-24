@@ -225,7 +225,9 @@ export function KeyMain({
   const label = keyLabel(k);
   const titleClipped = !titleFits(`Key: ${label}`, undefined, width);
   const barW = compact ? 10 : Math.min(14, Math.max(8, width - 4 - 26));
-  const expires = k.status === 'revoked' ? 'ended for good' : `expires ${dateTime(k.expires_at)} (${until(k.expires_at, now)})`;
+  // An expiry warning already says how long is left, so the line then gives only the date.
+  const soon = risks.some((r) => r.label.startsWith('expires'));
+  const expires = k.status === 'revoked' ? 'ended for good' : `expires ${dateTime(k.expires_at)}${soon ? '' : ` (${until(k.expires_at, now)})`}`;
   return (
     <ScrollFrame title={`Key: ${label}`} width={width} height={height} scroll={scroll}>
       <Body>

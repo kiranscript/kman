@@ -209,10 +209,21 @@ export function StatusPanel({
   // One line that carries the connection, the count, the spend, who and where, and the
   // price: the summary when there is room for only one line. What does not fit is dropped
   // from the end.
+  const topItem = items[0];
+  const attentionPart: Seg[] | undefined = topItem
+    ? [
+        dot,
+        { t: ' ' },
+        { t: severityGlyph[topItem.top], color: severityColor[topItem.top], dim: topItem.top === 'info' },
+        { t: ` ${fitMiddle(topItem.name, 14)} · ${topRisk(topItem.risks)!.short}`, dim: topItem.top === 'info' },
+      ]
+    : undefined;
   const compactLine: Seg[] = fitParts(
     [
       ...badgePart,
       ...priceStale,
+      // The first thing to look at comes ahead of the counts: it cannot be seen from another panel.
+      ...(strip && attentionPart ? [attentionPart] : []),
       [dot, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
       [dot, { t: ` ${money(spend('today'))} today`, bold: true }],
       ...(inBorder ? [] : [whereSeg]),
@@ -243,7 +254,7 @@ export function StatusPanel({
   ];
   /** The connection, a stale price, and the count when `withCount`. */
   const head = (withCount: boolean): Seg[] =>
-    fitParts([...badgePart, ...priceStale, ...(withCount ? [activePart] : []), ...priceOk], inner - 1);
+    fitParts([...(link.state === 'ok' ? [[{ t: linkText, dim: true }]] : badgePart), ...priceStale, ...(withCount ? [activePart] : []), ...priceOk], inner - 1);
   /** The spend, with the price when the line above does not already carry it. */
   const money2 = (above: Seg[]): Seg[] =>
     fitParts(
@@ -259,7 +270,7 @@ export function StatusPanel({
   const tierFor = (n: number): Seg[][] => {
     if (n <= 1) return [compactLine];
     if (n === 2) return [head(true), money2(head(true))];
-    return [head(false), countsLine, money2(head(false)), ...(inBorder ? [] : [whereLine])];
+    return [head(false), ...(inBorder ? [] : [whereLine]), countsLine, money2(head(false))];
   };
 
   const rows = Math.max(1, height - 2);
