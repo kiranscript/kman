@@ -106,6 +106,9 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
     focused: detail,
     onView: (r) => setViewRows((c) => (c === r ? c : r)),
   };
+  /** Whether the focused list has more than one row, so up and down have somewhere to go. */
+  const movable =
+    tab === 'status' ? items.length > 1 : tab === 'keys' ? visible.length > 1 : tab === 'upstreams' ? data.upstreams.length > 1 : data.audit.length > 1;
   /** Whether the focused list has rows to move over. */
   const selectable =
     tab === 'status' ? items.length > 0 : tab === 'keys' ? visible.length > 0 : tab === 'upstreams' ? data.upstreams.length > 0 : data.audit.length > 0;
@@ -357,8 +360,12 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   const width = columns;
   // What each list could fill; Status is its summary, and under it the list when focused.
   const wants = {
-    status: tab === 'status' ? 7 + items.length : 5,
-    keys: Math.max(1, visible.length) + (tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? 1 : 0),
+    // The summary (four lines), the heading and the list.
+    status: tab === 'status' ? 5 + items.length : 5,
+    // While filtering the panel keeps the height of the whole list, so it does not shrink under the cursor.
+    keys:
+      Math.max(1, tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? data.keys.length : visible.length) +
+      (tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? 1 : 0),
     upstreams: Math.max(1, data.upstreams.length),
     audit: Math.max(1, data.audit.length),
   };
@@ -389,6 +396,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
         height={h.keys}
         focused={tab === 'keys' && !detail && !popup}
         keys={visible}
+        all={data.keys}
         total={data.keys.length}
         selectedId={selectedId}
         filter={filter}
@@ -539,6 +547,8 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
         ) : (
           <StatusMain width={lay.mainW} height={lay.mainH} audit={data.audit} names={names} now={now} scroll={scroll} />
         )
+      ) : tab === 'keys' && data.keys.length === 0 ? (
+        <StartMain width={lay.mainW} height={lay.mainH} scroll={scroll} canCreate={data.upstreams.length > 0} />
       ) : tab === 'keys' ? (
         <KeyMain
           keyData={selectedKey}
@@ -600,6 +610,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
                   key: selectedKey,
                   filtered: filter !== '',
                   selectable,
+                  movable,
                   offline: link.state === 'down',
                   working: working !== undefined,
                   canCreate: data.upstreams.length > 0,
@@ -632,6 +643,8 @@ interface HintState {
   filtered: boolean;
   /** Whether the panel has rows to move over. */
   selectable: boolean;
+  /** Whether it has more than one, so the arrows have somewhere to go. */
+  movable: boolean;
   offline: boolean;
   /** A change is being sent: another cannot start. */
   working: boolean;
@@ -649,14 +662,14 @@ interface HintState {
  * missed go first (`rank`): scrolling and the panel keys, then selecting, and last the
  * actions on the selected row, which stay unless nothing else can.
  */
-function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canCreate, hasKeys, scrollable, detail }: HintState): HintItem[] {
+function hintsFor({ tab, mode, key, filtered, selectable, movable, offline, working, canCreate, hasKeys, scrollable, detail }: HintState): HintItem[] {
   const canChange = !offline && !working;
   if (mode === 'confirm') return [{ k: 'y', label: 'yes' }, { k: 'n', label: 'cancel' }];
   if (mode === 'filter') {
     return [
       { k: 'Enter', label: 'keep filter', always: true },
       { k: 'Esc', label: 'clear', always: true },
-      ...(selectable ? [{ k: '↑↓', label: 'select' }] : []),
+      ...(movable ? [{ k: '↑↓', label: 'select' }] : []),
     ];
   }
   // With no upstream the form only explains, and Esc is all that works in it.
@@ -693,7 +706,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canC
   const create = canChange && canCreate ? [{ k: 'n', label: 'new key', rank: 4 }] : [];
   // Only offered when the detail has more than it shows: otherwise there is nothing to go to.
   const open = selectable && scrollable ? [{ k: 'Enter', label: 'details', rank: 3.6 }] : [];
-  const select = selectable ? [{ k: '↑↓', label: 'select', rank: 1 }] : [];
+  const select = movable ? [{ k: '↑↓', label: 'select', rank: 1 }] : [];
   if (tab === 'keys') {
     const act =
       key?.status === 'active'

@@ -58,7 +58,9 @@ export function HelpDialog({ onClose, focus, detail }: { onClose: () => void; fo
   // are on their own screens, which this dialog has no room for.
   // With the detail panel focused only its own keys work, so those come first.
   const mine = detail ? DETAIL : groups.find((g) => g.panel === focus);
-  const ordered = detail ? [DETAIL, DETAIL_GLOBAL] : [...(mine ? [mine] : []), groups[0]!];
+  // On Status Enter opens the selected item, so the list-with-a-detail line does not apply there.
+  const global = focus === 'status' ? { ...groups[0]!, rows: groups[0]!.rows.filter(([k]) => k !== 'Enter') } : groups[0]!;
+  const ordered = detail ? [DETAIL, DETAIL_GLOBAL] : [...(mine ? [mine] : []), global];
   useInput((_i, key) => {
     if (key.escape || key.return || _i === '?') onClose();
   });

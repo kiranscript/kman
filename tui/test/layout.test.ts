@@ -39,7 +39,7 @@ describe('layout', () => {
   });
 
   it('gives the panels about two fifths of a wide screen', () => {
-    expect(layout(100, 30, 'keys').leftW).toBe(42);
+    expect(layout(100, 30, 'keys').leftW).toBe(44);
     expect(layout(140, 40, 'keys').leftW).toBe(56);
     expect(layout(200, 40, 'keys').leftW).toBe(56);
   });

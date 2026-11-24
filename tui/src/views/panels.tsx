@@ -62,7 +62,8 @@ function windowed<T>(items: T[], selected: number, rows: number) {
 /** Expired but not yet marked as such by its status. */
 const lapsed0 = (k: Key) => k.expired && k.status === 'active';
 
-const position = (selected: number, count: number) => (count > 0 ? `${selected + 1} of ${count}` : undefined);
+// "1 of 1" says nothing, so a list of one has no position.
+const position = (selected: number, count: number) => (count > 1 ? `${selected + 1} of ${count}` : undefined);
 
 // ---- Status ---------------------------------------------------------------
 
@@ -257,11 +258,11 @@ export function StatusPanel({
   // summary gets everything else, down to a few lines.
   // The label sits on the list only when there is room; otherwise the border says it
   // (`1 of 7 need attention`), and at least one selectable line is always kept.
-  const header = items.length > 0 && rows >= 8 ? 1 : 0;
+  const header = items.length > 0 && rows >= 6 ? 1 : 0;
   const needed = items.length === 0 ? 1 : header + items.length;
-  const listArea = focused ? Math.min(needed, Math.max(header + 1, rows >= 8 ? rows - 3 : rows - 2)) : 0;
+  const listArea = focused ? Math.min(needed, Math.max(header + 1, rows >= 6 ? rows - 3 : rows - 2)) : 0;
   const summaryRows = focused ? rows - listArea : rows;
-  const base = summaryRows >= 5 ? fullLines : tierFor(summaryRows);
+  const base = summaryRows >= fullLines.length ? fullLines : tierFor(summaryRows);
   // A tall summary with a row to spare says what the list would: the first thing to look at.
   const first = items[0];
   const attentionLine: Seg[] = first
@@ -269,8 +270,8 @@ export function StatusPanel({
         { t: severityGlyph[first.top], color: severityColor[first.top], dim: first.top === 'info' },
         { t: ` ${first.name} · ${topRisk(first.risks)!.short}` + (items.length > 1 ? ` · +${items.length - 1} more` : ''), dim: first.top === 'info' },
       ]
-    : [{ t: 'Nothing to review', dim: true }];
-  const lines = !focused && summaryRows > base.length && summaryRows >= 5 ? [...base, attentionLine] : base;
+    : [{ t: 'Nothing to review.', dim: true }];
+  const lines = !focused && summaryRows > base.length && summaryRows >= fullLines.length ? [...base, attentionLine] : base;
   const listRows = listArea - header;
   const sel = Math.min(selected, Math.max(0, items.length - 1));
   const start = windowStart(sel, items.length, Math.max(1, listRows));
@@ -283,7 +284,7 @@ export function StatusPanel({
       count={count}
       subtitle={borderText}
       position={
-        focused && items.length > 0 ? `${sel + 1} of ${items.length}` : items.length > 0 ? `${items.length} to review` : undefined
+        focused && items.length > 1 ? `${sel + 1} of ${items.length}` : items.length > 0 ? `${items.length} to review` : undefined
       }
       focused={focused}
       width={width}
@@ -304,7 +305,7 @@ export function StatusPanel({
               <Text color={color.ok}> ✔ every key is capped and current</Text>
             ) : (
               <Text dimColor wrap="truncate-end">
-                {keys.length > 0 ? ' No active keys. n creates one.' : upstreamCount === 0 ? ' No upstream yet: kman upstream add' : ' Nothing to review yet.'}
+                {keys.length > 0 ? ' No active keys. n creates one.' : upstreamCount === 0 ? ' No upstream yet: kman upstream add' : ' Nothing to review.'}
               </Text>
             )
           ) : (
@@ -345,8 +346,11 @@ export function KeysPanel({
   filtering,
   hasUpstreams,
   now,
+  all,
 }: PanelProps & {
   keys: Key[];
+  /** Every key, filtered or not: the columns are sized by these. */
+  all: Key[];
   total: number;
   selectedId?: string;
   filter: string;
@@ -384,12 +388,14 @@ export function KeysPanel({
         : [];
     return { label: keyLabel(k), status, risk: warn, spend };
   };
-  const rowsInfo = (rows > 0 ? shown : []).map(parts);
+  // The columns are as wide as the widest of all keys, not of those shown, so they do not
+  // move while filtering or scrolling.
+  const rowsInfo = (rows > 0 ? all : []).map(parts);
   const cols = {
     s: Math.max(0, ...rowsInfo.map((p) => segLen(p.status))),
     r: Math.max(0, ...rowsInfo.map((p) => segLen(p.risk))),
     c: Math.max(0, ...rowsInfo.map((p) => segLen(p.spend))),
-    mode: 'tight' as 'all' | 'noSpend' | 'marks' | 'tight',
+    mode: 'tight' as 'all' | 'noSpend' | 'marksSpend' | 'marks' | 'tight',
   };
   {
     // The names get what they need (up to 20 cells) before a column does; as room runs
@@ -400,6 +406,7 @@ export function KeysPanel({
     const base = cols.s + (cols.r ? 1 + cols.r : 0);
     if (base + (cols.c ? 1 + cols.c : 0) <= room) cols.mode = 'all';
     else if (base <= inner - 3 - Math.min(longest, 12)) cols.mode = 'noSpend';
+    else if (cols.s + (cols.r ? 2 : 0) + (cols.c ? 1 + cols.c : 0) <= inner - 3 - Math.min(longest, 12)) cols.mode = 'marksSpend';
     else if (cols.s + (cols.r ? 2 : 0) <= inner - 3 - Math.min(longest, 12)) cols.mode = 'marks';
   }
   return (
@@ -412,7 +419,12 @@ export function KeysPanel({
       width={width}
       height={height}
     >
-      {/* With a filter the title says 0 of n and the detail says why: not three times. */}
+      {/* With a filter the title says 0 of n and the detail says why; the list says it shortly. */}
+      {keys.length === 0 && rows > 0 && filtered ? (
+        <Text dimColor wrap="truncate-end">
+          {lead.length ? ' ' : ''}no match
+        </Text>
+      ) : null}
       {keys.length === 0 && rows > 0 && !filtered ? (
         <Text dimColor wrap="truncate-end">
           {lead.length ? ' ' : ''}
@@ -433,8 +445,12 @@ export function KeysPanel({
               ]
             : cols.mode === 'noSpend'
               ? [...pad(p.status, cols.s), ...(cols.r ? [{ t: ' ' }, ...pad(p.risk, cols.r)] : [])]
-              : cols.mode === 'marks'
-                ? [...pad(p.status, cols.s), ...(cols.r ? [{ t: ' ' }, ...pad(p.risk.slice(0, 1).map((x) => ({ ...x, t: [...x.t][0] ?? ' ' })), 1)] : [])]
+              : cols.mode === 'marks' || cols.mode === 'marksSpend'
+                ? [
+                    ...pad(p.status, cols.s),
+                    ...(cols.r ? [{ t: ' ' }, ...pad(p.risk.slice(0, 1).map((x) => ({ ...x, t: [...x.t][0] ?? ' ' })), 1)] : []),
+                    ...(cols.mode === 'marksSpend' && cols.c ? [{ t: ' ' }, ...padStartSegs(p.spend, cols.c)] : []),
+                  ]
                 : fitParts([p.status, ...(p.risk.length ? [p.risk] : [])], Math.max(0, inner - 2 - Math.min(nameLen, 6) - 1));
         return (
           <Row

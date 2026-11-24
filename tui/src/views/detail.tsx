@@ -8,7 +8,7 @@ import { capMoney, clock, dateTime, fit, money, padEnd, plural, requestsText, un
 import { keyLabel } from '../keys.js';
 import { keyRisks } from '../risk.js';
 import { Frame, titleFits } from '../ui/frame.js';
-import { Field, Meter, RiskLine, SectionTitle, StatusBadge } from '../ui/parts.js';
+import { Field, Meter, RiskLine, SectionTitle, StatusBadge, Wrapped } from '../ui/parts.js';
 import { color, severityColor, severityGlyph } from '../ui/theme.js';
 import { AUDIT_LIMIT } from '../useAdmin.js';
 import { actionColor, rowTarget, targetName, targetText } from './audit.js';
@@ -75,12 +75,14 @@ export function StartMain({ width, height, scroll, canCreate }: Size & { scroll:
   return (
     <Frame title="Getting started" width={width} height={height}>
       <Box flexDirection="column" paddingX={1}>
-        <Text wrap="wrap">No keys yet.</Text>
-        <Text dimColor wrap="wrap">
-          A virtual key is what an app uses in place of your real API key: kman checks it, applies its limits, and forwards the request.
-        </Text>
-        <Box marginTop={1}>
-          <Text wrap="wrap">{canCreate ? 'Press n to create the first one.' : 'Add an upstream first: kman upstream add openai --preset openai'}</Text>
+        <Text>No keys yet.</Text>
+        <Wrapped text="A virtual key is what an app uses in place of your real API key: kman checks it, applies its limits, and forwards the request." width={width - 4} maxLines={6} dim />
+        <Box marginTop={1} flexDirection="column">
+          <Wrapped
+            text={canCreate ? 'Press n to create the first one.' : 'Add an upstream first: kman upstream add openai --preset openai'}
+            width={width - 4}
+            maxLines={3}
+          />
         </Box>
       </Box>
     </Frame>

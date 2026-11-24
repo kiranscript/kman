@@ -53,7 +53,10 @@ export function editField(state: Edit, input: string, key: Key, max = 64, accept
   if (typed.length === 0) return make(chars, at);
   const room = Math.max(0, max - chars.length);
   const added = typed.slice(0, room);
-  return make([...chars.slice(0, at), ...added, ...chars.slice(at)], at + added.length);
+  // The cursor is counted in whole characters of the new text: what is typed may join the
+  // character before it (an accent), and then it is part of that one, not a new one.
+  const before = [...chars.slice(0, at), ...added].join('');
+  return { value: before + chars.slice(at).join(''), cursor: graphemes(before).length };
 }
 
 /** What an unfocused field shows: the end of a long value, behind a mark that says its start is cut. */

@@ -53,3 +53,13 @@ describe('editing beside a joined emoji', () => {
     expect(state.value).toBe('');
   });
 });
+
+describe('typing a character that joins the one before it', () => {
+  it('keeps the cursor after the joined character, so the next letter lands where it is typed', () => {
+    let state = editField({ value: 'aZ', cursor: 1 }, '\u0301', key());
+    expect(state.value).toBe('a\u0301Z');
+    expect(state.cursor).toBe(1);
+    state = editField(state, 'x', key());
+    expect(state.value).toBe('a\u0301xZ');
+  });
+});

@@ -38,8 +38,8 @@ const PANELS: Tab[] = ['status', 'keys', 'upstreams', 'audit'];
  */
 export function layout(columns: number, rows: number, focus: Tab, want: number | Partial<Record<Tab, number>> = Infinity): Layout {
   const wide = columns >= WIDE;
-  // About two fifths of the screen, so names and targets keep room beside the detail.
-  const leftW = wide ? Math.min(56, Math.max(42, Math.floor(columns * 0.4))) : columns;
+  // About two fifths of the screen (44 cells at 100 columns), so names and targets keep room beside the detail.
+  const leftW = wide ? Math.min(56, Math.max(44, Math.floor(columns * 0.42))) : columns;
   const strips = !wide && rows < STRIP_ROWS;
   const small = strips ? 1 : COLLAPSED;
   const heights: Record<Tab, number> = { status: small, keys: small, upstreams: small, audit: small };
