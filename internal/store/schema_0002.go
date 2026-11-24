@@ -29,6 +29,22 @@ import (
 // last_* columns are the address, country, ASN, its organisation and the client
 // of the last use: an address is personal data, so the admin API gives it out
 // only with expose_client_addresses on (ADR 0010).
+//
+// incidents are the case kman opens for a key when a rule fires (#88). A key has
+// at most one unresolved incident, which the partial unique index enforces.
+// severity is the highest of its detections and alerted_severity the severity
+// the last alert queued for it named; rules_json is the rules that have fired;
+// detection_count counts every detection raised, repeats included, while
+// detections holds a row for each only up to a bound. state is open,
+// acknowledged or resolved, and a resolved incident has a resolution:
+// confirmed, false_positive or expired. would_disable_at and would_block_count
+// are the dry-run results (auto-disable, a later ticket). Ids are plain
+// integers, which an operator types, and never reused.
+//
+// known_sources are the places an operator has said are legitimate (#88): a
+// CIDR, a country, an ASN or a client, for every key (scope ”) or one key
+// (scope is its key id). A canary ignores them; only its own ignore list
+// silences one (ADR 0013).
 const schema0002 = `
 ALTER TABLE events ADD COLUMN client TEXT;
 
@@ -57,6 +73,55 @@ CREATE TABLE canaries (
 	last_asn      INTEGER,
 	last_as_org   TEXT,
 	last_client   TEXT
+) STRICT;
+
+CREATE TABLE incidents (
+	id               INTEGER PRIMARY KEY AUTOINCREMENT,
+	key_id           TEXT    NOT NULL REFERENCES virtual_keys (key_id),
+	state            TEXT    NOT NULL CHECK (state IN ('open', 'acknowledged', 'resolved')),
+	severity         TEXT    NOT NULL CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+	alerted_severity TEXT    CHECK (alerted_severity IN ('low', 'medium', 'high', 'critical')),
+	rules_json       TEXT    NOT NULL DEFAULT '[]',
+	detection_count  INTEGER NOT NULL DEFAULT 0,
+	opened_at        INTEGER NOT NULL,
+	last_fired_at    INTEGER NOT NULL,
+	acknowledged_at  INTEGER,
+	acknowledged_by  TEXT,
+	resolved_at      INTEGER,
+	resolved_by      TEXT,
+	resolution       TEXT    CHECK (resolution IN ('confirmed', 'false_positive', 'expired')),
+	would_disable_at INTEGER,
+	would_block_count INTEGER NOT NULL DEFAULT 0,
+	generation       INTEGER NOT NULL,
+	CHECK ((state = 'resolved') = (resolution IS NOT NULL))
+) STRICT;
+
+CREATE UNIQUE INDEX incidents_one_unresolved ON incidents (key_id) WHERE state <> 'resolved';
+CREATE INDEX incidents_by_key ON incidents (key_id, id);
+CREATE INDEX incidents_quiet ON incidents (last_fired_at) WHERE state = 'open';
+
+CREATE TABLE detections (
+	id            INTEGER PRIMARY KEY AUTOINCREMENT,
+	incident_id   INTEGER NOT NULL REFERENCES incidents (id),
+	key_id        TEXT    NOT NULL REFERENCES virtual_keys (key_id),
+	ts            INTEGER NOT NULL,
+	rule          TEXT    NOT NULL,
+	severity      TEXT    NOT NULL CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+	evidence_json TEXT    NOT NULL DEFAULT '{}'
+) STRICT;
+
+CREATE INDEX detections_by_incident ON detections (incident_id, id);
+
+CREATE TABLE known_sources (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	scope      TEXT    NOT NULL DEFAULT '',
+	kind       TEXT    NOT NULL CHECK (kind IN ('cidr', 'country', 'asn', 'client')),
+	value      TEXT    NOT NULL,
+	label      TEXT    NOT NULL,
+	created_by TEXT    NOT NULL,
+	created_at INTEGER NOT NULL,
+	generation INTEGER NOT NULL,
+	UNIQUE (scope, kind, value)
 ) STRICT;
 `
 
