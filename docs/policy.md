@@ -40,6 +40,7 @@ kman key update my-app --policy '{"allowed_paths":["POST /v1/chat/completions","
 kman key update my-app --policy '{"monthly_cap_micro":50000000}'
 kman key update my-app --policy '{}'
 kman key update my-app --policy '{"monthly_cap_micro":50000000,"monthly_budget_micro":40000000,"soft_budget_percents":[50,90,100]}'
+kman key update my-app --policy '{"learning_period":"3d","detect":{"new_client":false}}'
 kman key update my-app --policy '{"daily_cap_micro":5000000,"monthly_cap_micro":50000000,"rpm_limit":120}'
 ```
 
@@ -57,6 +58,8 @@ kman key update my-app --policy '{"daily_cap_micro":5000000,"monthly_cap_micro":
 | `allowed_cidrs` | Networks the key may be used from, such as `203.0.113.0/24`; a bare address is a network of one. |
 | `allowed_countries` | Countries the key may be used from, as ISO 3166-1 codes (`US`). Needs a GeoIP database. |
 | `rpm_limit` | The most requests per minute. |
+| `learning_period` | How long this key's [location rules](operator-guide/incidents.md#location-rules) only record, from its first forwarded request: `3d`, `36h`, `1h30m`, or `0s` for none, at most `90d`. Leave it out to use the install's `learning_period` setting (7 days). |
+| `detect` | Turns a detection rule off for this key, by name: `{"new_country": false}`. The rules are `new_country`, `new_asn`, `new_network` and `new_client`, each on unless you turn it off, and a canary's rule cannot be turned off. |
 
 A cap or budget of `0` or less is refused, never read as "no cap".
 

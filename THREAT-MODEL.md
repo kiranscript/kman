@@ -130,6 +130,20 @@ The review checked each of SPEC §1's eight invariants against the code and by r
 - **The `User-Agent` is still forwarded to the upstream as the app sent it,** as before: kman's header stripping removes a key at the start of a header's value (see above), not one inside a longer one. That is the app's own header going to the provider it chose, and not something kman records.
 - **A request with no key costs a little more.** Its client is reduced, in about 60 nanoseconds for a real `User-Agent` (`BenchmarkClientOf`; `BenchmarkBadKey` builds its gateway without an event bus, so it does not reach the reduction); the made-up key itself still costs nothing further (`BenchmarkBadKey`).
 
+### What the location rules reveal and miss
+
+**What kman does.** After a key's learning period (7 days from its first forwarded request, by default), the first use from a country, ASN, network or client the key has never been used from raises a detection on its incident and an alert ([ADR 0015](docs/adr/0015-the-location-rules-run-in-the-transaction-that-records-a-new-place.md)). A refused request counts. The detection runs in the event writer's transaction, off the request path.
+
+**What is left.**
+
+- **A thief inside the baseline is invisible.** A place the key had during its learning period is normal to these rules, so a key that leaked in its first week, or that is used from the thief's network while it is still being learned, raises nothing. A canary is what catches that; a baseline is only as good as its first week.
+- **A thief who copies the owner's country, network and client is invisible too.** A client is the caller's own claim, a country and ASN are only as precise as the GeoIP database, and a network is a /24 or /64. The rules make the easy case loud, a key turning up somewhere new, and nothing more.
+- **A key that was only ever refused is not watched.** No learning period starts until a forwarded request, so nothing is raised for a key whose every request was refused (the refusals are in `kman events` and `kman key places`).
+- **The first place of a kind is learnt, not raised,** so that installing a GeoIP database does not alarm every key. A key with no country yet raises no new country until it has one.
+- **A key used from more than 1,000 places of a kind stops raising for that kind.** The overflow row is not a place.
+- **A known source silences a whole request.** A CIDR, country, ASN or client the operator added covers the request that matches it, whatever else is new in it. The bounds that keep an operator from silencing everything are in [ADR 0014](docs/adr/0014-an-incident-is-one-case-per-key-and-an-operator-answers-it-with-commands.md).
+- **Networks are personal data.** The alert names the address, the network and, for a new network, the networks the key normally uses, because it goes to the operator's own channel. The admin API, the CLI and the incident timeline withhold all three unless `expose_client_addresses` is on (ADR 0010). Text from a database file or a header in the alert is cleaned of control characters and bounded.
+
 ## Assumptions
 
 kman is only as safe as these hold:

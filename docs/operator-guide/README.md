@@ -14,7 +14,7 @@ For the person who runs kman. New here? Start with the [quickstart](../quickstar
 - [Backup, restore, retention and updates](backup.md): `kman backup`, `kman restore`, what kman prunes by itself, `kman prune`, and the opt-in update check.
 - [Upgrade, rekey and old copies](upgrade.md): upgrades, the `kman.db.pre-<NNNN>` copies, replacing the master key.
 - [Canary keys](canaries.md): plant a key that raises an alert the moment anyone uses it, and what the alert says.
-- [Incidents and known sources](incidents.md): the case kman opens for a key, how to acknowledge, resolve and contain it, and how to tell kman a place is legitimate.
+- [Incidents, location rules and known sources](incidents.md): the case kman opens for a key, the rules that fire when a key turns up from a new country, ASN, network or client, how to acknowledge, resolve and contain it, and how to tell kman a place is legitimate.
 - [Rotating keys and replacing a leaked credential](rotation.md): `kman key rotate`, the grace period, retired secrets, `kman credential compromise`.
 
 And elsewhere:

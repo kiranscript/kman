@@ -151,7 +151,7 @@ The events as they happen, or the recent ones: `kman events`, and `kman events -
 _Avoid_: Request log, activity log
 
 **Place**:
-Where a virtual key has been used from, at one of three grains: a country, an autonomous system (ASN), or a network (an IPv4 /24 or an IPv6 /64); and, listed with them, the **client** that used it. kman keeps each place a key turns up at, with when it was first and last seen and how many requests it forwarded and refused, forever. `kman key places` lists them.
+Where a virtual key has been used from, at one of three grains: a country, an autonomous system (ASN), or a network (an IPv4 /24 or an IPv6 /64); and, listed with them, the **client** that used it. A place is **new** the first time a key turns up at it, once its learning period is over, and that is what the location rules raise. kman keeps each place a key turns up at, with when it was first and last seen and how many requests it forwarded and refused, forever. `kman key places` lists them.
 _Avoid_: Source (a known source is an operator's label for a place), location
 
 **Client**:
@@ -166,7 +166,10 @@ _Avoid_: Caller IP, source IP
 What normal use of one virtual key looks like: its usual request rate, spend, and the places it is used from.
 
 **Learning period**:
-The time after a key is created during which kman builds its baseline, and the rules that compare against the baseline only record.
+The time after a key's first forwarded request (not its creation, and not a refusal) during which kman builds its baseline, and the rules that compare against the baseline only record. 7 days by default: the `learning_period` setting, or the `learning_period` of a key's policy. A key that has only been refused has not started one.
+
+**Location rule**:
+A detection rule that compares where a key is used from with its places: **new country** (high), **new ASN** (medium), **new network** (low) and **new client** (medium). After the learning period, the first use from a place the key has never been used from, forwarded or refused, raises it on the key's incident, unless a known source covers the request, the key's policy turned the rule off, or the key is a canary. The first place of a kind a key ever has is its baseline, not a detection.
 
 **Detection**:
 One firing of one rule against one virtual key, with its evidence.

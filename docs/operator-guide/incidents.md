@@ -1,6 +1,6 @@
 # Incidents and known sources
 
-When something about a key looks wrong, kman opens an **incident**: one case per key, which groups everything that fired for it until you close it. Today the thing that fires one is a [canary](canaries.md) being used; the location rules (a new country, ASN, network or client) and the rate and spend rules raise detections into the same incidents as they arrive.
+When something about a key looks wrong, kman opens an **incident**: one case per key, which groups everything that fired for it until you close it. What fires one is a [canary](canaries.md) being used, or a [location rule](#location-rules): a key turning up from a new country, ASN, network or client. The rate and spend rules will raise detections into the same incidents.
 
 An incident has a plain number, such as `7`, which every alert and command uses.
 
@@ -63,9 +63,54 @@ Without the flag, at a terminal, kman lists what it saw and asks `[y/N]`; in a s
 
 Two limits are deliberate. A **network** is added only with `expose_client_addresses` on (kman says it skipped one), because adding it would show it to anyone who can list known sources. And a **canary's incident takes no known sources**: `this-was-me` still resolves it if you tested your own canary, but `--add-known-sources` is refused.
 
+## Location rules
+
+A leaked key turns up somewhere it has never been. kman keeps the **places** each key is used from (`kman key places`), and once a key has been **learned**, the first use from a place it has never been used from is a detection on its incident:
+
+| Rule | Fires on | Severity |
+|---|---|---|
+| `new_country` | a country the key has never been used from | high |
+| `new_asn` | an autonomous system it has never been used from | medium |
+| `new_network` | an IPv4 /24 or IPv6 /64 it has never been used from | low |
+| `new_client` | a [client](../../GLOSSARY.md) (`openai-python/3`, `curl/8`, `none`) it has never been used by | medium |
+
+Severities are fixed. They compare against the key's places, not against rate or spend.
+
+- **Learning period.** A key's learning period starts at its **first forwarded request** (not when it was created, and not at a refusal) and lasts **7 days**. While it lasts, kman records the places and the rules say nothing. Change it for every key with `kman settings set learning_period 3d` (`none` for no learning period; at most 90 days), and for one key with `"learning_period": "3d"` in its [policy](../policy.md). A key that has only ever been refused has not started learning: nothing is raised for it until a forwarded request has started the period and it has passed.
+- **A refused request counts.** A request an address lock refused, from a place the key has never been used from, raises the rule too, and the detection says it was refused and why. A lock that stops a leak still tells you the key turned up.
+- **The first place of a kind is the baseline.** A key that has no country yet (it was used before you installed a GeoIP database) has nothing to differ from, so its first country is learnt, not raised. The same goes for a client, which kman began to record in a later release.
+- **Known sources never trigger them.** A request from a [known source](#known-sources) (its address inside a known CIDR, or its country, ASN or client equal to one) raises nothing, even if it is new in another way. The request's places are still recorded, so they are not new the next time either.
+- **Turn a rule off for one key** in its policy: `kman key update my-app --policy '{"detect":{"new_client":false}}'` (`new_country`, `new_asn`, `new_network`, `new_client`). A canary has no rules to turn off and is not watched by these: its use is its own critical rule.
+- **One alert for one request.** A request that is new in several ways at once (a thief's first request usually is) is one alert for the highest severity, and its incident lists every rule that fired.
+
+The alert says which key, what is new with its label (an AS's organisation), the places the key normally uses (its busiest three of that kind and how many more), where the request came from, and how to contain it:
+
+```
+[HIGH] Incident opened
+Key: deploy-bot (a1b2c3d4)
+Rules: new_country, new_network
+New place: new country FR
+Usually used from: US (412 requests), DE (88 requests)
+From: 203.0.113.9
+Network: 203.0.113.0/24
+Country: FR
+ASN: AS64500 Example Net
+Client: openai-python/3
+Detail: the request was refused (address_not_allowed)
+kman incident show 7
+kman incident ack 7
+kman key disable a1b2c3d4 --incident 7
+kman key rotate a1b2c3d4 --incident 7
+kman incident this-was-me 7
+```
+
+If the place is yours, `kman incident this-was-me 7 --add-known-sources` makes it a known source so it is not raised again. Networks are addresses and so personal data: the alert to your own channel names them, but `kman incident show` and the admin API leave out the address, the network and (for a new network) the networks the key normally uses unless `expose_client_addresses` is on. Everything else, such as the country, the AS and the client, is always shown.
+
+What these rules cannot do: a place that was in the key's places while it was learning is normal to them, so a key that leaked in its first week is not caught by a location rule (a [canary](canaries.md) is the answer to that), and a client is the caller's own claim, which a thief can copy. [ADR 0015](../adr/0015-the-location-rules-run-in-the-transaction-that-records-a-new-place.md) has the reasoning.
+
 ## Known sources
 
-A known source says a place is legitimate: use from it never counts as a new location to the location rules. It is a labelled **CIDR, country, ASN or client**, for every key or for one.
+A known source says a place is legitimate: use from it never counts as a new location to the location rules. It matches the whole request, so a CI network's addresses stay quiet even from a new country. It is a labelled **CIDR, country, ASN or client**, for every key or for one.
 
 ```sh
 kman known-source add cidr 203.0.113.0/24 --label "CI runners"
@@ -86,7 +131,7 @@ kman known-source rm 4
 
 These bounds are what keeps a known source from silencing everything: a `/8` of addresses or "every request with no `User-Agent`" would blind the rules. There are at most 200 for each scope (every key, or one key), and each needs a label. Adding and removing one is audited.
 
-A known source is for the *baseline* rules. It never makes the rate and spend rules ignore a place, and it **never silences a canary**: nothing does except the canary's own [ignore list](canaries.md#your-own-scanners).
+A known source is for the *baseline* rules (the location rules). It never makes the rate and spend rules ignore a place, and it **never silences a canary**: nothing does except the canary's own [ignore list](canaries.md#your-own-scanners).
 
 ## See also
 
