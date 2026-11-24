@@ -2086,7 +2086,10 @@ describe('review round 1', () => {
     await m.press(ESC);
     await m.press('2');
     await m.press('x');
-    expect(m.screen()).toContain('Enter revoke');
+    // Enter is offered once it would revoke: with the name typed.
+    expect(m.screen().split('\n').at(-1)).not.toContain('Enter revoke');
+    await m.press('checkout');
+    expect(m.screen().split('\n').at(-1)).toContain('Enter revoke');
     m.unmount();
 
     const client = fakeClient();
@@ -2198,7 +2201,7 @@ describe('review round 2', () => {
     await m.press(ENTER);
     expect(lines(m).at(-1)).toContain('Esc back to list');
     expect(m.screen()).toMatch(/1-\d+ of \d+/);
-    for (let i = 0; i < 40; i++) await m.press('j');
+    await m.press('G');
     expect(m.screen()).toContain('/v1/route/39');
     await m.press(ESCAPE);
     expect(lines(m).at(-1)).not.toContain('Esc back to list');
@@ -2763,7 +2766,7 @@ describe('review round 10', () => {
     client.keys = [];
     const m = mount(client, { columns: 80, rows: 24 });
     await loaded(m);
-    expect(m.screen()).toContain('no keys yet');
+    expect(m.screen()).toContain('No keys yet');
     expect(m.screen()).not.toContain('0 disabled');
     expect(m.screen()).not.toContain('$0 today');
     m.unmount();

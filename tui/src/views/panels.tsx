@@ -216,7 +216,8 @@ export function StatusPanel({
         dot,
         { t: ' ' },
         { t: severityGlyph[topItem.top], color: severityColor[topItem.top], dim: topItem.top === 'info' },
-        { t: ` ${fitMiddle(topItem.name, 14)} · ${topRisk(topItem.risks)!.short}`, dim: topItem.top === 'info' },
+        // The end of a long name is what tells keys apart.
+        { t: ` ${tailCells(topItem.name, 14)} · ${topRisk(topItem.risks)!.short}${items.length > 1 ? ` · +${items.length - 1} more` : ''}`, dim: topItem.top === 'info' },
       ]
     : undefined;
   const compactLine: Seg[] = fitParts(
@@ -226,7 +227,7 @@ export function StatusPanel({
       // The first thing to look at comes ahead of the counts: it cannot be seen from another panel.
       ...(strip && attentionPart ? [attentionPart] : []),
       ...(noKeys
-        ? [[dot, { t: ' no keys yet', dim: true }]]
+        ? []
         : [
             [dot, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
             [dot, { t: ` ${money(spend('today'))} today`, bold: true }],
@@ -238,19 +239,19 @@ export function StatusPanel({
   );
   // When the border carries the address the line says only who: not the address twice.
   const whereLine: Seg[] = [{ t: borderText === urlOnly && actor ? `signed in as ${actor}` : where, dim: true }];
-  // Zeros tell nothing: an install with no keys says so once.
+  // Zeros tell nothing, and Keys and the detail already say there are no keys: no counts then.
   const countsLine: Seg[] = noKeys
-    ? [{ t: 'no keys yet', dim: true }]
+    ? []
     : [
         { t: `${live} active`, color: live > 0 ? color.ok : undefined },
         { t: ` · ${disabled} disabled · ${revoked} revoked`, dim: true },
       ];
   // A fresh price joins the first line; a stale or unknown one keeps a line to itself.
-  const priceJoins = link.state === 'ok' && price !== undefined && !price.stale;
+  const priceJoins = price !== undefined && !price.stale;
   const fullLines: Seg[][] = [
     link.state === 'ok'
       ? [{ t: linkText, dim: true }, ...(priceJoins ? [{ t: ' ' }, dot, { t: ' ' }, ...priceSeg(true)] : [])]
-      : [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }],
+      : [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }, ...(priceJoins ? [{ t: ' ' }, dot, { t: ' ' }, ...priceSeg(true)] : [])],
     ...(inBorder ? [] : [whereLine]),
     countsLine,
     ...(noKeys
@@ -264,7 +265,7 @@ export function StatusPanel({
     ...(priceJoins ? [] : [priceSeg(false)]),
   ];
   const activePart: Seg[] = noKeys
-    ? [dot, { t: ' no keys yet', dim: true }]
+    ? []
     : [
         dot,
         { t: ` ${live} active`, color: live > 0 ? color.ok : undefined },
@@ -300,9 +301,9 @@ export function StatusPanel({
   // summary gets everything else, down to a few lines.
   // The label sits on the list only when there is room; otherwise the border says it
   // (`1 of 7 need attention`), and at least one selectable line is always kept.
-  const header = items.length > 0 && rows >= 6 ? 1 : 0;
+  const header = items.length > 0 && rows >= 5 ? 1 : 0;
   const needed = items.length === 0 ? 1 : header + items.length;
-  const listArea = focused ? Math.min(needed, Math.max(header + 1, rows >= 6 ? rows - 3 : rows - 2)) : 0;
+  const listArea = focused ? Math.min(needed, Math.max(header + 1, rows >= 5 ? rows - 3 : rows - 2)) : 0;
   const summaryRows = focused ? rows - listArea : rows;
   const base = (summaryRows >= fullLines.length ? fullLines : tierFor(summaryRows)).filter((l) => l.length > 0);
   // A tall summary with a row to spare says what the list would: the first thing to look at.
@@ -315,11 +316,15 @@ export function StatusPanel({
     : [{ t: 'Nothing to review.', dim: true }];
   // Unfocused, the last line of the summary is the first thing to look at, whatever it has to
   // replace: a problem must not be hidden behind the price.
+  // A stale price keeps its line, though: it too is something to act on.
+  const staleLast = base.length > 0 && base[base.length - 1]!.some((x) => x.t.includes('price stale'));
   const lines =
     !focused && !strip && items.length > 0 && summaryRows >= 3
       ? summaryRows > base.length
         ? [...base, attentionLine]
-        : [...base.slice(0, summaryRows - 1), attentionLine]
+        : staleLast
+          ? [...base.slice(0, summaryRows - 2), attentionLine, base[base.length - 1]!]
+          : [...base.slice(0, summaryRows - 1), attentionLine]
       : !focused && summaryRows > base.length && summaryRows >= fullLines.length
         ? [...base, attentionLine]
         : base;
@@ -577,7 +582,7 @@ export function UpstreamsPanel({
                 ...upstreamRisks(u).map((r) => [
                   { t: `${severityGlyph[r.severity]} ${r.short === 'plain http' ? 'http' : r.short}`, color: severityColor[r.severity], dim: r.severity === 'info' },
                 ]),
-                [{ t: ` ${live(u)} active`, dim: true }],
+                ...(keys.length === 0 ? [] : [[{ t: ` ${live(u)} active`, dim: true }]]),
               ],
               Math.max(0, inner - 2 - Math.min(textWidth(u.name), 14) - 1),
             ),

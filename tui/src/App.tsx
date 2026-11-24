@@ -81,6 +81,8 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   // view: the arrow keys scroll it, and Esc gives the keyboard back to the list.
   const [detail, setDetail] = useState(false);
   const [viewRows, setViewRows] = useState(8);
+  // Whether the name typed in the revoke dialog matches, so the footer offers Enter only then.
+  const [revokeReady, setRevokeReady] = useState(false);
 
   // A success fades. A failure stays until the next key press: someone who looks away
   // must not come back believing a key was disabled when it was not.
@@ -363,8 +365,8 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   const width = columns;
   // What each list could fill; Status is its summary, and under it the list when focused.
   const wants = {
-    // The summary (four lines), the heading and the list.
-    status: tab === 'status' ? 5 + items.length : 5,
+    // The summary (three lines), the heading and the list; unfocused, the summary and its last line.
+    status: tab === 'status' ? 4 + items.length : 4,
     // While filtering the panel keeps the height of the whole list, so it does not shrink under the cursor.
     keys:
       Math.max(1, tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? data.keys.length : visible.length) +
@@ -489,6 +491,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
           errorLines={Math.max(3, bodyRows - 14)}
           error={dialogError}
           onConfirm={() => void revoke(mode.key)}
+          onReady={setRevokeReady}
           onCancel={() => setMode({ kind: 'none' })}
         />
       </Centered>
@@ -615,6 +618,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
                   filtered: filter !== '',
                   selectable,
                   movable,
+                  revokeReady,
                   offline: link.state === 'down',
                   working: working !== undefined,
                   canCreate: data.upstreams.length > 0,
@@ -649,6 +653,8 @@ interface HintState {
   selectable: boolean;
   /** Whether it has more than one, so the arrows have somewhere to go. */
   movable: boolean;
+  /** The name typed in the revoke dialog matches. */
+  revokeReady: boolean;
   offline: boolean;
   /** A change is being sent: another cannot start. */
   working: boolean;
@@ -666,7 +672,7 @@ interface HintState {
  * missed go first (`rank`): scrolling and the panel keys, then selecting, and last the
  * actions on the selected row, which stay unless nothing else can.
  */
-function hintsFor({ tab, mode, key, filtered, selectable, movable, offline, working, canCreate, hasKeys, scrollable, detail }: HintState): HintItem[] {
+function hintsFor({ tab, mode, key, filtered, selectable, movable, revokeReady, offline, working, canCreate, hasKeys, scrollable, detail }: HintState): HintItem[] {
   const canChange = !offline && !working;
   if (mode === 'confirm') return [{ k: 'y', label: 'yes' }, { k: 'n', label: 'cancel' }];
   if (mode === 'filter') {
@@ -685,7 +691,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, offline, work
       { k: 'Esc', label: 'cancel', always: true },
     ];
   }
-  if (mode === 'revoke') return [{ k: 'Enter', label: 'revoke once the name is typed', always: true }, { k: 'Esc', label: 'cancel', always: true }];
+  if (mode === 'revoke') return [...(revokeReady ? [{ k: 'Enter', label: 'revoke', always: true }] : []), { k: 'Esc', label: 'cancel', always: true }];
   if (mode === 'secret') return [{ k: 'c', label: 'copy' }, { k: 'Enter', label: 'done', always: true }];
   if (mode === 'clients') return [{ k: 'Esc', label: 'close', always: true }];
   if (mode !== 'none') return [{ k: 'Esc', label: 'close' }];

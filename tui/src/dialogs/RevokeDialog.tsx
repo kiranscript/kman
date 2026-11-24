@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from 'ink';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Key } from '../api.js';
 import { keyLabel } from '../keys.js';
 import { editField, TextField } from '../ui/TextField.js';
@@ -17,16 +17,22 @@ interface Props {
   errorLines?: number;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Told whether the typed name matches, so the footer offers Enter only when it would revoke. */
+  onReady?: (ready: boolean) => void;
 }
 
 /** Revoking cannot be undone, so it asks for the key's name to be typed, not just "y". */
-export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, onConfirm, onCancel }: Props) {
+export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, onConfirm, onCancel, onReady }: Props) {
   const [field, setField] = useState<Edit>({ value: '', cursor: 0 });
   const typed = field.value;
   const [tried, setTried] = useState(false);
   const expected = keyLabel(keyData);
   const matches = typed === expected;
   const panelWidth = Math.min(maxWidth, Math.max(64, expected.length + 6));
+  useEffect(() => {
+    onReady?.(matches);
+    return () => onReady?.(false);
+  }, [matches, onReady]);
 
   useInput((input, key) => {
     if (busy) return;
@@ -64,7 +70,7 @@ export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, o
         ) : busy ? (
           <Text dimColor>Revoking…</Text>
         ) : (
-          <Text dimColor>{matches ? 'Name matches.' : 'Not matching yet.'}</Text>
+          <Text dimColor>{matches ? 'Name matches.' : typed === '' ? ' ' : 'Not matching yet.'}</Text>
         )}
       </Box>
     </Panel>
