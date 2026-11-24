@@ -22,10 +22,10 @@ const defaultEventsLimit = 20
 // right now?" and never shows content.
 func cmdEvents(ctx context.Context, c *call) error {
 	fs := c.flags("events [--key <name or key id>] [--refused] [--code <refusal code>] [--since <duration>] [--limit n] [--follow] [--json]\n\n"+
-		"Lists the requests kman saw, the newest first: when, which key, from where, what operation and model, the status, and the refusal code of a request kman refused. "+
+		"Lists the requests kman saw, the newest first: when, which key, what called it (CLIENT: its User-Agent reduced to a product and major version, such as openai-python/3 or curl/8, or none), from where, what operation and model, the status, and the refusal code of a request kman refused. "+
 		"A request that presented no key kman could identify is listed too, as (no key), so probing shows. "+
 		"It never shows a request's content, a header, a query string or a secret. "+
-		"A client address is shown only with the expose_client_addresses setting on; country and AS always are. "+
+		"The ADDRESS is shown only with the expose_client_addresses setting on; country and AS always are. "+
 		"With --follow it prints the last few events, oldest first, and then each new one as it happens, until interrupted. "+
 		"Events are stored in batches every 5 seconds, so the list can trail the live feed; --json prints one event per line with --follow.", true)
 	key := fs.String("key", "", "only this key's events, by name or key id")
@@ -80,7 +80,7 @@ func cmdEvents(ctx context.Context, c *call) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(c.env.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "TIME\tKEY\tCLIENT\tCOUNTRY\tASN\tOPERATION\tMODEL\tSTATUS\tCODE")
+	fmt.Fprintln(w, "TIME\tKEY\tCLIENT\tADDRESS\tCOUNTRY\tASN\tOPERATION\tMODEL\tSTATUS\tCODE")
 	for _, e := range page.Events {
 		fmt.Fprintln(w, strings.Join(eventFields(e), "\t"))
 	}
@@ -99,14 +99,15 @@ func cmdEvents(ctx context.Context, c *call) error {
 const addressesWithheld = "Client addresses are not shown: an address identifies a person or an office. kman settings set expose_client_addresses true shows them."
 
 // eventFields is an event as the columns of kman events: time, key, client,
-// country, ASN, operation, model, status and refusal code. Whatever the server
+// address, country, ASN, operation, model, status and refusal code. Whatever the server
 // sent is cleaned of what a terminal would act on: a model and a path come from
 // the request.
 func eventFields(e admin.Event) []string {
 	return []string{
 		e.Time.UTC().Format("2006-01-02T15:04:05Z"),
 		eventKey(e),
-		eventClient(e),
+		orDash(cleanDashboard(e.Client)),
+		eventAddress(e),
 		orDash(cleanDashboard(e.Country)),
 		eventASN(e),
 		orDash(cleanDashboard(e.Operation)),
@@ -127,7 +128,8 @@ func eventKey(e admin.Event) string {
 	return cleanDashboard(e.KeyName) + " (" + cleanDashboard(e.KeyID) + ")"
 }
 
-func eventClient(e admin.Event) string {
+// eventAddress is the client address, or says it is withheld.
+func eventAddress(e admin.Event) string {
 	switch {
 	case e.ClientAddressWithheld:
 		return "(withheld)"

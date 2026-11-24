@@ -10,10 +10,11 @@ import (
 // PlaceQuery names a key, and optionally the kind of place to list.
 type PlaceQuery struct {
 	ID   string `json:"-" path:"id" doc:"The key id."`
-	Kind string `json:"-" query:"kind" doc:"Only places of this kind: country, asn or network."`
+	Kind string `json:"-" query:"kind" doc:"Only places of this kind: country, asn, network or client."`
 }
 
-// KeyPlaces is every place a key has been used from.
+// KeyPlaces is every place a key has been used from, and every client that used
+// it.
 type KeyPlaces struct {
 	KeyID  string  `json:"key_id"`
 	Places []Place `json:"places" doc:"Most recently seen first."`
@@ -24,12 +25,13 @@ type KeyPlaces struct {
 }
 
 // Place is one place a key has been used from: a country, an autonomous system,
-// or a network. It counts requests kman forwarded and requests it refused, so a
-// key that is disabled, or locked to other addresses, still shows where it
-// turned up.
+// or a network; or, alongside them, one client that used it. It counts requests
+// kman forwarded and requests it refused, so a key that is disabled, or locked
+// to other addresses, still shows where it turned up. A client is not personal
+// data, so unlike a network it is always given out (ADR 0012).
 type Place struct {
-	Kind      string    `json:"kind" doc:"country, asn or network."`
-	Value     string    `json:"value" doc:"An ISO 3166-1 alpha-2 country code, an AS number, or an IPv4 /24 or IPv6 /64 network. Empty for the other row."`
+	Kind      string    `json:"kind" doc:"country, asn, network or client."`
+	Value     string    `json:"value" doc:"An ISO 3166-1 alpha-2 country code, an AS number, an IPv4 /24 or IPv6 /64 network, or a client: the User-Agent reduced to a product and major version, such as openai-python/3, or none. Empty for the other row."`
 	Other     bool      `json:"other,omitempty" doc:"This row counts every place of its kind past the first 1,000 the key was seen from."`
 	Label     string    `json:"label,omitempty" doc:"A name for the value, when kman has one: an AS's organisation, from the ASN database."`
 	FirstSeen time.Time `json:"first_seen"`
@@ -43,9 +45,9 @@ type Place struct {
 // after its events are pruned.
 func (s *Service) Places(ctx context.Context, req PlaceQuery) (KeyPlaces, error) {
 	switch req.Kind {
-	case "", store.PlaceCountry, store.PlaceASN, store.PlaceNetwork:
+	case "", store.PlaceCountry, store.PlaceASN, store.PlaceNetwork, store.PlaceClient:
 	default:
-		return KeyPlaces{}, errorf(CodeInvalid, "kind %q is not one of country, asn or network", req.Kind)
+		return KeyPlaces{}, errorf(CodeInvalid, "kind %q is not one of country, asn, network or client", req.Kind)
 	}
 	out := KeyPlaces{KeyID: req.ID, Places: []Place{}}
 	err := s.read(ctx, func(tx *store.Tx) error {

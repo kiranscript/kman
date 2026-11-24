@@ -122,11 +122,11 @@ var routes = []route{
 	op("POST", "/keys/{id}/disable", "disableKey", "Stop a virtual key from the next request until it is enabled again", http.StatusOK, Service.DisableKey),
 	op("POST", "/keys/{id}/enable", "enableKey", "Let a disabled virtual key work again; a revoked key cannot be enabled", http.StatusOK, Service.EnableKey),
 	op("POST", "/keys/{id}/revoke", "revokeKey", "End a virtual key for good, from the next request; it cannot be undone", http.StatusOK, Service.RevokeKey),
-	op("GET", "/keys/{id}/places", "listKeyPlaces", "List where a virtual key has been used from: each country, AS and network, with when it was first and last seen and how many requests were forwarded and refused", http.StatusOK, Service.Places),
+	op("GET", "/keys/{id}/places", "listKeyPlaces", "List where a virtual key has been used from: each country, AS and network, and each client (the User-Agent reduced to a product and major version) that used it, with when it was first and last seen and how many requests were forwarded and refused", http.StatusOK, Service.Places),
 	op("GET", "/keys/{id}/clients", "getKeyClients", "List the client addresses a virtual key was used from, grouped, from the events kept; refused unless the expose_client_addresses setting is on", http.StatusOK, Service.KeyClients),
 	op("POST", "/keys/{id}/rotate", "rotateKey", "Replace a virtual key's secret and keep the key; the new secret is returned only this once", http.StatusOK, Service.RotateKey),
 
-	op("GET", "/events", "listEvents", "List stored events, newest first: which key, from where, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on", http.StatusOK, Service.Events),
+	op("GET", "/events", "listEvents", "List stored events, newest first: which key, from where, by what client, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on", http.StatusOK, Service.Events),
 	opStream("GET", "/events/stream", "streamEvents", "Follow new events as they happen, as server-sent events, with the filters of the list. A client that cannot keep up loses events and is told how many", Service.StreamEvents),
 
 	op0("GET", "/exposure", "getExposure", "List the keys that work now and would be easy to abuse: open to every address, never expiring, or unused for 30 days, each with the command that fixes it", Service.Exposure),

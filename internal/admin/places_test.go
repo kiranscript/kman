@@ -106,3 +106,34 @@ func TestThePlacesPastTheLimitAreOneOtherRow(t *testing.T) {
 		t.Errorf("the most recent place = %+v, want the other row", p)
 	}
 }
+
+func TestPlacesListTheClientsAKeyWasUsedByWithoutTheAddressSetting(t *testing.T) {
+	in, _ := withCredential(t)
+	k := in.createKey(t, admin.CreateKeyRequest{Name: "my-app", Upstream: "openai"}).Key
+	t0 := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	err := in.store.Do(t.Context(), func(tx *store.Tx) error {
+		return tx.AddEvents([]store.EventRow{
+			{Time: t0, Kind: "request", KeyID: k.ID, ClientIP: "203.0.113.7", Client: "openai-python/3", Status: 200},
+			{Time: t0.Add(time.Hour), Kind: "blocked", KeyID: k.ID, ClientIP: "198.51.100.9", Client: "curl/8", Status: 403, BlockedCode: "key_disabled"},
+		})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A client names a program, not a person, so it is shown with the setting off,
+	// unlike the networks beside it.
+	got, err := in.svc.Places(as("owner"), admin.PlaceQuery{ID: k.ID, Kind: "client"})
+	if err != nil || len(got.Places) != 2 || got.NetworksWithheld {
+		t.Fatalf("Places(client) = %+v, %v; want the 2 clients, shown with client addresses off", got, err)
+	}
+	if p := got.Places[0]; p.Kind != "client" || p.Value != "curl/8" || p.Requests != 0 || p.Refused != 1 || !p.LastSeen.Equal(t0.Add(time.Hour)) {
+		t.Errorf("most recent client = %+v, want curl/8, refused once", p)
+	}
+	if p := got.Places[1]; p.Value != "openai-python/3" || p.Requests != 1 {
+		t.Errorf("the other client = %+v", p)
+	}
+	all, err := in.svc.Places(as("owner"), admin.PlaceQuery{ID: k.ID})
+	if err != nil || len(all.Places) != 2 || !all.NetworksWithheld {
+		t.Errorf("Places = %+v, %v; want the 2 clients and the networks withheld", all, err)
+	}
+}

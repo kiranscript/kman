@@ -242,12 +242,12 @@ func keyShow(ctx context.Context, c *call) error {
 	return nil
 }
 
-// keyPlaces is where a key has been used from: each country, AS and network,
-// most recently seen first, with what kman forwarded from it and what it
-// refused.
+// keyPlaces is where a key has been used from, and by what: each country, AS,
+// network and client, most recently seen first, with what kman forwarded from it
+// and what it refused.
 func keyPlaces(ctx context.Context, c *call) error {
-	fs := c.flags("key places <name or key id> [--kind country|asn|network] [--json]", true)
-	kind := fs.String("kind", "", "only places of this kind: country, asn or network")
+	fs := c.flags("key places <name or key id> [--kind country|asn|network|client] [--json]", true)
+	kind := fs.String("kind", "", "only places of this kind: country, asn, network or client")
 	pos, err := c.parse(fs, 1, 1)
 	if err != nil {
 		return err

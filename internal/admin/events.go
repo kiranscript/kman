@@ -33,6 +33,7 @@ type Event struct {
 	Country               string    `json:"country,omitempty" doc:"ISO 3166-1 code, from the country database, when there is one that knows the address."`
 	ASN                   int64     `json:"asn,omitempty" doc:"The autonomous system number, from the ASN database, when there is one that knows the address."`
 	ASNLabel              string    `json:"asn_label,omitempty" doc:"The autonomous system's organisation, when the ASN database names one."`
+	Client                string    `json:"client,omitempty" doc:"What made the request: its User-Agent reduced to a product and major version, such as openai-python/3 or curl/8, or none when it sent no User-Agent. Never the header itself. Empty for an event stored before kman recorded it. It is not personal data, so it is always shown."`
 	Operation             string    `json:"operation,omitempty" doc:"The request's method and path, such as POST /v1/chat/completions. Never a query string."`
 	Model                 string    `json:"model,omitempty"`
 	Status                int       `json:"status,omitempty" doc:"The status the app was sent."`
@@ -182,7 +183,7 @@ func (s *Service) Events(ctx context.Context, q EventQuery) (EventPage, error) {
 		}
 		for _, r := range rows {
 			e := newEvent(r.Kind, r.KeyID, r.KeyName, r.ClientIP, settings.ExposeClientAddresses)
-			e.ID, e.Time, e.Country, e.ASN, e.ASNLabel = r.ID, r.Time, r.Country, r.ASN, r.ASOrg
+			e.ID, e.Time, e.Country, e.ASN, e.ASNLabel, e.Client = r.ID, r.Time, r.Country, r.ASN, r.ASOrg, r.Client
 			e.Operation, e.Model, e.Status, e.RefusalCode = withoutQuery(r.Operation), r.Model, r.Status, r.BlockedCode
 			out.ClientAddressesWithheld = out.ClientAddressesWithheld || e.ClientAddressWithheld
 			out.Events = append(out.Events, e)
@@ -390,7 +391,7 @@ func (s *Service) streamEvents(ctx context.Context, batch []events.Event) []Even
 			ip = b.ClientIP.String()
 		}
 		e := newEvent(string(b.Kind), b.KeyID, names[b.KeyID], ip, expose)
-		e.Time, e.Country, e.ASN, e.ASNLabel = b.Time, b.Country, b.ASN, b.ASOrg
+		e.Time, e.Country, e.ASN, e.ASNLabel, e.Client = b.Time, b.Country, b.ASN, b.ASOrg, b.Client
 		e.Operation, e.Model, e.Status, e.RefusalCode = withoutQuery(b.Operation()), b.Model, b.Status, b.BlockedCode
 		out[i] = e
 	}

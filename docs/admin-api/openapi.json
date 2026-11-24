@@ -600,6 +600,10 @@
             "description": "The autonomous system's organisation, when the ASN database names one.",
             "type": "string"
           },
+          "client": {
+            "description": "What made the request: its User-Agent reduced to a product and major version, such as openai-python/3 or curl/8, or none when it sent no User-Agent. Never the header itself. Empty for an event stored before kman recorded it. It is not personal data, so it is always shown.",
+            "type": "string"
+          },
           "client_address": {
             "description": "The client address: the connection's, or X-Forwarded-For only through trusted_proxies. Left out unless the expose_client_addresses setting is on.",
             "type": "string"
@@ -1010,7 +1014,7 @@
             "type": "string"
           },
           "kind": {
-            "description": "country, asn or network.",
+            "description": "country, asn, network or client.",
             "type": "string"
           },
           "label": {
@@ -1036,7 +1040,7 @@
             "type": "integer"
           },
           "value": {
-            "description": "An ISO 3166-1 alpha-2 country code, an AS number, or an IPv4 /24 or IPv6 /64 network. Empty for the other row.",
+            "description": "An ISO 3166-1 alpha-2 country code, an AS number, an IPv4 /24 or IPv6 /64 network, or a client: the User-Agent reduced to a product and major version, such as openai-python/3, or none. Empty for the other row.",
             "type": "string"
           }
         },
@@ -2611,7 +2615,7 @@
             "description": "An error"
           }
         },
-        "summary": "List stored events, newest first: which key, from where, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on"
+        "summary": "List stored events, newest first: which key, from where, by what client, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on"
       }
     },
     "/admin/v1/events/stream": {
@@ -2994,7 +2998,7 @@
             }
           },
           {
-            "description": "Only places of this kind: country, asn or network.",
+            "description": "Only places of this kind: country, asn, network or client.",
             "in": "query",
             "name": "kind",
             "required": false,
@@ -3025,7 +3029,7 @@
             "description": "An error"
           }
         },
-        "summary": "List where a virtual key has been used from: each country, AS and network, with when it was first and last seen and how many requests were forwarded and refused"
+        "summary": "List where a virtual key has been used from: each country, AS and network, and each client (the User-Agent reduced to a product and major version) that used it, with when it was first and last seen and how many requests were forwarded and refused"
       }
     },
     "/admin/v1/keys/{id}/revoke": {

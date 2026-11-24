@@ -27,9 +27,9 @@ func feedFixture(t *testing.T) (*install, admin.Key) {
 	at := t0.Add(-time.Hour)
 	err := in.store.Do(t.Context(), func(tx *store.Tx) error {
 		return tx.AddEvents([]store.EventRow{
-			{Time: at, Kind: "request", KeyID: k.ID, ClientIP: "203.0.113.7", Country: "DE", ASN: 3320, ASOrg: "Deutsche Telekom AG", Model: "gpt-5.4", Operation: "POST /v1/chat/completions", Status: 200},
-			{Time: at.Add(time.Minute), Kind: "blocked", KeyID: k.ID, ClientIP: "198.51.100.9", Country: "US", Operation: "POST /v1/chat/completions", Status: 403, BlockedCode: "address_not_allowed"},
-			{Time: at.Add(2 * time.Minute), Kind: "blocked", ClientIP: "192.0.2.4", Country: "RU", ASN: 12389, Operation: "GET /v1/models", Status: 401, BlockedCode: "invalid_key"},
+			{Time: at, Kind: "request", KeyID: k.ID, ClientIP: "203.0.113.7", Country: "DE", ASN: 3320, ASOrg: "Deutsche Telekom AG", Client: "openai-python/3", Model: "gpt-5.4", Operation: "POST /v1/chat/completions", Status: 200},
+			{Time: at.Add(time.Minute), Kind: "blocked", KeyID: k.ID, ClientIP: "198.51.100.9", Country: "US", Client: "curl/8", Operation: "POST /v1/chat/completions", Status: 403, BlockedCode: "address_not_allowed"},
+			{Time: at.Add(2 * time.Minute), Kind: "blocked", ClientIP: "192.0.2.4", Country: "RU", ASN: 12389, Client: "none", Operation: "GET /v1/models", Status: 401, BlockedCode: "invalid_key"},
 			{Time: at.Add(3 * time.Minute), Kind: "session", KeyID: k.ID, ClientIP: "203.0.113.8", Country: "DE", ASN: 3320, Model: "gpt-live-1", Operation: "GET /v1/realtime", Status: 101},
 			{Time: at.Add(4 * time.Minute), Kind: "request", KeyID: k.ID, Operation: "POST /v1/chat/completions", Status: 502, BlockedCode: "upstream_unavailable"},
 		})
@@ -60,7 +60,7 @@ func TestEventsListTheNewestFirstWithWhoWhereAndWhatButNotTheAddressUntilItIsTur
 		t.Errorf("newest = %+v: a forwarded event with a code, and no address to withhold", newest)
 	}
 	if oldest.KeyID != k.ID || oldest.KeyName != "my-app" || oldest.Kind != "forwarded" || oldest.Country != "DE" || oldest.ASN != 3320 || oldest.ASNLabel != "Deutsche Telekom AG" ||
-		oldest.Model != "gpt-5.4" || oldest.Operation != "POST /v1/chat/completions" || oldest.Status != 200 || oldest.ID == 0 || !oldest.Time.Equal(t0.Add(-time.Hour)) {
+		oldest.Client != "openai-python/3" || oldest.Model != "gpt-5.4" || oldest.Operation != "POST /v1/chat/completions" || oldest.Status != 200 || oldest.ID == 0 || !oldest.Time.Equal(t0.Add(-time.Hour)) {
 		t.Errorf("oldest = %+v", oldest)
 	}
 	// Where a request came from is shown without the address: the country and
@@ -75,7 +75,7 @@ func TestEventsListTheNewestFirstWithWhoWhereAndWhatButNotTheAddressUntilItIsTur
 	}
 	// A request with no identifiable key is listed, and marked.
 	probe := page.Events[2]
-	if probe.KeyID != "" || probe.KeyName != "" || !probe.UnidentifiedKey || probe.RefusalCode != "invalid_key" || probe.Kind != "refused" || probe.Country != "RU" || probe.ASN != 12389 {
+	if probe.KeyID != "" || probe.KeyName != "" || !probe.UnidentifiedKey || probe.RefusalCode != "invalid_key" || probe.Kind != "refused" || probe.Country != "RU" || probe.ASN != 12389 || probe.Client != "none" {
 		t.Errorf("the event with no key = %+v", probe)
 	}
 	if page.Events[1].Kind != "forwarded" || page.Events[1].UnidentifiedKey {
@@ -197,7 +197,7 @@ func runBus(t *testing.T, opts events.Options) *events.Bus {
 }
 
 func newEvent(keyID string, kind events.Kind, code string) events.Event {
-	return events.Event{Time: t0, Kind: kind, KeyID: keyID, ClientIP: netip.MustParseAddr("203.0.113.7"), Country: "DE", ASN: 3320, ASOrg: "Deutsche Telekom AG",
+	return events.Event{Time: t0, Kind: kind, KeyID: keyID, ClientIP: netip.MustParseAddr("203.0.113.7"), Country: "DE", ASN: 3320, ASOrg: "Deutsche Telekom AG", Client: "openai-python/3",
 		Model: "gpt-5.4", Method: "POST", Path: "/v1/chat/completions", Status: 200, BlockedCode: code}
 }
 
@@ -230,7 +230,7 @@ func TestTheStreamCarriesNewEventsWithTheKeyNameAndTheSameFilters(t *testing.T) 
 	bus.Emit(newEvent("", events.KindBlocked, "invalid_key"))
 
 	e := <-all.Events()
-	if e.KeyID != k.ID || e.KeyName != "my-app" || e.Kind != "forwarded" || e.Country != "DE" || e.ASN != 3320 || e.ASNLabel != "Deutsche Telekom AG" ||
+	if e.KeyID != k.ID || e.KeyName != "my-app" || e.Kind != "forwarded" || e.Country != "DE" || e.ASN != 3320 || e.ASNLabel != "Deutsche Telekom AG" || e.Client != "openai-python/3" ||
 		e.Operation != "POST /v1/chat/completions" || e.Model != "gpt-5.4" || e.Status != 200 || !e.Time.Equal(t0) || e.UnidentifiedKey {
 		t.Errorf("first event = %+v", e)
 	}
