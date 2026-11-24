@@ -173,7 +173,7 @@ One firing of one rule against one virtual key, with its evidence.
 _Avoid_: Alert (an alert is a message sent about an incident)
 
 **Incident**:
-The open case for one virtual key that groups its detections until someone resolves it. It is quiet when nothing has fired for a while, and it can expire if nobody acknowledges it.
+The open case for one virtual key that groups its detections until someone resolves it. A key has at most one unresolved incident, with a plain integer id. It opens when a rule first fires for the key and escalates (and alerts) on a higher severity, a new rule, or a firing after it went quiet; a repeat only counts. It is **open** until someone acknowledges it, then **acknowledged**, and ends **resolved** as confirmed, a false positive, or expired. It is **quiet** after an hour without a firing (display only), an unacknowledged one that is not critical expires after 7 days quiet, and a canary's incident is critical, so it never does.
 _Avoid_: Alert, event
 
 **Alert**:
@@ -195,8 +195,11 @@ _Avoid_: Notification queue
 The path that takes the use of a disabled key or a canary key from the gateway to the alert outbox without waiting behind ordinary events. Its alerts say where the request came from (and, for a canary, where it was planted) and never what the request said.
 
 **Known source**:
-A labelled address range, country, or network that the operator has said is legitimate, either for every key or for one key. Use from a known source never counts as a new location. It never silences a canary: a canary has an ignore list of its own.
+A labelled CIDR, country, ASN or client that the operator has said is legitimate, either for every key or for one key. Use from a known source never counts as a new location. A CIDR is no wider than an IPv4 /16 or an IPv6 /32, and the clients `none` and `unknown` are refused, so one cannot silence everything. It never silences a canary: a canary has an ignore list of its own.
 _Avoid_: Allowlist (an allowlist refuses everything else; a known source refuses nothing)
+
+**This was me**:
+The answer to an incident that the operator caused: it resolves the incident as a false positive and, if asked, adds the places the incident saw as known sources, for the key or for every key. `kman incident this-was-me`. It never adds a known source for a canary's incident.
 
 **Auto-disable**:
 kman disabling a virtual key by itself when an incident looks like an attack. It never revokes. A key can have it off, on, or in dry-run.
