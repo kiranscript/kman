@@ -41,6 +41,10 @@ type Options struct {
 	Logger *slog.Logger
 
 	exclusive bool // set by OpenExclusive
+	// checkSchema looks for what the unreleased migrations create. Open and
+	// OpenExclusive set it; tests that stand in migrations of their own do not,
+	// since what they stand in for is not what unreleased lists.
+	checkSchema bool
 }
 
 // Store is kman's SQLite database. It holds one writer connection, so every
@@ -56,6 +60,7 @@ type Store struct {
 // the directory and its files, copies the database aside if it needs a
 // migration, and runs every pending migration.
 func Open(ctx context.Context, opts Options) (*Store, error) {
+	opts.checkSchema = true
 	return open(ctx, opts, migrations)
 }
 
@@ -69,6 +74,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 // is gone once Close has checkpointed the write-ahead log.
 func OpenExclusive(ctx context.Context, opts Options) (*Store, error) {
 	opts.exclusive = true
+	opts.checkSchema = true
 	return open(ctx, opts, migrations)
 }
 
@@ -114,7 +120,7 @@ func open(ctx context.Context, opts Options, ms []migration) (*Store, error) {
 	db.SetConnMaxIdleTime(0)
 	db.SetConnMaxLifetime(0)
 	s.db = db
-	if err := s.start(ctx, opts.Now, ms, opts.exclusive); err != nil {
+	if err := s.start(ctx, opts.Now, ms, opts.exclusive, opts.checkSchema); err != nil {
 		db.Close()
 		if isBusy(err) {
 			return nil, fmt.Errorf("store: %s: %w", s.path, ErrHeld)
@@ -127,7 +133,7 @@ func open(ctx context.Context, opts Options, ms []migration) (*Store, error) {
 // start connects, migrates, and then tightens the files SQLite created. An
 // exclusive store claims the database first, so it migrates nothing it does
 // not hold.
-func (s *Store) start(ctx context.Context, now time.Time, ms []migration, exclusive bool) error {
+func (s *Store) start(ctx context.Context, now time.Time, ms []migration, exclusive, checkSchema bool) error {
 	if err := s.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("store: open %s: %w", s.path, err)
 	}
@@ -138,6 +144,11 @@ func (s *Store) start(ctx context.Context, now time.Time, ms []migration, exclus
 	}
 	if err := s.migrate(ctx, now, ms); err != nil {
 		return err
+	}
+	if checkSchema {
+		if err := s.checkUnreleased(ctx, ms); err != nil {
+			return err
+		}
 	}
 	for _, p := range []string{s.path, s.path + "-wal", s.path + "-shm"} {
 		if err := s.tighten(p, fileMode); err != nil && !errors.Is(err, os.ErrNotExist) {

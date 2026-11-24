@@ -54,7 +54,7 @@ The review checked each of SPEC §1's eight invariants against the code and by r
 
 **What is left.**
 
-- **No detection.** Nothing in v0.1.0 notices a leak; you find out from the spend ([what to do meanwhile](docs/v0.1.0-scope.md)).
+- **No detection.** Nothing in v0.1.0 notices a leak; you find out from the spend ([what to do meanwhile](docs/v0.1.0-scope.md)). A build after it adds canary keys, the one tripwire that needs no baseline: a key with no credential that raises a critical alert at once when anyone uses it ([ADR 0013](docs/adr/0013-a-canary-is-a-key-with-no-credential-and-a-row-of-its-own.md)). It answers `invalid_key` like any bad key and nothing in it or in its planting snippet says what it is, and it is only as good as where it is planted. Its ignore list is the operator's own scanners and is bounded so that it cannot silence the canary. An alert names the address the key was used from, which is personal data in a channel the operator chose.
 - **In-flight requests are not cut (M-4).** A long stream outlives a revoke; only the *next* request is refused. Realtime sessions are not in this release.
 - **The overshoot is bounded, not zero (M-2).** The reservation's input estimate is bytes ÷ 4. Densely tokenizing text (rare scripts, emoji, code) can cost up to about three times that, so a key can overshoot by up to roughly three times the input side of what is in flight; output is exact. This is a small multiple of the cap, not unbounded.
 - **A generic upstream is unmetered by design,** and a capped key on one is refused rather than let through.

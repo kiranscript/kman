@@ -56,6 +56,12 @@ type API interface {
 	RotateKey(ctx context.Context, req RotateKeyRequest) (RotatedKey, error)
 	KeyClients(ctx context.Context, req KeyRef) (KeyClients, error)
 
+	CreateCanary(ctx context.Context, req CreateCanaryRequest) (CreatedCanary, error)
+	ListCanaries(ctx context.Context) (CanaryList, error)
+	GetCanary(ctx context.Context, req CanaryRef) (Canary, error)
+	UpdateCanary(ctx context.Context, req CanaryUpdate) (Canary, error)
+	ResetCanary(ctx context.Context, req CanaryRef) (Canary, error)
+
 	ListPrices(ctx context.Context, req PriceQuery) (PriceList, error)
 	PriceDataStatus(ctx context.Context) (PriceDataStatus, error)
 	SetPriceOverride(ctx context.Context, req PriceOverrideSet) (PriceOverride, error)

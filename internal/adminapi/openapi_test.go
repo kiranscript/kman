@@ -158,13 +158,18 @@ func TestTheOpenAPIDocumentDescribesTheTypes(t *testing.T) {
 		"get /admin/v1/keys/{id}/places":              "listKeyPlaces",
 		"get /admin/v1/events":                        "listEvents",
 		"get /admin/v1/events/stream":                 "streamEvents",
+		"get /admin/v1/canaries":                      "listCanaries",
+		"post /admin/v1/canaries":                     "createCanary",
+		"get /admin/v1/canaries/{id}":                 "getCanary",
+		"patch /admin/v1/canaries/{id}":               "updateCanary",
+		"post /admin/v1/canaries/{id}/reset":          "resetCanary",
 	} {
 		if ops[want] != id {
 			t.Errorf("%s has operationId %q, want %q", want, ops[want], id)
 		}
 	}
-	if len(ops) != 45 {
-		t.Errorf("the document has %d operations, want 45: %v", len(ops), ops)
+	if len(ops) != 50 {
+		t.Errorf("the document has %d operations, want 50: %v", len(ops), ops)
 	}
 	// The live feed is server-sent events, not JSON.
 	if _, ok := doc.Paths["/admin/v1/events/stream"]["get"].Responses["200"].Content["text/event-stream"]; !ok {
@@ -194,6 +199,19 @@ func TestTheOpenAPIDocumentDescribesTheTypes(t *testing.T) {
 	// A key's secret comes out once, in the create response alone.
 	if _, ok := doc.Components.Schemas["CreatedKey"].Properties["secret"]; !ok {
 		t.Error("CreatedKey has no secret")
+	}
+	// So does a canary's, and no other schema of its holds one.
+	if _, ok := doc.Components.Schemas["CreatedCanary"].Properties["secret"]; !ok {
+		t.Error("CreatedCanary has no secret")
+	}
+	for _, name := range []string{"Canary", "CanaryList", "CanaryOrigin", "CanaryUpdate"} {
+		schema, ok := doc.Components.Schemas[name]
+		if !ok {
+			t.Errorf("no %s schema", name)
+		}
+		if _, ok := schema.Properties["secret"]; ok {
+			t.Errorf("%s has a secret", name)
+		}
 	}
 	for _, name := range []string{"Key", "KeyList", "CreateKeyRequest", "KeyUpdate"} {
 		schema, ok := doc.Components.Schemas[name]

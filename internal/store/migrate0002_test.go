@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -75,5 +77,58 @@ func TestMigration0002AddsTheClientColumnAndTheClientKind(t *testing.T) {
 	}
 	if _, err := s.db.ExecContext(ctx, `INSERT INTO baseline_places (key_id, kind, value, first_seen, last_seen) VALUES ('kkkk1111', 'user_agent', 'curl/8', 1, 1)`); err == nil {
 		t.Error("baseline_places accepts a kind it does not know")
+	}
+}
+
+func TestMigration0002AddsTheCanariesTable(t *testing.T) {
+	s := openTest(t, t.TempDir())
+	ctx := context.Background()
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('canaries') WHERE name IN
+		('key_id', 'planted', 'ignore_json', 'armed_at', 'fired_at', 'last_fired_at', 'fires', 'last_ip', 'last_country', 'last_asn', 'last_as_org', 'last_client')`).Scan(&n); err != nil || n != 12 {
+		t.Fatalf("canaries has %d of its 12 columns (%v)", n, err)
+	}
+	// A canary row must belong to a key.
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO canaries (key_id, planted, armed_at) VALUES ('nokey000', 'x', 1)`); err == nil {
+		t.Error("canaries accepts a row for a key that does not exist")
+	}
+}
+
+// Until v0.2.0 is tagged, migration 0002 grows with each M2 ticket, so a data
+// directory made by an earlier build of it is at schema 2 and lacks what a
+// later build reads. Opening it must say so, not fail on the first query that
+// touches the missing table.
+func TestADatabaseFromAnEarlierBuildOfMigration0002IsRefusedWithTheFix(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	s := openTest(t, dir)
+	if _, err := s.db.ExecContext(ctx, `DROP TABLE canaries`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Open(ctx, Options{Dir: dir, Now: testNow})
+	if err == nil {
+		t.Fatal("Open accepted a schema-2 database with no canaries table")
+	}
+	if !errors.Is(err, ErrStaleSchema) || !strings.Contains(err.Error(), "rebuild the data directory (unreleased migration changed)") ||
+		!strings.Contains(err.Error(), "canaries") {
+		t.Errorf("error %q: want it to say to rebuild the data directory and name what is missing", err)
+	}
+}
+
+func TestADatabaseMissingAnEarlierColumnOfMigration0002IsRefusedToo(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	s := openTest(t, dir)
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE events DROP COLUMN client`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(ctx, Options{Dir: dir, Now: testNow}); !errors.Is(err, ErrStaleSchema) {
+		t.Errorf("Open = %v, want ErrStaleSchema for a database with no events.client", err)
 	}
 }

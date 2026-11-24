@@ -26,6 +26,7 @@ Every command that talks to a running kman takes `--config-dir`, the directory h
 | [`kman upstream`](#kman-upstream) | add, list, show, update, remove or sync upstreams |
 | [`kman credential`](#kman-credential) | add, update or remove credentials |
 | [`kman key`](#kman-key) | create, list, show, update, disable, enable or revoke virtual keys |
+| [`kman canary`](#kman-canary) | create, list, show, update or reset canary keys, which raise a critical alert when anyone uses them |
 | [`kman backup`](#kman-backup) | write a consistent copy of the database, while kman runs |
 | [`kman prune`](#kman-prune) | delete events, hourly usage and delivered alerts older than a date, and the audit log's entries too if asked |
 | [`kman exposure`](#kman-exposure) | list the keys that would be easy to abuse if they leaked, each with the command that fixes it |
@@ -734,6 +735,89 @@ Replaces the key's secret and keeps the key: its id, spend, policy and history s
     	the config directory holding the credentials file (default "$HOME/.config/kman")
   -grace string
     	how long the old secret keeps working, such as 24h; 0 ends it at once (default "0")
+  -json
+    	print the admin API's JSON response
+```
+
+## `kman canary`
+
+Create, list, show, update or reset canary keys, which raise a critical alert when anyone uses them.
+
+### `kman canary create`
+
+```
+usage: kman canary create [<name>] --planted <where> [--format env|mcp|shell|ci] [--var <NAME>] [--base-url <url>] [--tag <tag>]... [--ignore <address>]... [--json]
+
+Makes a canary: a key in the standard format that forwards nothing and raises a critical alert when anyone uses it.
+It prints the snippet to plant, once. Plant it where a leak would find it, and say where with --planted so the alert can.
+  -base-url string
+    	kman's proxy URL, so the snippet carries it and a thief who finds only the snippet can reach kman
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -format string
+    	the snippet to plant: env (a .env line), mcp (an MCP server config's env block), shell (an export line) or ci (a gh secret set command) (default "env")
+  -ignore value
+    	an address or network (CIDR) whose use does not fire the canary, such as your own scanner; repeat it for several
+  -json
+    	print the admin API's JSON response
+  -planted string
+    	where it will be planted, such as "the deploy repo's .env" (required)
+  -tag value
+    	a tag; repeat it for several
+  -var string
+    	the variable the snippet sets (default OPENAI_API_KEY)
+```
+
+### `kman canary list`
+
+```
+usage: kman canary list [--json]
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+### `kman canary show`
+
+```
+usage: kman canary show <name or key id> [--json]
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -json
+    	print the admin API's JSON response
+```
+
+### `kman canary update`
+
+```
+usage: kman canary update <name or key id> [--planted <where>] [--tag <tag>]... [--no-tags] [--ignore <address>]... [--no-ignore] [--json]
+
+--tag and --ignore replace the canary's tags and its ignore list.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
+  -ignore value
+    	an address or network (CIDR) whose use does not fire the canary; repeat it for several
+  -json
+    	print the admin API's JSON response
+  -no-ignore
+    	empty the ignore list
+  -no-tags
+    	remove every tag
+  -planted string
+    	a new place it was planted
+  -tag value
+    	a tag; repeat it for several
+```
+
+### `kman canary reset`
+
+```
+usage: kman canary reset <name or key id> [--json]
+
+Arms a canary again after it fired, so its next use raises an alert.
+  -config-dir string
+    	the config directory holding the credentials file (default "$HOME/.config/kman")
   -json
     	print the admin API's JSON response
 ```

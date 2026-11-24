@@ -34,18 +34,18 @@ kman channel rm ops        # remove it, wipe its address, give up what still wai
 |---|---|---|
 | **The audit log** | by action, below | Every change made through the admin API |
 | **A disabled key in use** | high | A request arrived with the secret of a disabled key |
-| **A canary key in use** | critical | A request arrived with the secret of a key that has no credential |
+| **A canary key in use** | critical | A request arrived with the secret of a [canary key](canaries.md), the first time since it was armed, and then at most once per 10 minutes while it stays fired |
 | **Spend** | medium, high at 100% | A key's spend reaches a threshold of a cap or soft budget, or the month is on course to pass it |
 | **Key expiry** | medium, then high | A key is about to expire, or has |
 | **A refused credential** | high | An upstream answered 401 to the credential kman presented |
 
-The two key-use rows go beyond the producers SPEC §9 lists for the first release, and they are the only ones that react to a request rather than a change. They name the key and where the request came from, and never the request's path or anything else it said, because a stranger holding a disabled key or a canary writes that text. A key kman refuses for any other reason, such as a deleted credential, is not a canary and raises nothing.
+The two key-use rows go beyond the producers SPEC §9 lists for the first release, and they are the only ones that react to a request rather than a change. They name the key and where the request came from (its address, country, ASN and the organisation that holds it, and the client), and a canary's alert says where it was planted. They never name the request's path or anything else it said, because a stranger holding a disabled key or a canary writes that text. A key kman refuses for any other reason, such as a deleted credential, is not a canary and raises nothing.
 
 The audit log is a producer, so the change and its alert commit in one transaction: an alert is never lost with a change that went through. The severity of an audit entry follows its action:
 
 - **high:** `admin_token.create|rotate|revoke`, `credential.compromise`, `key.revoke`
-- **medium:** `key.disable`, `key.enable`, `key.rotate`, `credential.create|update|delete`, `alert_channel.create|delete`, `backup.create`, `data.prune`
-- **low:** `key.create`, `key.update`, `upstream.*`, `settings.set`, `price_override.*`, and any action this kman does not know
+- **medium:** `key.disable`, `key.enable`, `key.rotate`, `canary.reset`, `credential.create|update|delete`, `alert_channel.create|delete`, `backup.create`, `data.prune`
+- **low:** `key.create`, `key.update`, `canary.create`, `canary.update`, `upstream.*`, `settings.set`, `price_override.*`, and any action this kman does not know
 
 With the default `--min-severity medium`, a channel hears about the first two groups. A key that is used again and again alerts once per 10 minutes, and the next alert says how many uses it held back.
 

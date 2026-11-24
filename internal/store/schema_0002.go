@@ -19,6 +19,16 @@ import (
 // events gains client, the same reduction, which is NULL for an event stored
 // before kman recorded it. Migration 0001 is a tagged release's and never
 // changes, so the column is added here.
+//
+// canaries holds what a canary key has beyond its virtual_keys row, whose kind
+// is canary and which has no credential (#87): where it was planted, its ignore
+// list (a JSON array of addresses and CIDR prefixes), when it was armed (made,
+// or last reset), and what its use has done. fired_at is the first use since it
+// was armed, NULL while it is armed; a reset clears it and nothing else of the
+// history, so last_fired_at, fires and what the last use looked like stay. The
+// last_* columns are the address, country, ASN, its organisation and the client
+// of the last use: an address is personal data, so the admin API gives it out
+// only with expose_client_addresses on (ADR 0010).
 const schema0002 = `
 ALTER TABLE events ADD COLUMN client TEXT;
 
@@ -33,6 +43,21 @@ CREATE TABLE baseline_places (
 	blocked    INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (key_id, kind, value)
 ) STRICT, WITHOUT ROWID;
+
+CREATE TABLE canaries (
+	key_id        TEXT    PRIMARY KEY REFERENCES virtual_keys (key_id),
+	planted       TEXT    NOT NULL,
+	ignore_json   TEXT    NOT NULL DEFAULT '[]',
+	armed_at      INTEGER NOT NULL,
+	fired_at      INTEGER,
+	last_fired_at INTEGER,
+	fires         INTEGER NOT NULL DEFAULT 0,
+	last_ip       TEXT,
+	last_country  TEXT,
+	last_asn      INTEGER,
+	last_as_org   TEXT,
+	last_client   TEXT
+) STRICT;
 `
 
 // migrate0002 creates the M2 tables and fills baseline_places from the events

@@ -296,6 +296,31 @@ func (c *client) KeyClients(ctx context.Context, req admin.KeyRef) (admin.KeyCli
 	return out, c.do(ctx, "GET", "/keys/"+url.PathEscape(req.ID)+"/clients", nil, nil, &out)
 }
 
+func (c *client) CreateCanary(ctx context.Context, req admin.CreateCanaryRequest) (admin.CreatedCanary, error) {
+	var out admin.CreatedCanary
+	return out, c.do(ctx, "POST", "/canaries", nil, req, &out)
+}
+
+func (c *client) ListCanaries(ctx context.Context) (admin.CanaryList, error) {
+	var out admin.CanaryList
+	return out, c.do(ctx, "GET", "/canaries", nil, nil, &out)
+}
+
+func (c *client) GetCanary(ctx context.Context, req admin.CanaryRef) (admin.Canary, error) {
+	var out admin.Canary
+	return out, c.do(ctx, "GET", "/canaries/"+url.PathEscape(req.ID), nil, nil, &out)
+}
+
+func (c *client) UpdateCanary(ctx context.Context, req admin.CanaryUpdate) (admin.Canary, error) {
+	var out admin.Canary
+	return out, c.do(ctx, "PATCH", "/canaries/"+url.PathEscape(req.ID), nil, req, &out)
+}
+
+func (c *client) ResetCanary(ctx context.Context, req admin.CanaryRef) (admin.Canary, error) {
+	var out admin.Canary
+	return out, c.do(ctx, "POST", "/canaries/"+url.PathEscape(req.ID)+"/reset", nil, nil, &out)
+}
+
 func (c *client) DisableKey(ctx context.Context, req admin.KeyRef) (admin.Key, error) {
 	return c.keyAction(ctx, req, "disable")
 }

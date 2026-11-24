@@ -15,7 +15,7 @@ var m1Tables = []string{
 }
 
 // m2Tables are the tables migration 0002 adds so far (#83).
-var m2Tables = []string{"baseline_places"}
+var m2Tables = []string{"baseline_places", "canaries"}
 
 func TestEveryMigrationCreatesStrictTables(t *testing.T) {
 	s := openTest(t, t.TempDir())

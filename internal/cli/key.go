@@ -373,11 +373,18 @@ func printKey(c *call, k admin.Key) {
 	}
 	line("id", k.ID)
 	line("name", k.Name)
+	if k.Kind == "canary" {
+		line("kind", "canary: it forwards nothing, and kman canary manages it")
+	}
 	line("upstream", k.Upstream)
 	line("credential", k.Credential)
 	line("status", keyState(k))
 	line("created", when(&k.CreatedAt))
-	line("expires", when(&k.ExpiresAt))
+	if k.ExpiresAt.IsZero() { // a canary has no expiry
+		line("expires", "never")
+	} else {
+		line("expires", when(&k.ExpiresAt))
+	}
 	line("note", k.Note)
 	line("tags", strings.Join(k.Tags, ", "))
 	line("policy", fmt.Sprintf("%s (version %d)", k.Policy, k.PolicyVersion))

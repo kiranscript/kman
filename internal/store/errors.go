@@ -17,4 +17,9 @@ var (
 	// locked: OpenExclusive while anything has it open, and Open while an
 	// OpenExclusive holds it.
 	ErrHeld = errors.New("another process holds the database")
+	// ErrStaleSchema is returned by Open when a database is at the current
+	// schema version but lacks something the current build of that schema has:
+	// it was made by an earlier build of a migration that is not yet in a
+	// release, which M2 tickets extend in place (SPEC §14).
+	ErrStaleSchema = errors.New("database was made by an earlier build of an unreleased migration")
 )

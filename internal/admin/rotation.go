@@ -82,6 +82,9 @@ func (s *Service) rotateKey(tx *store.Tx, fx *effects, now time.Time, id string,
 	if before.Status == store.KeyRevoked {
 		return audit{}, RotatedKey{}, errorf(CodeConflict, "key %s is revoked, so it cannot be rotated: create a new key", id)
 	}
+	if err := refuseCanary(before); err != nil {
+		return audit{}, RotatedKey{}, err
+	}
 	names, err := liveKeyNames(tx)
 	if err != nil {
 		return audit{}, RotatedKey{}, err

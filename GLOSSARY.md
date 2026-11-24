@@ -15,8 +15,12 @@ The non-secret handle inside a virtual key, used to look it up and to refer to i
 _Avoid_: Key name (a name is a separate, operator-chosen label)
 
 **Canary key**:
-A virtual key whose only purpose is to raise an alert when anyone uses it. Nothing in the key itself distinguishes it from a standard virtual key.
+A virtual key whose only purpose is to raise an alert when anyone uses it. Nothing in the key itself distinguishes it from a standard virtual key. It has no credential, so it forwards nothing, and it never expires. An operator plants it where a leak would find it and records where, and it is **armed** until it is used and **fired** after, until it is reset.
 _Avoid_: Honeytoken, decoy key, canary token
+
+**Ignore list**:
+A canary's list of addresses and networks whose use does not fire it, such as the operator's own scanners. The use is still an event. It is the only thing that silences a canary: a known source never does.
+_Avoid_: Allowlist, known source (a known source is for the baseline rules and never applies to a canary)
 
 **Address lock**:
 A virtual key's list of the networks (`allowed_cidrs`) and countries (`allowed_countries`) it may be used from. A request from anywhere else is refused before its body is read, and each lock that is set must hold. A key with neither is open to every address.
@@ -188,10 +192,10 @@ The persisted queue of alerts waiting to be delivered, one entry per channel. An
 _Avoid_: Notification queue
 
 **Priority lane**:
-The path that takes the use of a disabled key or a canary key from the gateway to the alert outbox without waiting behind ordinary events. Its alerts say where the request came from and never what it said.
+The path that takes the use of a disabled key or a canary key from the gateway to the alert outbox without waiting behind ordinary events. Its alerts say where the request came from (and, for a canary, where it was planted) and never what the request said.
 
 **Known source**:
-A labelled address range, country, or network that the operator has said is legitimate, either for every key or for one key. Use from a known source never counts as a new location.
+A labelled address range, country, or network that the operator has said is legitimate, either for every key or for one key. Use from a known source never counts as a new location. It never silences a canary: a canary has an ignore list of its own.
 _Avoid_: Allowlist (an allowlist refuses everything else; a known source refuses nothing)
 
 **Auto-disable**:

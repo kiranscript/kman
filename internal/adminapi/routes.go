@@ -126,6 +126,12 @@ var routes = []route{
 	op("GET", "/keys/{id}/clients", "getKeyClients", "List the client addresses a virtual key was used from, grouped, from the events kept; refused unless the expose_client_addresses setting is on", http.StatusOK, Service.KeyClients),
 	op("POST", "/keys/{id}/rotate", "rotateKey", "Replace a virtual key's secret and keep the key; the new secret is returned only this once", http.StatusOK, Service.RotateKey),
 
+	op0("GET", "/canaries", "listCanaries", "List every canary, with where it was planted, whether it has fired and when it last did, and where its last use came from; the address is left out unless the expose_client_addresses setting is on", Service.ListCanaries),
+	op("POST", "/canaries", "createCanary", "Make a canary: a key in the standard format with no credential, which forwards nothing and raises a critical alert when used. Its secret and the snippet to plant are returned only this once", http.StatusCreated, Service.CreateCanary),
+	op("GET", "/canaries/{id}", "getCanary", "Read one canary, by key id", http.StatusOK, Service.GetCanary),
+	op("PATCH", "/canaries/{id}", "updateCanary", "Change where a canary was planted, its tags and its ignore list", http.StatusOK, Service.UpdateCanary),
+	op("POST", "/canaries/{id}/reset", "resetCanary", "Arm a fired canary again, so its next use alerts; what it recorded stays", http.StatusOK, Service.ResetCanary),
+
 	op("GET", "/events", "listEvents", "List stored events, newest first: which key, from where, by what client, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on", http.StatusOK, Service.Events),
 	opStream("GET", "/events/stream", "streamEvents", "Follow new events as they happen, as server-sent events, with the filters of the list. A client that cannot keep up loses events and is told how many", Service.StreamEvents),
 

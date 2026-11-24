@@ -22,6 +22,11 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `POST /admin/v1/admin-tokens/{name}/rotate` | Give an admin token a new secret; the old one stops working at once |
 | `GET /admin/v1/audit` | Read a page of the audit log, oldest entry first |
 | `POST /admin/v1/backup` | Download a consistent copy of the database, made while kman runs; it holds ciphertext only, so it opens only with the master key |
+| `GET /admin/v1/canaries` | List every canary, with where it was planted, whether it has fired and when it last did, and where its last use came from; the address is left out unless the expose_client_addresses setting is on |
+| `POST /admin/v1/canaries` | Make a canary: a key in the standard format with no credential, which forwards nothing and raises a critical alert when used. Its secret and the snippet to plant are returned only this once |
+| `GET /admin/v1/canaries/{id}` | Read one canary, by key id |
+| `PATCH /admin/v1/canaries/{id}` | Change where a canary was planted, its tags and its ignore list |
+| `POST /admin/v1/canaries/{id}/reset` | Arm a fired canary again, so its next use alerts; what it recorded stays |
 | `GET /admin/v1/channels` | List the alert channels, with what each one's outbox holds, never their addresses |
 | `POST /admin/v1/channels` | Add a Slack or signed-webhook alert channel; a webhook's signing secret is returned only this once |
 | `DELETE /admin/v1/channels/{ref}` | Remove an alert channel and give up the alerts still waiting for it |
@@ -113,6 +118,52 @@ Response 200: [AuditPage](#auditpage).
 Download a consistent copy of the database, made while kman runs; it holds ciphertext only, so it opens only with the master key. Operation id `createBackup`.
 
 Response 200: a file (application/octet-stream).
+
+### `GET /admin/v1/canaries`
+
+List every canary, with where it was planted, whether it has fired and when it last did, and where its last use came from; the address is left out unless the expose_client_addresses setting is on. Operation id `listCanaries`.
+
+Response 200: [CanaryList](#canarylist).
+
+### `POST /admin/v1/canaries`
+
+Make a canary: a key in the standard format with no credential, which forwards nothing and raises a critical alert when used. Its secret and the snippet to plant are returned only this once. Operation id `createCanary`.
+
+Request body: [CreateCanaryRequest](#createcanaryrequest).
+
+Response 201: [CreatedCanary](#createdcanary).
+
+### `GET /admin/v1/canaries/{id}`
+
+Read one canary, by key id. Operation id `getCanary`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | The canary's key id. |
+
+Response 200: [Canary](#canary).
+
+### `PATCH /admin/v1/canaries/{id}`
+
+Change where a canary was planted, its tags and its ignore list. Operation id `updateCanary`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | The canary's key id. |
+
+Request body: [CanaryUpdate](#canaryupdate).
+
+Response 200: [Canary](#canary).
+
+### `POST /admin/v1/canaries/{id}/reset`
+
+Arm a fired canary again, so its next use alerts; what it recorded stays. Operation id `resetCanary`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | The canary's key id. |
+
+Response 200: [Canary](#canary).
 
 ### `GET /admin/v1/channels`
 
@@ -565,6 +616,48 @@ Response 200: [Whoami](#whoami).
 | `header` | string | no | For the header style, the template: Name: value {key}. |
 | `style` | string | yes | header or basic. |
 
+### `Canary`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `armed_at` | string | yes | When it was made or last reset. |
+| `created_at` | string | yes |  |
+| `fired_at` | string | no | The first use since it was armed. Absent while it is armed. |
+| `fires` | integer | yes | How many uses were counted since the canary was made, from addresses not on its ignore list. |
+| `id` | string | yes | The key id: the non-secret handle inside the canary's key, and how this API addresses it. It is the id the canary's alerts and its events name. |
+| `ignore` | list of string | yes | Addresses and networks whose use does not fire it, such as the operator's own scanners. The use is still an event. |
+| `last_fired_at` | string | no | The last use. A reset keeps it. |
+| `last_use` | [CanaryOrigin](#canaryorigin) | no | Where the last use came from. |
+| `name` | string | no | An optional label, unique among keys not revoked. |
+| `planted` | string | yes | Where it was planted, in the operator's words: what an alert says so that the leak can be found. |
+| `state` | string | yes | armed: its next use raises an alert. fired: it was used since it was armed, so more uses count and only now and then alert again, until it is reset. revoked: it is over and answers key_revoked. |
+| `tags` | list of string | yes |  |
+
+### `CanaryList`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `canaries` | list of [Canary](#canary) | yes |  |
+
+### `CanaryOrigin`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `address` | string | no | The client address. Left out unless the expose_client_addresses setting is on. |
+| `address_withheld` | boolean | no | There is an address, which is left out because expose_client_addresses is off. |
+| `as_org` | string | no | The organisation the ASN belongs to, when the ASN database names one. |
+| `asn` | integer | no |  |
+| `client` | string | no | What called: the User-Agent reduced to a product and major version, such as curl/8, or none. |
+| `country` | string | no | An ISO 3166-1 alpha-2 code, when a GeoIP database names one. |
+
+### `CanaryUpdate`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `ignore` | list of string | no | The new ignore list, which replaces the old one; empty clears it. |
+| `planted` | string | no | A new place it was planted. |
+| `tags` | list of string | no | The new tags, which replace the old ones. |
+
 ### `Channel`
 
 | Field | Type | Required | Description |
@@ -614,6 +707,18 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `name` | string | yes | 1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit. A revoked token's name stays taken. |
 
+### `CreateCanaryRequest`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `base_url` | string | no | kman's proxy URL, as an app would be told it. When given, the snippet sets the variable's base URL too, so a thief who finds the snippet alone can reach kman with it. |
+| `format` | string | no | The snippet to plant: env (a .env line), mcp (an MCP server config's env block), shell (an export line) or ci (a gh secret set command). Defaults to env. |
+| `ignore` | list of string | no | Addresses and networks (CIDR) whose use does not fire the canary. At most 100, none wider than an IPv4 /16 or an IPv6 /32. |
+| `name` | string | no | An optional label: 1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit, unique among keys not revoked. It stays out of the snippet. |
+| `planted` | string | yes | Where it will be planted: 1 to 200 characters, with no control characters. An alert names it. |
+| `tags` | list of string | no | At most 32 labels of a-z, 0-9, '.', '_', ':' and '-'. |
+| `var` | string | no | The variable the snippet sets, such as OPENAI_API_KEY (the default). A thief finds a key by the name it is under. |
+
 ### `CreateKeyRequest`
 
 | Field | Type | Required | Description |
@@ -632,6 +737,15 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `secret` | string | yes | The token itself (kma_...). kman keeps only its hash, so it is shown only this once. |
 | `token` | [AdminToken](#admintoken) | yes |  |
+
+### `CreatedCanary`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `canary` | [Canary](#canary) | yes |  |
+| `format` | string | yes | The format of the snippet. |
+| `secret` | string | yes | The canary's key (kmn_...), in the standard format: nothing in it says it is a canary. kman keeps only its hash, so it is shown only this once. |
+| `snippet` | string | yes | What to plant, in the format asked for. It holds the secret, so it is shown only this once, and it says nothing of what it is: not the canary's name, where it is planted, or its tags. |
 
 ### `CreatedChannel`
 
@@ -737,8 +851,9 @@ Response 200: [Whoami](#whoami).
 | `credential` | string | no | The credential's name. Absent once a revoked key's credential is deleted. |
 | `credential_id` | string | no |  |
 | `expired` | boolean | yes | Whether its expiry has passed, whatever its status. |
-| `expires_at` | string | yes | When the key stops working. Every key has one: there is no never. |
+| `expires_at` | string | yes | When the key stops working. Every key has one: there is no never. A canary has none, and shows the zero time. |
 | `id` | string | yes | The key id: the non-secret handle inside the key, and how this API addresses it. |
+| `kind` | string | yes | standard, or canary: a key with no credential that forwards nothing and raises an alert when used. A canary is not in the list of keys; GET /canaries lists them. |
 | `name` | string | no | An optional label, unique among keys not revoked. |
 | `note` | string | no |  |
 | `policy` |  | yes | The key's policy, a JSON object: empty until it is edited. |
