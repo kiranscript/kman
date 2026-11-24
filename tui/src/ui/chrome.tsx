@@ -20,6 +20,12 @@ export function linkBadge(link: Link): { glyph: string; word: string; color?: st
     case 'ok':
       return { glyph: '●', word: 'live', color: color.ok };
     case 'down':
+      // The server answered, so it is there: say what kind of answer, not "offline".
+      if (link.answered) {
+        const st = link.status ?? 500;
+        const word = st < 400 ? 'invalid reply' : st >= 500 ? 'server error' : st === 429 ? 'rate limited' : 'refused';
+        return { glyph: '✖', word, color: color.danger };
+      }
       return { glyph: '◌', word: link.lastOk ? 'offline' : 'cannot connect', color: color.warn };
     case 'denied':
       return { glyph: '✖', word: 'token refused', color: color.danger };
@@ -46,21 +52,27 @@ export interface Notice {
 export interface HintItem {
   k: string;
   label: string;
-  /** Kept when space runs out; the others are dropped from the end first. */
+  /** Kept when space runs out; the others are dropped lowest rank first, the later one of equal rank first. */
   always?: boolean;
+  /** How much it is missed (default 3): hints with a low rank go first when space runs out. */
+  rank?: number;
 }
 
 const HINT_GAP = 2;
 const hintWidth = (h: HintItem) => [...h.k].length + 1 + [...h.label].length;
 
-/** The hints that fit in `width`, dropping the last droppable one until they do. */
+/** The hints that fit in `width`, dropping the least missed one (the last of them) until they do. */
 export function fitHints(hints: HintItem[], width: number): HintItem[] {
   const kept = [...hints];
   const total = () => kept.reduce((n, h) => n + hintWidth(h), 0) + HINT_GAP * Math.max(0, kept.length - 1);
   while (total() > width) {
-    const i = kept.map((h) => !h.always).lastIndexOf(true);
-    if (i < 0) break;
-    kept.splice(i, 1);
+    let drop = -1;
+    kept.forEach((h, i) => {
+      if (h.always) return;
+      if (drop < 0 || (h.rank ?? 3) <= (kept[drop]!.rank ?? 3)) drop = i;
+    });
+    if (drop < 0) break;
+    kept.splice(drop, 1);
   }
   return kept;
 }
@@ -91,7 +103,8 @@ export function noticeRows(notice: Notice | undefined, width: number): number {
 export function Footer({ notice, hints, link, width }: { notice?: Notice; hints: HintItem[]; link: Link; width: number }) {
   const badge = linkBadge(link);
   const tail = ` ${badge.glyph} ${badge.word} `;
-  const shown = fitHints(hints, width - [...tail].length - 1);
+  // Two spaces at least between the last hint and the connection.
+  const shown = fitHints(hints, width - [...tail].length - 3);
   const tone = notice?.tone === 'ok' ? color.ok : notice?.tone === 'error' ? color.danger : undefined;
   const lines = notice ? noticeLines(notice, width) : [' '];
   return (

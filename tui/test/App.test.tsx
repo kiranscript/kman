@@ -9,6 +9,11 @@ const ENTER = '\r';
 const ESC = '\u001b';
 const CTRL_S = '\u0013';
 
+/** An upstream whose detail is taller than the detail panel at 80x24. */
+function longUpstream(client: ReturnType<typeof fakeClient>) {
+  client.upstreams = [{ ...upstream, path_allowlist: Array.from({ length: 40 }, (_, i) => `POST /v1/route/${i}`) }];
+}
+
 function mount(client = fakeClient(), size = SIZE, copy?: (text: string) => void, noticeMs?: number, secretGuardMs = 0) {
   const element = (sz: typeof SIZE) => (
     <App client={client} url="http://127.0.0.1:8081" size={sz} intervalMs={60_000} copy={copy} noticeMs={noticeMs} secretGuardMs={secretGuardMs} />
@@ -39,7 +44,8 @@ describe('App', () => {
     const m = mount();
     await loaded(m);
     const s = m.screen();
-    expect(s).toContain('owner @ http://127.0.0.1:8081');
+    expect(s).toContain('127.0.0.1:8081');
+    expect(s).toContain('owner');
     expect(s).toContain('2 active');
     expect(s).toContain('NEEDS ATTENTION');
     expect(s).toContain('ci-evals');
@@ -318,7 +324,7 @@ describe('App', () => {
       await loaded(m);
       const s = m.screen();
       // ci-evals (90% of its cap) and uncapped (no cap): two rows, so two everywhere.
-      expect(s).toContain('NEEDS ATTENTION (2)');
+      expect(s).toContain('NEEDS ATTENTION');
       expect(s).toContain('[1] Status ▲1');
       expect(s).toContain('1 of 2');
       expect(s).toContain('uncapped');
@@ -648,8 +654,8 @@ describe('App', () => {
       const s = m.screen();
       expect(s).toContain('Upstreams (14)');
       expect(s).toContain('1 of 14');
-      expect(lines(m).find((l) => l.includes('a-very') && l.includes('…'))).toContain('▲ update');
-      expect(lines(m).find((l) => l.includes('up-1 '))).toContain('▲ http');
+      expect(lines(m).find((l) => l.includes('a-very') && l.includes('…'))).toContain('○ update');
+      expect(lines(m).find((l) => /^[│┃] up-1 /.test(l))).toContain('▲ http');
       expect(lines(m).every((l) => [...l].length <= 100)).toBe(true);
       m.unmount();
     });
@@ -675,11 +681,12 @@ describe('App', () => {
       m.unmount();
     });
 
-    it('keeps the disable prompt and the r refresh hint within 80 columns', async () => {
+    it('keeps the disable prompt within 80 columns, and the key actions in the options bar', async () => {
       const m = mount(fakeClient(), { columns: 80, rows: 24 });
       await loaded(m);
       await m.press('2');
-      expect(lines(m).at(-1)).toContain('r refresh');
+      // What can be done to the selected key is dropped last; scrolling and selecting go first.
+      for (const hint of ['↑↓ select', 'd disable', '1-4 panels', '/ filter', '? help', 'q quit']) expect(lines(m).at(-1)).toContain(hint);
       await m.press('d');
       expect(m.screen()).toContain('Disable this key?');
       expect(m.screen()).toContain('you can enable it again');
@@ -727,7 +734,7 @@ describe('App', () => {
       const m = mount(client, SIZE);
       await loaded(m);
       await m.press('4');
-      const main = m.screen().split('\n').map((l) => l.slice(38)).join(' ').replace(/[│┃\s]+/g, ' ');
+      const main = m.screen().split('\n').map((l) => l.slice(44)).join(' ').replace(/[│┃\s]+/g, ' ');
       expect(main).toContain('from 10.0.0.7');
       expect(main).toContain('The latest 100 entries');
       m.unmount();
@@ -856,7 +863,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('3');
       expect(lines(m).find((l) => /^[│┃] openai/.test(l))).toContain('▲ http');
-      expect(m.screen().split('\n').map((l) => l.slice(38)).join(' ').replace(/[│┃\s]+/g, ' ')).toContain('plain http ollama.internal.example.corp:11434');
+      expect(m.screen().split('\n').map((l) => l.slice(44)).join(' ').replace(/[│┃\s]+/g, ' ')).toContain('plain http ollama.internal.example.corp:11434');
       m.unmount();
     });
 
@@ -1182,7 +1189,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('2');
       const detail = lines(m).filter((l) => l.includes('Key: ') === false && l.includes('expired') && !/^[│┃] checkout/.test(l));
-      expect(detail.map((l) => l.slice(38)).filter((l) => l.includes('expired'))).toHaveLength(1);
+      expect(detail.map((l) => l.slice(44)).filter((l) => l.includes('expired'))).toHaveLength(1);
       m.unmount();
     });
 
@@ -1220,9 +1227,9 @@ describe('App', () => {
       const m = mount(client, { columns: 100, rows: 34 });
       await loaded(m);
       await m.press('3');
-      const main = m.screen().split('\n').map((l) => l.slice(38)).join(' ').replace(/[│┃\s]+/g, ' ');
+      const main = m.screen().split('\n').map((l) => l.slice(44)).join(' ').replace(/[│┃\s]+/g, ' ');
       expect(main).toContain('▲ plain http a-very-long-hostname');
-      expect(main).toContain('ROUTES');
+      expect(main).toContain('routes');
       expect(main).toContain('POST /v1/route/7');
       m.unmount();
     });
@@ -1352,7 +1359,9 @@ describe('App', () => {
       const m = mount(client);
       await loaded(m);
       await m.press('2');
-      expect(m.screen()).toContain('changing the policy or the caps');
+      // The note wraps wherever the detail is wide enough to break it: read the detail as one run.
+      const detail = lines(m).map((l) => l.slice(44)).join(' ').replace(/[│┃\s]+/g, ' ');
+      expect(detail).toContain('changing the policy or the caps');
       expect(lines(m).length).toBeLessThanOrEqual(34);
       m.unmount();
     });
@@ -1422,7 +1431,7 @@ describe('App', () => {
       await m.press('checkout');
       await m.press(ENTER);
       await until(() => m.screen().includes('something is in the way'), 'the error');
-      expect(m.screen()).toContain('Enter to try again · Esc to cancel');
+      expect(m.screen()).toContain('Enter tries again.');
       expect(lines(m).length).toBeLessThanOrEqual(24);
       m.unmount();
     });
@@ -1442,10 +1451,10 @@ describe('App', () => {
       await m.press('x');
       await m.press('checkout');
       await m.press(ENTER);
-      await until(() => m.screen().includes('Enter to try again'), 'the retry hint');
+      await until(() => m.screen().includes('Enter tries again'), 'the retry hint');
       await m.press('\u007f'); // backspace: the name no longer matches
       expect(m.screen()).toContain('Type the name exactly');
-      expect(m.screen()).not.toContain('Enter to try again');
+      expect(m.screen()).not.toContain('Enter tries again');
       await m.press(ENTER);
       expect(m.screen()).toContain('That is not the name');
       m.unmount();
@@ -1490,7 +1499,7 @@ describe('App', () => {
       const m = mount(client, { columns: 100, rows: 34 });
       await loaded(m);
       await m.press('3');
-      expect(lines(m).find((l) => /^[│┃] nocred/.test(l))).toContain('▲ no credential');
+      expect(lines(m).find((l) => /^[│┃] nocred/.test(l))).toContain('✖ no credential');
       expect(lines(m).find((l) => /^[│┃] healthy/.test(l))).not.toContain('▲');
       m.unmount();
     });
@@ -1535,7 +1544,7 @@ describe('App', () => {
       const m = mount(client, { columns: 80, rows: 24 });
       await loaded(m);
       await m.press('4');
-      const shown = lines(m).filter((l) => /key\.create +key k_\d+/.test(l)).length;
+      const shown = lines(m).filter((l) => /key\.create +k_\d+/.test(l)).length;
       await m.press('\u001b[6~');
       expect(m.screen()).toContain(`${shown} of 60`);
       m.unmount();
@@ -1647,7 +1656,7 @@ describe('App', () => {
       await m.press('2');
       expect(lines(m).at(-1)).toContain('c IPs');
       await m.press('?');
-      expect(m.screen()).toContain('the addresses a key was used from');
+      expect(m.screen()).toContain('the IP addresses a key was used from');
       await m.press(ESC);
       client.fail = new ApiError('unreachable', 'cannot reach http://127.0.0.1:8081: connection refused');
       await m.press('r');
@@ -1712,17 +1721,27 @@ describe('App', () => {
 describe('review round 1', () => {
   const SMALL = { columns: 80, rows: 24 };
 
-  it('keeps every field of an upstream reachable at 80x24: the routes and the key count scroll into view', async () => {
+  it('shows every field of an upstream at 80x24, the other panels being single lines', async () => {
     const m = mount(fakeClient(), SMALL);
+    await loaded(m);
+    await m.press('3');
+    for (const text of ['address', 'routes', 'POST /v1/chat/completions', '3 (2 active)']) expect(m.screen()).toContain(text);
+    expect(m.screen()).not.toContain('J/K scroll');
+    m.unmount();
+  });
+
+  it('keeps every field of a long upstream reachable at 80x24 by scrolling', async () => {
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, SMALL);
     await loaded(m);
     await m.press('3');
     expect(m.screen()).toContain('↓ J more');
     expect(m.screen()).toContain('J/K scroll');
-    expect(m.screen()).not.toContain('POST /v1/chat/completions');
-    await m.press('J');
-    expect(m.screen()).toContain('POST /v1/chat/completions');
-    expect(m.screen()).toContain('3 keys');
-    await m.press('K');
+    expect(m.screen()).not.toContain('/v1/route/39');
+    for (let i = 0; i < 14; i++) await m.press('J');
+    expect(m.screen()).toContain('/v1/route/39');
+    for (let i = 0; i < 14; i++) await m.press('K');
     expect(m.screen()).toContain('address');
     m.unmount();
   });
@@ -1753,9 +1772,11 @@ describe('review round 1', () => {
 
   it('shows the price data age in the Status panel, at every size, and says when it is stale', async () => {
     for (const [size, text] of [
-      [SMALL, /price 3d/],
+      // One line is all the strip has: the price goes before the address, and shows when there is room.
+      [SMALL, /owner @ 127\.0\.0\.1:8081/],
       [{ columns: 100, rows: 24 }, /price (3d|data 3 days old)/],
-      [SIZE, /price data 3 days old/],
+      // A fresh price joins the first line, in its short form.
+      [SIZE, /updated .* · price 3d/],
     ] as const) {
       const m = mount(fakeClient(), size);
       await loaded(m);
@@ -1789,10 +1810,12 @@ describe('review round 1', () => {
     await m.press('/');
     await m.press('zzz');
     const rows = () => m.screen().split('\n');
-    expect(rows().some((l) => l.includes('No key matches.'))).toBe(true);
+    // The title says 0 of 3 and the detail says why: the list does not say it a third time.
+    expect(rows().filter((l) => l.includes('No key matches')).length).toBe(1);
     expect(rows().find((l) => l.includes('/ zzz'))).not.toContain('No key matches');
+    expect(rows().find((l) => l.includes('Keys (0/3)'))).toBeDefined();
     await m.press(ENTER);
-    expect(rows().some((l) => l.includes('No key matches.'))).toBe(true);
+    expect(rows().filter((l) => l.includes('No key matches')).length).toBe(1);
     expect(rows().find((l) => l.includes('/ zzz'))).not.toContain('No key matches');
     m.unmount();
   });
@@ -1857,7 +1880,7 @@ describe('review round 1', () => {
     await loaded(m);
     await m.press('3');
     const row = m.screen().split('\n').find((l) => /^[│┃] test-upstream/.test(l)) ?? '';
-    expect(row).toContain('▲ no credential');
+    expect(row).toContain('✖ no credential');
     m.unmount();
   });
 
@@ -1889,7 +1912,8 @@ describe('review round 1', () => {
     await m.press('2');
     const row = m.screen().split('\n').find((l) => /^[│┃] checkou/.test(l)) ?? '';
     expect(row).toContain('● active');
-    expect(row).toContain('▲ unmetered');
+    // Long name, narrow column: the warning keeps its mark and the spend stays, the words go.
+    expect(row).toMatch(/▲ +\$0\.108/);
     m.unmount();
   });
 
@@ -1902,23 +1926,29 @@ describe('review round 1', () => {
     await loaded(m);
     await m.press('2');
     // Only the main panel, which starts after the 38-column sidebar.
-    const flat = () => m.screen().split('\n').map((l) => l.slice(38)).join('').replace(/[\s│┃]/g, '');
+    const flat = () => m.screen().split('\n').map((l) => l.slice(44)).join('').replace(/[\s│┃]/g, '');
     expect(flat()).toContain(`${base}-a`);
     await m.press('j');
     expect(flat()).toContain(`${base}-b`);
     m.unmount();
   });
 
-  it('stops offering J/K when a filter leaves no key to show', async () => {
-    const m = mount(fakeClient(), SMALL);
+  it('stops offering to scroll when a filter leaves no key to show', async () => {
+    const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+    const client = fakeClient();
+    for (const k of client.keys) k.policy = { allowed_models: Array.from({ length: 40 }, (_, i) => `model-number-${i}`) };
+    const m = mount(client, SMALL);
     await loaded(m);
     await m.press('2');
-    expect(m.screen()).toContain('J/K scroll');
+    // The detail has more than it shows: the bar offers going into it, and the border says how to scroll.
+    expect(lines(m).at(-1)).toMatch(/Enter details|J\/K scroll/);
+    expect(m.screen()).toContain('↓ J more');
     await m.press('/');
     await m.press('zzz');
     await m.press(ENTER);
     expect(m.screen()).toContain('No key matches "zzz".');
-    expect(m.screen()).not.toContain('J/K scroll');
+    expect(lines(m).at(-1)).not.toMatch(/Enter details|J\/K scroll/);
+    expect(m.screen()).not.toContain('↓ J more');
     m.unmount();
   });
 
@@ -1944,7 +1974,7 @@ describe('review round 1', () => {
           expect(s, label).toContain('1 revoked');
           expect(s, label).toContain(stale ? '▲ price' : 'price');
           expect(s.match(/▲ price/g) ?? [], label).toHaveLength(stale ? 1 : 0);
-          if (extra > 0) expect(s, label).toContain('need attention');
+          if (extra > 0) expect(s, label).toMatch(/(to review|\d of \d+)/);
           m.unmount();
         }
       }
@@ -1960,7 +1990,7 @@ describe('review round 1', () => {
       const m = mount(client, { columns: 100, rows: 24 });
       await loaded(m);
       await m.press('2');
-      const flat = () => m.screen().split('\n').map((l) => l.slice(38)).join('').replace(/[\s│┃]/g, '');
+      const flat = () => m.screen().split('\n').map((l) => l.slice(44)).join('').replace(/[\s│┃]/g, '');
       expect(flat()).toContain(`Key:${base}a`.length > 0 ? `${base}a` : '');
       // Either the title carries the whole name, or the body does.
       const title = m.screen().split('\n')[0]!.slice(38);
@@ -1994,6 +2024,7 @@ describe('review round 1', () => {
     client.keys = client.keys.map((k) => ({ ...k, spend: { ...k.spend! } }));
     client.keys.forEach((k) => (k.spend!.today = { ...k.spend!.today, cap_micro: 1_000_000_000 }));
     client.keys.forEach((k) => (k.spend!.month = { ...k.spend!.month, cap_micro: 1_000_000_000 }));
+    longUpstream(client);
     const m = mount(client, SMALL);
     await loaded(m);
     await m.press('3');
@@ -2055,7 +2086,10 @@ describe('review round 1', () => {
     await m.press(ESC);
     await m.press('2');
     await m.press('x');
-    expect(m.screen()).toContain('Enter revoke');
+    // Enter is offered once it would revoke: with the name typed.
+    expect(m.screen().split('\n').at(-1)).not.toContain('Enter revoke');
+    await m.press('checkout');
+    expect(m.screen().split('\n').at(-1)).toContain('Enter revoke');
     m.unmount();
 
     const client = fakeClient();
@@ -2068,13 +2102,792 @@ describe('review round 1', () => {
   });
 
   it('scrolls only when there is something to scroll, and starts again from the top for the next item', async () => {
-    const m = mount(fakeClient(), SMALL);
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, SMALL);
     await loaded(m);
     await m.press('3');
-    await m.press('J');
+    for (let i = 0; i < 14; i++) await m.press('J');
     expect(m.screen()).toContain('↑ K back');
     await m.press('4');
     expect(m.screen()).not.toContain('↑ K back');
+    m.unmount();
+  });
+});
+
+describe('review round 2', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+  const ESCAPE = '\u001b';
+  const withBadUpstream = (client: ReturnType<typeof fakeClient>) =>
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+
+  it('counts an upstream with no credential in Status, lists it, and opens it on Enter', async () => {
+    const client = fakeClient();
+    withBadUpstream(client);
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(m.screen()).not.toContain('every key is capped and current');
+    expect(m.screen()).toMatch(/Status ✖1 ▲1/);
+    const row = lines(m).find((l) => l.includes('✖ ollama'))!;
+    expect(row).toContain('no credential');
+    // The worst comes first, so the upstream with no credential is the selected row.
+    await m.press(ENTER);
+    expect(lines(m).find((l) => l.includes('Upstreams ('))).toContain('Upstreams (2)');
+    expect(m.screen()).toContain('Upstream: ollama');
+    m.unmount();
+  });
+
+  it('says there is nothing to look at only when keys and upstreams are all fine', async () => {
+    const client = fakeClient();
+    client.keys = client.keys.map((k) => ({ ...k, status: 'disabled' as const }));
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(m.screen()).toContain('No active keys');
+    m.unmount();
+  });
+
+  it('puts the install address in the top border of Status, and in the line when stacked short', async () => {
+    const wide = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(wide);
+    // At 100 columns the border has room for the address, and the summary has the rest.
+    expect(lines(wide)[0]).toContain('127.0.0.1:8081');
+    expect(lines(wide)[0]).toContain('owner @ 127.0.0.1:8081');
+    wide.unmount();
+    const small = mount(fakeClient(), { columns: 80, rows: 24 });
+    await loaded(small);
+    expect(lines(small)[0]).toContain('owner @ 127.0.0.1:8081');
+    small.unmount();
+  });
+
+  it('shrinks the inactive panels to one line each at 80x24, so the detail has room', async () => {
+    const m = mount(fakeClient(), { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    for (const title of ['[1] Status', '[3] Upstreams', '[4] Audit']) {
+      const row = lines(m).find((l) => l.includes(title))!;
+      expect(row).not.toMatch(/[╭│╰]/);
+    }
+    expect(lines(m).find((l) => l.includes('[3] Upstreams'))).toContain('openai');
+    expect(lines(m).find((l) => l.includes('[4] Audit'))).toContain('key.create');
+    expect(lines(m).length).toBeLessThanOrEqual(24);
+    m.unmount();
+  });
+
+  it('keeps the borders of the inactive panels when there are rows for them', async () => {
+    const m = mount(fakeClient(), { columns: 80, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).find((l) => l.includes('[4] Audit'))).toMatch(/^╭/);
+    m.unmount();
+  });
+
+  it('names an audit row by its target, not by its kind twice', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('4');
+    const row = lines(m).find((l) => l.includes('11-17') && l.includes('key.create'))!;
+    expect(row).toContain('k_web');
+    expect(row).not.toMatch(/key\.create +key /);
+    m.unmount();
+  });
+
+  it('lets Enter hand the keyboard to the detail panel, scroll it, and Esc take it back', async () => {
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('3');
+    expect(lines(m).at(-1)).toContain('Enter details');
+    await m.press(ENTER);
+    expect(lines(m).at(-1)).toContain('Esc back to list');
+    expect(m.screen()).toMatch(/1-\d+ of \d+/);
+    await m.press('G');
+    expect(m.screen()).toContain('/v1/route/39');
+    await m.press(ESCAPE);
+    expect(lines(m).at(-1)).not.toContain('Esc back to list');
+    expect(lines(m).at(-1)).toContain('Enter details');
+    m.unmount();
+  });
+
+  it('puts a gap between every key and its meaning in help, and fits 80x24', async () => {
+    const m = mount(fakeClient(), { columns: 80, rows: 24 });
+    await loaded(m);
+    for (const panel of ['1', '2', '3', '4']) {
+      await m.press(panel);
+      await m.press('?');
+      expect(m.screen()).toMatch(/⇧Tab +next panel/);
+      expect(lines(m).find((l) => l.includes('Keybindings'))).toMatch(/╭─ Keybindings/);
+      expect(lines(m).length).toBeLessThanOrEqual(24);
+      await m.press(ESCAPE);
+    }
+    m.unmount();
+  });
+
+  it('does not offer selecting when a filter matches nothing', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('/');
+    await m.press('zzz');
+    expect(lines(m).at(-1)).not.toContain('select');
+    expect(lines(m).at(-1)).toContain('Esc clear');
+    m.unmount();
+  });
+
+  it('shows the dialogs with their title in the border, as the panels have it', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('n');
+    expect(lines(m).find((l) => l.includes('New virtual key'))).toMatch(/^\s*╭─ New virtual key/);
+    m.unmount();
+  });
+});
+
+describe('review round 3', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+  const ESCAPE = '\u001b';
+
+  it('keeps the title and corners of the detail panel intact when its content overflows at 80x24', async () => {
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('3');
+    const at = lines(m).findIndex((l) => l.includes('Upstream: openai'));
+    expect(lines(m)[at]).toMatch(/^╭─ Upstream: openai ─+╮$/);
+    expect(lines(m).find((l) => l.includes('↓ J more'))).toMatch(/^╰─+ ↓ J more ─╯$/);
+    expect(lines(m)[at + 1]).toMatch(/^│ address/);
+    m.unmount();
+  });
+
+  it('shares the wide column between the panels, each up to what it holds, with Keys first', async () => {
+    const m = mount(fakeClient(), { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('3');
+    // Upstreams is focused and has one row, so Keys keeps all three of its rows.
+    for (const key of ['checkout', 'ci-evals', 'old-proto']) expect(m.screen()).toContain(key);
+    m.unmount();
+  });
+
+  it('counts what needs a look by how much, and the border says the same number', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 140, rows: 40 });
+    await loaded(m);
+    expect(lines(m)[0]).toMatch(/Status ✖1 ▲1/);
+    expect(m.screen()).toContain('1 of 2');
+    expect(m.screen()).not.toContain('need attention');
+    m.unmount();
+  });
+
+  it('puts no upstream in Status, and opens Upstreams on Enter', async () => {
+    const client = fakeClient();
+    client.upstreams = [];
+    client.keys = [];
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(lines(m).find((l) => l.includes('no upstream'))).toContain('kman upstream add');
+    await m.press(ENTER);
+    expect(m.screen()).toContain('No upstreams yet');
+    m.unmount();
+  });
+
+  it('lines up the columns of the Keys list when they fit', async () => {
+    const m = mount(fakeClient(), { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    const rows = lines(m).filter((l) => /^[│┃] (checkout|ci-evals) /.test(l));
+    expect(rows).toHaveLength(2);
+    const at = (l: string) => l.indexOf('● active');
+    expect(at(rows[0]!)).toBe(at(rows[1]!));
+    const cost = (l: string) => l.search(/\$0\.\d+/) + l.match(/\$0\.\d+/)![0].length;
+    expect(cost(rows[0]!)).toBe(cost(rows[1]!));
+    m.unmount();
+  });
+
+  it('lists the routes of an upstream one to a line', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('3');
+    expect(lines(m).some((l) => /routes +POST \/v1\/chat\/completions/.test(l))).toBe(true);
+    m.unmount();
+  });
+
+  it('only hands over the keyboard when the detail has more than it shows', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).at(-1)).not.toContain('Enter details');
+    await m.press(ENTER);
+    expect(lines(m).at(-1)).not.toContain('Esc back to list');
+    m.unmount();
+  });
+
+  it('ignores the list actions while the detail has the keyboard, and shows the position in its border', async () => {
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('3');
+    await m.press(ENTER);
+    await m.press('n');
+    expect(m.screen()).not.toContain('New virtual key');
+    expect(m.screen()).toMatch(/[╰┗][─━]+ 1-\d+ of \d+ [─━][╯┛]/);
+    await m.press(ESCAPE);
+    await m.press('n');
+    expect(m.screen()).toContain('New virtual key');
+    m.unmount();
+  });
+});
+
+describe('review round 4', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+  const ESCAPE = '\u001b';
+  const cjk = '東京の請求チーム'.repeat(4);
+
+  it('measures wide characters in cells, so a CJK key name cannot break the frame at 80x24', async () => {
+    const client = fakeClient();
+    client.keys[0]!.name = `${cjk}-east`;
+    for (const size of [{ columns: 80, rows: 24 }, { columns: 100, rows: 30 }]) {
+      const m = mount(client, size);
+      await loaded(m);
+      await m.press('2');
+      expect(lines(m).length).toBeLessThanOrEqual(size.rows);
+      const top = lines(m).find((l) => l.includes('Key: '))!;
+      expect(top).toMatch(/╭─ Key: .*─+╮$/);
+      expect(lines(m).find((l) => l.includes('● active'))).toBeDefined();
+      m.unmount();
+    }
+  });
+
+  it('shows the keys of the detail panel in help while it has the keyboard', async () => {
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('3');
+    await m.press(ENTER);
+    await m.press('?');
+    expect(m.screen()).toContain('DETAIL (focused)');
+    expect(m.screen()).not.toContain('KEYS (this panel)');
+    expect(m.screen()).not.toMatch(/^ *returns/m);
+    m.unmount();
+  });
+
+  it('offers only Esc in the new-key footer when there is no upstream to make a key on', async () => {
+    const client = fakeClient();
+    client.upstreams = [];
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('n');
+    expect(m.screen()).not.toContain('Ctrl+S');
+    expect(lines(m).at(-1)).toContain('Esc close');
+    expect(lines(m).at(-1)).not.toContain('next field');
+    m.unmount();
+  });
+
+  it('keeps the panels in view beside a popup when the main panel can hold it', async () => {
+    const m = mount(fakeClient(), { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('d');
+    expect(m.screen()).toContain('Disable this key?');
+    expect(m.screen()).toContain('[2] Keys');
+    expect(m.screen()).toContain('[4] Audit');
+    expect(lines(m).every((l) => [...l].length <= 140)).toBe(true);
+    await m.press('n');
+    m.unmount();
+    // Where the main panel is too narrow for it the popup takes the screen, as before.
+    const small = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(small);
+    await small.press('2');
+    await small.press('d');
+    expect(small.screen()).not.toContain('[4] Audit');
+    small.unmount();
+  });
+
+  it('marks the same problem the same way in Status, the Upstreams list and its detail', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 140, rows: 40 });
+    await loaded(m);
+    expect(lines(m).find((l) => l.includes('ollama'))).toContain('✖');
+    await m.press('3');
+    await m.press('j');
+    expect(lines(m).find((l) => /^[│┃] ollama/.test(l))).toContain('✖ no credential');
+    expect(m.screen()).toContain('✖ none: add one');
+    m.unmount();
+  });
+
+  it('puts no blank row above the first line of the confirmation', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('d');
+    const at = lines(m).findIndex((l) => l.includes('Disable this key?'));
+    expect(lines(m)[at + 1]).toMatch(/checkout/);
+    await m.press(ESCAPE);
+    m.unmount();
+  });
+});
+
+describe('review round 5', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+  const ESCAPE = '\u001b';
+
+  it('keeps the revoke field on one row for a long wide-character name', async () => {
+    const client = fakeClient();
+    const name = '東京'.repeat(18);
+    client.keys[0]!.name = name;
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('x');
+    await m.press(name);
+    const field = lines(m).filter((l) => l.includes('['));
+    expect(field.length).toBeGreaterThan(0);
+    for (const l of field) expect(l).toMatch(/\[.*\]/);
+    expect(lines(m).length).toBeLessThanOrEqual(24);
+    m.unmount();
+  });
+
+  it('lists only what works while the detail has the keyboard, in help', async () => {
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('3');
+    await m.press(ENTER);
+    await m.press('?');
+    expect(m.screen()).not.toMatch(/\bn {2}r\b/);
+    expect(m.screen()).not.toContain('new key');
+    expect(m.screen()).toContain('give the keyboard back');
+    await m.press(ESCAPE);
+    m.unmount();
+  });
+
+  it('says only once, in the footer, that y confirms and n cancels', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('d');
+    const hints = lines(m).filter((l) => /\by yes\b/.test(l));
+    expect(hints).toHaveLength(1);
+    expect(hints[0]).toBe(lines(m).at(-1));
+    m.unmount();
+  });
+
+  it('ends the panels and the detail on the same row at 100x30 and 140x40', async () => {
+    for (const size of [{ columns: 100, rows: 30 }, { columns: 140, rows: 40 }]) {
+      const m = mount(fakeClient(), size);
+      await loaded(m);
+      const bottoms = lines(m).filter((l) => /[╯┛]/.test(l));
+      // The last panel and the detail close on the last row of the body.
+      const lastBody = lines(m).findLastIndex((l) => /[╯┛]/.test(l));
+      expect(lines(m)[lastBody]).toMatch(/[╯┛].*[╯┛]/);
+      expect(bottoms.length).toBeGreaterThan(0);
+      m.unmount();
+    }
+  });
+});
+
+describe('review round 6', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+  const ESCAPE = '\u001b';
+
+  it('says what a key is where an empty install has nothing to show', async () => {
+    const client = fakeClient();
+    client.keys = [];
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(m.screen()).toContain('Getting started');
+    expect(m.screen()).toContain('Press n to create the first one.');
+    expect(m.screen()).not.toContain('Recent activity');
+    m.unmount();
+  });
+
+  it('keeps the filter prompt on the last row of the panel, with or without matches', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('/');
+    await m.press('ci-');
+    const withMatch = lines(m).findIndex((l) => l.includes('/ ci-'));
+    await m.press('zzz');
+    const none = lines(m).findIndex((l) => l.includes('/ ci-zzz'));
+    expect(none).toBe(withMatch);
+    m.unmount();
+  });
+
+  it('says the first thing to look at in a tall Status that is not focused', async () => {
+    const m = mount(fakeClient(), { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    expect(m.screen()).toMatch(/▲ ci-evals · near cap/);
+    m.unmount();
+  });
+
+  it('separates an upstream\'s warnings from its count', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('3');
+    expect(lines(m).find((l) => /^[│┃] ollama/.test(l))).toMatch(/http {2,}0 active/);
+    m.unmount();
+  });
+
+  it('wraps a help line under its meaning, not under the key', async () => {
+    const m = mount(fakeClient(), { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('4');
+    await m.press('?');
+    const at = lines(m).findIndex((l) => l.includes('focus the detail'));
+    expect(at).toBeGreaterThan(0);
+    expect(lines(m)[at]).toMatch(/Enter +focus the detail/);
+    await m.press(ESCAPE);
+    m.unmount();
+  });
+});
+
+describe('review round 7', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+
+  it('keeps the Keys panel the same height while a filter narrows the list', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('/');
+    const prompt = () => lines(m).findIndex((l) => /^[│┃] \/( |$)/.test(l));
+    const first = prompt();
+    await m.press('ci');
+    expect(prompt()).toBe(first);
+    await m.press('zz');
+    expect(prompt()).toBe(first);
+    m.unmount();
+  });
+
+  it('offers up and down only where there is more than one row to move over', async () => {
+    const m = mount(fakeClient(), { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('4');
+    expect(lines(m).at(-1)).not.toContain('select');
+    await m.press('2');
+    expect(lines(m).at(-1)).toContain('select');
+    m.unmount();
+  });
+
+  it('shows Getting started with Keys focused on an empty install too', async () => {
+    const client = fakeClient();
+    client.keys = [];
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    expect(m.screen()).toContain('Getting started');
+    expect(m.screen()).not.toMatch(/^ .*applies its limits/m);
+    m.unmount();
+  });
+
+  it('says no position for a list of one, and no match in an empty filtered list', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(m.screen()).not.toContain('1 of 1');
+    await m.press('2');
+    await m.press('/');
+    await m.press('zzz');
+    expect(m.screen()).toContain('no match');
+    m.unmount();
+  });
+
+  it('keeps the spend column in the Keys list at 100x30 with a long-named, mixed set', async () => {
+    const client = fakeClient();
+    client.keys.push(
+      key({ id: 'k_prod', name: 'prod-api', spend: { today: { period: 'd', cost_micro: 4_300_000, requests: 812, cap_micro: 5_000_000 }, month: { period: 'm', cost_micro: 61_000_000, requests: 9100, cap_micro: 200_000_000 } } }),
+      key({ id: 'k_rev', name: 'leaked-demo', status: 'revoked' }),
+    );
+    const m = mount(client, { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).find((l) => /^[│┃] checkout/.test(l))).toMatch(/\$0\.108/);
+    m.unmount();
+  });
+});
+
+describe('review round 8', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+
+  it('keeps the setup command whole on its own line in the empty install', async () => {
+    const client = fakeClient();
+    client.upstreams = [];
+    client.keys = [];
+    for (const columns of [100, 120]) {
+      const m = mount(client, { columns, rows: 30 });
+      await loaded(m);
+      expect(lines(m).some((l) => l.includes('kman upstream add openai --preset openai'))).toBe(true);
+      await m.press('3');
+      expect(lines(m).some((l) => l.includes('kman upstream add openai --preset openai'))).toBe(true);
+      expect(m.screen()).not.toMatch(/^[│┃] +\S* ?--preset/m);
+      m.unmount();
+    }
+  });
+
+  it('says a server error is not offline', async () => {
+    const client = fakeClient();
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    client.fail = new ApiError('internal', 'SQLITE_BUSY', 500);
+    await m.press('r');
+    await until(() => m.screen().includes('server error'), 'the server error flag');
+    expect(m.screen()).not.toContain('offline');
+    m.unmount();
+  });
+
+  it('ends an unfocused Status on the first thing to look at, not on the price', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).find((l) => /✖ ollama · no credential/.test(l))).toBeDefined();
+    m.unmount();
+  });
+
+  it('says the connection once, in the footer, when it is live', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(m.screen().match(/● live/g)).toHaveLength(1);
+    expect(lines(m).at(-1)).toContain('● live');
+    m.unmount();
+  });
+
+  it('keeps up and down and the panel keys in the footer at 80x24, ahead of c IPs', async () => {
+    const client = fakeClient();
+    client.keys.push(key({ id: 'k_x', name: 'x' }), key({ id: 'k_y', name: 'y' }));
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).at(-1)).toContain('select');
+    m.unmount();
+  });
+});
+
+describe('review round 9', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+
+  it('puts the first thing to look at on the one-line Status at 80x24', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).find((l) => l.includes('[1] Status'))).toContain('✖ ollama · no credential');
+    m.unmount();
+  });
+
+  it('keeps the panel keys in the footer ahead of revoke at 80x24, and a gap before the connection', async () => {
+    const m = mount(fakeClient(), { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).at(-1)).toContain('1-4 panels');
+    expect(lines(m).at(-1)).toMatch(/q quit {2,}● live/);
+    m.unmount();
+  });
+
+  it('names a refused answer by its kind, not as a server error', async () => {
+    const client = fakeClient();
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    client.fail = new ApiError('conflict', 'busy', 409);
+    await m.press('r');
+    await until(() => m.screen().includes('refused'), 'the refused flag');
+    expect(m.screen()).not.toContain('server error');
+    client.fail = new ApiError('internal', 'boom', 500);
+    await m.press('r');
+    await until(() => m.screen().includes('server error'), 'the server error flag');
+    m.unmount();
+  });
+
+  it('keeps updated first and the same row order in a focused and an unfocused Status', async () => {
+    const client = fakeClient();
+    client.keys.push(key({ id: 'k_n', name: 'n', spend: undefined }), key({ id: 'k_m', name: 'm', spend: undefined }));
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    expect(lines(m)[1]).toContain('updated');
+    m.unmount();
+  });
+
+  it('says so when Enter has nothing more to show', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    await m.press(ENTER);
+    expect(m.screen()).toContain('The whole detail is already showing.');
+    m.unmount();
+  });
+
+  it('gives the relative time of an expiring key once', async () => {
+    const client = fakeClient();
+    client.keys[0]!.expires_at = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const m = mount(client, { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    expect(m.screen()).not.toMatch(/\(in [23]d\)/);
+    expect(m.screen()).toMatch(/expires in \d days/);
+    m.unmount();
+  });
+});
+
+describe('review round 10', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+
+  it('says an unreadable successful reply is an invalid reply', async () => {
+    const client = fakeClient();
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    client.fail = new ApiError('internal', 'the admin API sent a reply that is not JSON', 200);
+    await m.press('r');
+    await until(() => m.screen().includes('invalid reply'), 'the invalid reply flag');
+    m.unmount();
+  });
+
+  it('keeps the panel keys ahead of J/K in the footer when the detail scrolls at 80x24', async () => {
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('3');
+    expect(lines(m).at(-1)).toContain('1-4 panels');
+    m.unmount();
+  });
+
+  it('collapses the zeros of an empty install to one line', async () => {
+    const client = fakeClient();
+    client.keys = [];
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    expect(m.screen()).toContain('No keys yet');
+    expect(m.screen()).not.toContain('0 disabled');
+    expect(m.screen()).not.toContain('$0 today');
+    m.unmount();
+  });
+
+  it('puts the price on the first line of Status at 80x24 when it is fresh', async () => {
+    const m = mount(fakeClient(), { columns: 80, rows: 24 });
+    await loaded(m);
+    expect(lines(m).find((l) => l.includes('updated'))).toMatch(/price 3d/);
+    m.unmount();
+  });
+
+  it('says what a second problem on a row is, and what the more in the Status line are', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(lines(m).find((l) => l.includes('✖ ollama'))).toContain('+1 issue');
+    await m.press('2');
+    expect(m.screen()).toMatch(/· \+1 more/);
+    m.unmount();
+  });
+});
+
+describe('review round 12', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+
+  it('does not tell anyone to start kman when a first load is answered with an error', async () => {
+    const client = fakeClient();
+    client.fail = new ApiError('internal', 'SQLITE_BUSY', 500);
+    const m = mount(client, { columns: 100, rows: 30 });
+    await until(() => m.screen().includes('server error'), 'the server error flag');
+    expect(m.screen()).toContain('kman answered with an error');
+    expect(m.screen()).not.toContain('kman serve');
+    expect(m.screen()).not.toContain('Cannot reach kman');
+    m.unmount();
+  });
+
+  it('keeps the spend ahead of the owner line when the title carries two badges', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(m.screen()).toContain('$1.12 today');
+    m.unmount();
+  });
+
+  it('sizes a focused Status on an empty install to its one line', async () => {
+    const client = fakeClient();
+    client.keys = [];
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    const at = lines(m).findIndex((l) => l.includes('Nothing to review.'));
+    expect(at).toBeGreaterThan(0);
+    expect(lines(m)[at + 1]).toMatch(/^╰|^┗/);
+    m.unmount();
+  });
+});
+
+describe('review round 13', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+
+  it('keeps updated on the first line of a focused Status on an empty install', async () => {
+    const client = fakeClient();
+    client.keys = [];
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(lines(m)[1]).toContain('updated');
+    m.unmount();
+  });
+
+  it('shows the heading and the row, and no blank row, in Status with no keys and no upstream', async () => {
+    const client = fakeClient();
+    client.keys = [];
+    client.upstreams = [];
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    const at = lines(m).findIndex((l) => l.includes('✖ no upstream'));
+    expect(at).toBeGreaterThan(0);
+    expect(lines(m)[at + 1]).toMatch(/^╰|^┗/);
+    m.unmount();
+  });
+
+  it('keeps the end of a long key name beside its reason on the Status line', async () => {
+    const client = fakeClient();
+    client.keys[1]!.name = 'customer-support-summariser-production-eu-west-b';
+    const m = mount(client, { columns: 120, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).find((l) => l.includes('near cap') && l.includes('…'))).toMatch(/west-b · near cap/);
+    m.unmount();
+  });
+
+  it('says who is signed in once: on the top border, or on the bottom one when the top has no room', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    expect(m.screen().match(/owner/g)).toHaveLength(1);
+    expect(m.screen()).toContain('1 to review');
+    m.unmount();
+  });
+
+  it('closes the notice when help opens', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    await m.press(ENTER);
+    expect(m.screen()).toContain('already showing');
+    await m.press('?');
+    expect(m.screen()).not.toContain('already showing');
+    m.unmount();
+  });
+
+  it('leaves no blank rows under the revoke input before anything is typed', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('x');
+    const at = lines(m).findIndex((l) => /\[ .* \]|\[.{10,}\]/.test(l) && l.includes('['));
+    expect(at).toBeGreaterThan(0);
+    expect(lines(m)[at + 1]).toMatch(/^\s*[╰┗]/);
     m.unmount();
   });
 });

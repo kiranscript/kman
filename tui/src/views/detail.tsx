@@ -8,10 +8,10 @@ import { capMoney, clock, dateTime, fit, money, padEnd, plural, requestsText, un
 import { keyLabel } from '../keys.js';
 import { keyRisks } from '../risk.js';
 import { Frame, titleFits } from '../ui/frame.js';
-import { Field, Meter, RiskLine, SectionTitle, StatusBadge } from '../ui/parts.js';
+import { Field, Meter, RiskLine, SectionTitle, StatusBadge, Wrapped } from '../ui/parts.js';
 import { color, severityColor, severityGlyph } from '../ui/theme.js';
 import { AUDIT_LIMIT } from '../useAdmin.js';
-import { actionColor, targetName, targetText } from './audit.js';
+import { actionColor, rowTarget, targetName, targetText } from './audit.js';
 import type { Names } from './audit.js';
 
 interface Size {
@@ -24,6 +24,22 @@ function Body({ children }: { children: React.ReactNode }) {
   return (
     <Box flexDirection="column" paddingX={1} flexShrink={0}>
       {children}
+    </Box>
+  );
+}
+
+export const UPSTREAM_COMMAND = 'kman upstream add openai --preset openai';
+
+/** The text of an empty panel, wrapped by words inside its border; a command under it stays whole on one line. */
+function Empty({ text, command, width }: { text: string; command?: string; width: number }) {
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Wrapped text={text} width={width - 4} maxLines={6} dim />
+      {command ? (
+        <Text bold wrap="truncate-end">
+          {command}
+        </Text>
+      ) : null}
     </Box>
   );
 }
@@ -59,9 +75,33 @@ export function StatusMain({
           <Text dimColor> {padEnd(clock(e.time, now), 12)}</Text>
           <Text color={actionColor(e.action)}>{padEnd(e.action, 18)}</Text>
           {/* "key.create" already says it is a key, so only the name follows. */}
-          <Text> {fit(e.action.startsWith(`${e.target_kind}.`) ? targetName(e, names) : targetText(e, names), targetW)}</Text>
+          <Text> {fit(rowTarget(e, names), targetW)}</Text>
         </Text>
       ))}
+    </Frame>
+  );
+}
+
+// ---- An install with nothing in it yet ---------------------------------------
+
+/** The main panel for an install with no keys: what a key is and how to make one. */
+export function StartMain({ width, height, scroll, canCreate }: Size & { scroll: Scroll; canCreate: boolean }) {
+  const { onMax } = scroll;
+  useEffect(() => onMax(0));
+  return (
+    <Frame title="Getting started" width={width} height={height}>
+      <Box flexDirection="column" paddingX={1}>
+        <Text>No keys yet.</Text>
+        <Wrapped text="A virtual key is what an app uses in place of your real API key: kman checks it, applies its limits, and forwards the request." width={width - 4} maxLines={6} dim />
+        <Box marginTop={1} flexDirection="column">
+          <Wrapped text={canCreate ? 'Press n to create the first one.' : 'Add an upstream first:'} width={width - 4} maxLines={3} />
+          {canCreate ? null : (
+            <Text bold wrap="truncate-end">
+              {UPSTREAM_COMMAND}
+            </Text>
+          )}
+        </Box>
+      </Box>
     </Frame>
   );
 }
@@ -73,6 +113,10 @@ export interface Scroll {
   offset: number;
   /** Told how far the content can scroll, so the keys know where to stop. */
   onMax: (max: number) => void;
+  /** The panel has the keyboard (after Enter): its border is the bright one. */
+  focused?: boolean;
+  /** How many lines one page of the content is, so PgUp and PgDn know. Told by the panel. */
+  onView?: (rows: number) => void;
 }
 
 /**
@@ -89,8 +133,9 @@ function ScrollFrame({
   const ref = useRef<DOMElement>(null);
   const [content, setContent] = useState(0);
   const view = Math.max(1, height - 2);
-  const { onMax } = scroll;
+  const { onMax, onView } = scroll;
   useEffect(() => {
+    onView?.(view);
     if (!ref.current) return;
     const h = measureElement(ref.current).height;
     setContent((c) => (c === h ? c : h));
@@ -98,9 +143,20 @@ function ScrollFrame({
   });
   const max = Math.max(0, content - view);
   const off = Math.min(scroll.offset, max);
-  const hint = max === 0 ? undefined : off === 0 ? '↓ J more' : off >= max ? '↑ K back' : '↑↓ J K more';
+  // With the keyboard on the panel the border says where it is, as the lists do ("4-12 of 30");
+  // otherwise it says which keys scroll it.
+  const hint =
+    max === 0
+      ? undefined
+      : scroll.focused
+        ? `${off + 1}-${Math.min(content, off + view)} of ${content}`
+        : off === 0
+          ? '↓ J more'
+          : off >= max
+            ? '↑ K back'
+            : '↑↓ J K more';
   return (
-    <Frame title={title} position={hint} width={width} height={height}>
+    <Frame title={title} position={hint} focused={scroll.focused} width={width} height={height}>
       <Box ref={ref} flexDirection="column" flexShrink={0} marginTop={-off}>
         {children}
       </Box>
@@ -157,10 +213,7 @@ export function KeyMain({
   if (!k) {
     return (
       <Frame title="Key" width={width} height={height}>
-        <Text dimColor wrap="wrap">
-          {' '}
-          {none}
-        </Text>
+        <Empty text={none} width={width} />
       </Frame>
     );
   }
@@ -172,7 +225,9 @@ export function KeyMain({
   const label = keyLabel(k);
   const titleClipped = !titleFits(`Key: ${label}`, undefined, width);
   const barW = compact ? 10 : Math.min(14, Math.max(8, width - 4 - 26));
-  const expires = k.status === 'revoked' ? 'ended for good' : `expires ${dateTime(k.expires_at)} (${until(k.expires_at, now)})`;
+  // An expiry warning already says how long is left, so the line then gives only the date.
+  const soon = risks.some((r) => r.label.startsWith('expires'));
+  const expires = k.status === 'revoked' ? 'ended for good' : `expires ${dateTime(k.expires_at)}${soon ? '' : ` (${until(k.expires_at, now)})`}`;
   return (
     <ScrollFrame title={`Key: ${label}`} width={width} height={height} scroll={scroll}>
       <Body>
@@ -248,7 +303,8 @@ export function UpstreamMain({
   height,
   scroll,
   none = 'No upstream selected.',
-}: Size & { upstream: Upstream | undefined; keys: Key[]; scroll: Scroll; none?: string }) {
+  command,
+}: Size & { upstream: Upstream | undefined; keys: Key[]; scroll: Scroll; none?: string; command?: string }) {
   const { onMax } = scroll;
   useEffect(() => {
     if (!u) onMax(0);
@@ -256,10 +312,7 @@ export function UpstreamMain({
   if (!u) {
     return (
       <Frame title="Upstream" width={width} height={height}>
-        <Text dimColor wrap="wrap">
-          {' '}
-          {none}
-        </Text>
+        <Empty text={none} command={command} width={width} />
       </Frame>
     );
   }
@@ -280,30 +333,32 @@ export function UpstreamMain({
         <Field label="profile">{u.profile}</Field>
         <Field label="preset">
           {u.update_available ? (
-            <Text color={color.warn}>▲ {u.preset ? `${u.preset} v${u.preset_version ?? '?'}` : 'custom'}: a newer version exists</Text>
+            <Text dimColor>{severityGlyph.info} {u.preset ? `${u.preset} v${u.preset_version ?? '?'}` : 'custom'}: a newer version exists</Text>
           ) : u.preset ? (
             `${u.preset} v${u.preset_version ?? '?'}`
           ) : (
             'custom'
           )}
         </Field>
-        <Field label={u.credentials.length === 1 ? 'credential' : 'credentials'}>
+        <Field label="credentials">
           {u.credentials.length ? (
             u.credentials.map((c) => `${c.name} ····${c.last4 ?? ''}`).join('   ')
           ) : (
-            <Text color={color.warn}>▲ none: add one before creating keys</Text>
+            <Text color={severityColor.danger}>{severityGlyph.danger} none: add one before creating keys</Text>
           )}
         </Field>
         <Field label="sdk env">{u.sdk_env ?? '—'}</Field>
-        <Field label="keys">
-          {plural(own.length, 'key')} ({live} active)
-        </Field>
-        <Box flexDirection="column" marginTop={1}>
-          <SectionTitle>ROUTES</SectionTitle>
-          <Text dimColor wrap="wrap">
-            {u.path_allowlist.length ? u.path_allowlist.join('   ') : 'none'}
-          </Text>
-        </Box>
+        <Field label="keys">{own.length === 0 ? 'none' : `${own.length} (${live} active)`}</Field>
+        {/* One route a line: a method and its path are never split across two. */}
+        {u.path_allowlist.length ? (
+          u.path_allowlist.map((r, i) => (
+            <Field key={r} label={i === 0 ? 'routes' : ''}>
+              {r}
+            </Field>
+          ))
+        ) : (
+          <Field label="routes">none</Field>
+        )}
       </Body>
     </ScrollFrame>
   );
@@ -327,10 +382,7 @@ export function AuditMain({
   if (!e) {
     return (
       <Frame title="Entry" width={width} height={height}>
-        <Text dimColor wrap="wrap">
-          {' '}
-          {none}
-        </Text>
+        <Empty text={none} width={width} />
       </Frame>
     );
   }
@@ -343,7 +395,7 @@ export function AuditMain({
           <Text color={actionColor(e.action)}>{e.action}</Text>
         </Field>
         <Field label="target">{targetText(e, names)}</Field>
-        <Field label="target id">{e.target_id}</Field>
+        {targetName(e, names) === e.target_id ? null : <Field label="target id">{e.target_id}</Field>}
         {e.client_ip ? <Field label="from">{e.client_ip}</Field> : null}
         {limited ? (
           <Text dimColor wrap="wrap">

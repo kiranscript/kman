@@ -4,56 +4,91 @@ import { Panel, SectionTitle } from '../ui/parts.js';
 import { color } from '../ui/theme.js';
 
 // Grouped as lazygit's keybindings menu is: what works everywhere, then per panel.
-const groups: { title: string; rows: [string, string][] }[] = [
+const KEY_W = 24;
+const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
   {
     title: 'GLOBAL',
     rows: [
-      ['1-4  ← →  h l  Tab  ⇧Tab', 'jump to, or cycle, the panels'],
+      ['1-4  h l  ← →', 'jump to a panel; step to the next or previous'],
+      ['Tab  ⇧Tab', 'next panel, previous panel'],
       ['↑ ↓  j k  PgUp PgDn', 'move in the focused panel'],
       ['g  G  Home  End', 'first, last'],
-      ['J  K', 'scroll the detail panel'],
-      ['Enter', 'on Status: open the selected key'],
+      ['Enter', 'focus the detail, when it has more than it shows'],
+      ['J  K', 'scroll the detail panel without leaving the list'],
       ['n  r', 'new key; refresh now'],
       ['q  Ctrl+C', 'quit (this help: Esc or ? closes)'],
     ],
   },
+  { title: 'STATUS', panel: 'status', rows: [['Enter', 'open the selected key, or upstream, in its panel']] },
   {
     title: 'KEYS',
+    panel: 'keys',
     rows: [
       ['/   Esc', 'filter by name, id, tag or upstream; clear it'],
+      ['Enter', 'focus the detail, when it has more than it shows'],
       ['d  e', 'disable, enable the key (y confirms, n cancels)'],
-      ['c', 'the addresses a key was used from'],
+      ['c', 'the IP addresses a key was used from'],
       ['x', 'revoke the key (type its name to confirm)'],
-      ['Ctrl+S', 'in the new-key form: create now'],
-      ['c  Enter', 'on the new key screen: copy it, then done'],
     ],
   },
 ];
 
+const DETAIL = {
+  title: 'DETAIL (focused)',
+  rows: [
+    ['↑ ↓  j k', 'scroll a line'],
+    ['PgUp  PgDn', 'scroll a page'],
+    ['g  G  Home  End', 'top, bottom'],
+    ['Esc  Enter', 'give the keyboard back to the list'],
+  ] as [string, string][],
+};
+
+// What still works while the detail has the keyboard: not the list's own keys.
+const DETAIL_GLOBAL = {
+  title: 'GLOBAL',
+  rows: [
+    ['1-4  h l  ← →  Tab', 'go to another panel (the list gets the keyboard)'],
+    ['r', 'refresh now'],
+    ['q  Ctrl+C', 'quit (this help: Esc or ? closes)'],
+  ] as [string, string][],
+};
+
 /** `focus` is the focused panel: its keys come first, as in lazygit's menu. */
-export function HelpDialog({ onClose, focus }: { onClose: () => void; focus?: Tab }) {
-  const ordered = focus === 'keys' ? [groups[1]!, groups[0]!] : groups;
+export function HelpDialog({ onClose, focus, detail }: { onClose: () => void; focus?: Tab; detail?: boolean }) {
+  // The focused panel's keys first, then what works everywhere: other panels' keys
+  // are on their own screens, which this dialog has no room for.
+  // With the detail panel focused only its own keys work, so those come first.
+  const mine = detail ? DETAIL : groups.find((g) => g.panel === focus);
+  // On Status Enter opens the selected item, so the list-with-a-detail line does not apply there.
+  const global = focus === 'status' || focus === 'keys' ? { ...groups[0]!, rows: groups[0]!.rows.filter(([k]) => k !== 'Enter') } : groups[0]!;
+  const ordered = detail ? [DETAIL, DETAIL_GLOBAL] : [...(mine ? [mine] : []), global];
   useInput((_i, key) => {
     if (key.escape || key.return || _i === '?') onClose();
   });
   return (
-    <Panel title="Keybindings" width={76} tone={color.accent}>
+    <Panel title="Keybindings" width={78} tone={color.accent}>
       {ordered.map((g, i) => (
         <Box key={g.title} flexDirection="column" marginTop={i === 0 ? 0 : 1}>
-          <SectionTitle>{focus === 'keys' && g.title === 'KEYS' ? 'KEYS (this panel)' : g.title}</SectionTitle>
+          <SectionTitle>{g === mine && !detail ? `${g.title} (this panel)` : g.title}</SectionTitle>
           {g.rows.map(([k, what]) => (
-            <Text key={k}>
-              <Text bold color={color.key}>
-                {k.padEnd(22)}
-              </Text>
-              {what}
-            </Text>
+            // The meaning wraps under itself, not under the key.
+            <Box key={k + what}>
+              <Box width={KEY_W} flexShrink={0}>
+                <Text bold color={color.key}>
+                  {k}
+                </Text>
+              </Box>
+              <Box flexGrow={1} flexShrink={1}>
+                <Text wrap="wrap">{what}</Text>
+              </Box>
+            </Box>
           ))}
         </Box>
       ))}
       <Box marginTop={1} flexDirection="column">
         <SectionTitle>MARKS</SectionTitle>
-        <Text dimColor>● active  ◐ disabled  ✖ revoked or danger  ▲ warning  ○ note  ◆ new entry  ◌ no link</Text>
+        <Text dimColor>● active   ◐ disabled   ✖ revoked or danger   ▲ warning</Text>
+        <Text dimColor>○ note   ◆ new entry   ◌ not connected   · message</Text>
       </Box>
     </Panel>
   );

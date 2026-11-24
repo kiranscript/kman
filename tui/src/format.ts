@@ -103,10 +103,42 @@ export function clock(iso: string, now: number): string {
 /** Fit text to a width, ending in an ellipsis when cut. */
 export function fit(text: string, width: number): string {
   if (width <= 0) return '';
-  const chars = [...text];
-  if (chars.length <= width) return text;
+  if (textWidth(text) <= width) return text;
   if (width === 1) return '…';
-  return chars.slice(0, width - 1).join('') + '…';
+  return takeCells(graphemes(text), width - 1) + '…';
+}
+
+const segmenter = typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : undefined;
+
+/** A string as the characters a person sees: a joined emoji or a letter with its accent is one. */
+export function graphemes(text: string): string[] {
+  return segmenter ? Array.from(segmenter.segment(text), (x) => x.segment) : [...text];
+}
+
+/** The cells one grapheme takes: two for CJK and emoji (also joined or with a variation selector), else one. */
+export function graphemeWidth(g: string): number {
+  if (g.includes('\uFE0F')) return 2;
+  return cellWidth(String.fromCodePoint(g.codePointAt(0) ?? 32));
+}
+
+/** The terminal cells a string takes: a CJK or emoji character is two. */
+export function textWidth(text: string): number {
+  let n = 0;
+  for (const g of graphemes(text)) n += graphemeWidth(g);
+  return n;
+}
+
+/** The longest start of `parts` (graphemes) that fits in `cells`. */
+function takeCells(parts: string[], cells: number): string {
+  let used = 0;
+  let out = '';
+  for (const g of parts) {
+    const w = graphemeWidth(g);
+    if (used + w > cells) break;
+    out += g;
+    used += w;
+  }
+  return out;
 }
 
 /**
@@ -148,22 +180,31 @@ export function wrapLines(text: string, width: number, maxLines: number): string
  */
 export function fitMiddle(text: string, width: number): string {
   if (width <= 0) return '';
-  const chars = [...text];
-  if (chars.length <= width) return text;
+  if (textWidth(text) <= width) return text;
   if (width <= 2) return fit(text, width);
+  const parts = graphemes(text);
   const head = Math.ceil((width - 1) * 0.55);
   const tail = width - 1 - head;
-  return chars.slice(0, head).join('') + '…' + chars.slice(chars.length - tail).join('');
+  // The end is taken whole graphemes at a time from the back, never by code unit.
+  const back: string[] = [];
+  let used = 0;
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const w = graphemeWidth(parts[i]!);
+    if (used + w > tail) break;
+    back.unshift(parts[i]!);
+    used += w;
+  }
+  return takeCells(parts, head) + '…' + back.join('');
 }
 
 export function padEnd(text: string, width: number): string {
   const t = fit(text, width);
-  return t + ' '.repeat(Math.max(0, width - [...t].length));
+  return t + ' '.repeat(Math.max(0, width - textWidth(t)));
 }
 
 export function padStart(text: string, width: number): string {
   const t = fit(text, width);
-  return ' '.repeat(Math.max(0, width - [...t].length)) + t;
+  return ' '.repeat(Math.max(0, width - textWidth(t))) + t;
 }
 
 /**
@@ -240,15 +281,14 @@ export function cellWidth(ch: string): number {
 
 /** The end of `text` that fits in `max` cells, with a leading ellipsis when the start was cut. */
 export function tailCells(text: string, max: number): string {
-  const chars = [...text];
-  const total = chars.reduce((n, c) => n + cellWidth(c), 0);
-  if (total <= max) return text;
+  const parts = graphemes(text);
+  if (textWidth(text) <= max) return text;
   let used = 1; // the ellipsis
   const kept: string[] = [];
-  for (let i = chars.length - 1; i >= 0; i--) {
-    const w = cellWidth(chars[i]!);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const w = graphemeWidth(parts[i]!);
     if (used + w > max) break;
-    kept.unshift(chars[i]!);
+    kept.unshift(parts[i]!);
     used += w;
   }
   return '…' + kept.join('');

@@ -1,6 +1,6 @@
 import { Text } from 'ink';
 import type { Key } from 'ink';
-import { padEnd } from '../format.js';
+import { graphemes, graphemeWidth, padEnd, tailCells } from '../format.js';
 import { color } from './theme.js';
 
 /**
@@ -9,7 +9,7 @@ import { color } from './theme.js';
  * the caller can use those keys for navigation.
  */
 export function editText(value: string, input: string, key: Key, max = 64): string {
-  if (key.backspace || key.delete) return [...value].slice(0, -1).join('');
+  if (key.backspace || key.delete) return graphemes(value).slice(0, -1).join('');
   if (key.ctrl) return input === 'u' ? '' : value;
   if (key.meta || key.escape || key.return || key.tab || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
     return value;
@@ -17,7 +17,7 @@ export function editText(value: string, input: string, key: Key, max = 64): stri
   // Pasted text arrives as one chunk. Control characters are dropped, never typed in.
   // eslint-disable-next-line no-control-regex
   const clean = input.replace(/[\u0000-\u001f\u007f]/g, '');
-  return clean ? [...(value + clean)].slice(0, max).join('') : value;
+  return clean ? graphemes(value + clean).slice(0, max).join('') : value;
 }
 
 export interface Edit {
@@ -33,7 +33,9 @@ export interface Edit {
  * down, tab, enter and escape are left to the caller.
  */
 export function editField(state: Edit, input: string, key: Key, max = 64, accept: (text: string) => string = (t) => t): Edit {
-  const chars = [...state.value];
+  // Whole characters as a person sees them: a joined emoji is one, so the cursor, delete
+  // and typing never land inside it.
+  const chars = graphemes(state.value);
   const at = Math.min(state.cursor, chars.length);
   const make = (c: string[], cursor: number): Edit => ({ value: c.join(''), cursor });
   if (key.leftArrow) return make(chars, Math.max(0, at - 1));
@@ -47,17 +49,19 @@ export function editField(state: Edit, input: string, key: Key, max = 64, accept
   if (key.meta || key.escape || key.return || key.tab || key.upArrow || key.downArrow) return make(chars, at);
   // Pasted text arrives as one chunk. Control characters are dropped, never typed in.
   // eslint-disable-next-line no-control-regex
-  const typed = [...accept(input.replace(/[\u0000-\u001f\u007f]/g, ''))];
+  const typed = graphemes(accept(input.replace(/[\u0000-\u001f\u007f]/g, '')));
   if (typed.length === 0) return make(chars, at);
   const room = Math.max(0, max - chars.length);
   const added = typed.slice(0, room);
-  return make([...chars.slice(0, at), ...added, ...chars.slice(at)], at + added.length);
+  // The cursor is counted in whole characters of the new text: what is typed may join the
+  // character before it (an accent), and then it is part of that one, not a new one.
+  const before = [...chars.slice(0, at), ...added].join('');
+  return { value: before + chars.slice(at).join(''), cursor: graphemes(before).length };
 }
 
 /** What an unfocused field shows: the end of a long value, behind a mark that says its start is cut. */
 function unfocusedText(value: string, width: number): string {
-  const chars = [...value];
-  return chars.length <= width ? value : `…${chars.slice(-(width - 1)).join('')}`;
+  return tailCells(value, width);
 }
 
 interface Props {
@@ -99,23 +103,46 @@ export function TextField({ value, focused, width, placeholder, cursor }: Props)
       </Text>
     );
   }
-  // The text and one more cell for a cursor at its end; a window of `width` of them,
-  // kept around the cursor (which sits at the end of the text unless it was moved).
-  const cells = [...value, ' '];
+  // The text and one more cell for a cursor at its end; a window of `width` terminal cells
+  // (a wide character is two), kept around the cursor, which sits at the end of the text
+  // unless it was moved.
+  const cells = [...graphemes(value), ' '];
+  const w = cells.map(graphemeWidth);
   const at = Math.min(cursor ?? cells.length - 1, cells.length - 1);
-  const start = Math.max(0, Math.min(at - Math.floor(width / 2), cells.length - width));
-  const view = cells.slice(start, start + width);
-  const i = at - start;
+  let from = at;
+  let to = at + 1;
+  let used = w[at]!;
+  for (let grew = true; grew; ) {
+    grew = false;
+    if (from > 0 && used + w[from - 1]! <= width) {
+      from--;
+      used += w[from]!;
+      grew = true;
+    }
+    if (to < cells.length && used + w[to]! <= width) {
+      used += w[to]!;
+      to++;
+      grew = true;
+    }
+  }
+  const view = cells.slice(from, to);
+  const i = at - from;
   // A mark where text is cut off, so a scrolled field does not look as if that were all of it.
-  if (start > 0 && i !== 0) view[0] = '…';
-  if (start + width < cells.length && i !== view.length - 1) view[view.length - 1] = '…';
+  if (from > 0 && i !== 0) {
+    used -= w[from]! - 1;
+    view[0] = '…';
+  }
+  if (to < cells.length && i !== view.length - 1) {
+    used -= w[to - 1]! - 1;
+    view[view.length - 1] = '…';
+  }
   return (
     <Text>
       {edge('[')}
       <Text>{view.slice(0, i).join('')}</Text>
       <Text inverse>{view[i] ?? ' '}</Text>
       <Text>{view.slice(i + 1).join('')}</Text>
-      <Text>{' '.repeat(Math.max(0, width - view.length))}</Text>
+      <Text>{' '.repeat(Math.max(0, width - used))}</Text>
       {edge(']')}
     </Text>
   );

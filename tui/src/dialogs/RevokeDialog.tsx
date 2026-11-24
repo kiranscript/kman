@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from 'ink';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Key } from '../api.js';
 import { keyLabel } from '../keys.js';
 import { editField, TextField } from '../ui/TextField.js';
@@ -17,16 +17,22 @@ interface Props {
   errorLines?: number;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Told whether the typed name matches, so the footer offers Enter only when it would revoke. */
+  onReady?: (ready: boolean) => void;
 }
 
 /** Revoking cannot be undone, so it asks for the key's name to be typed, not just "y". */
-export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, onConfirm, onCancel }: Props) {
+export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, onConfirm, onCancel, onReady }: Props) {
   const [field, setField] = useState<Edit>({ value: '', cursor: 0 });
   const typed = field.value;
   const [tried, setTried] = useState(false);
   const expected = keyLabel(keyData);
   const matches = typed === expected;
   const panelWidth = Math.min(maxWidth, Math.max(64, expected.length + 6));
+  useEffect(() => {
+    onReady?.(matches);
+    return () => onReady?.(false);
+  }, [matches, onReady]);
 
   useInput((input, key) => {
     if (busy) return;
@@ -42,8 +48,8 @@ export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, o
 
   return (
     <Panel title={`Revoke ${expected}?`} width={panelWidth} tone={color.danger}>
-      <Box flexDirection="column" marginTop={1}>
-        <Text>This ends the key for good. Apps using it are refused from their next request, and a revoked key cannot be enabled again.</Text>
+      <Box flexDirection="column">
+        <Text>This ends the key for good: apps using it are refused at once, and it cannot be enabled again.</Text>
         <Text dimColor>To stop it for now, disable it instead.</Text>
       </Box>
       <Box marginTop={1} flexDirection="column">
@@ -53,22 +59,22 @@ export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, o
         </Text>
       </Box>
       <TextField value={typed} cursor={field.cursor} focused width={panelWidth - 6} />
+      {tried || error || busy || matches || typed !== '' ? (
       <Box marginTop={1} flexDirection="column">
         {tried ? (
-          <Text color={color.danger}>✖ That is not the {keyData.name ? 'name' : 'id'}. Type it exactly, or Esc to cancel.</Text>
+          <Text color={color.danger}>✖ That is not the {keyData.name ? 'name' : 'id'}. Type it exactly.</Text>
         ) : error ? (
           <>
             <Wrapped text={error} marker="✖ " width={panelWidth - 4} maxLines={errorLines} tone={color.danger} />
-            <Text dimColor>
-              {busy ? 'Revoking…' : matches ? 'Enter to try again · Esc to cancel' : `Type the ${keyData.name ? 'name' : 'id'} exactly · Esc to cancel`}
-            </Text>
+            <Text dimColor>{busy ? 'Revoking…' : matches ? 'Enter tries again.' : `Type the ${keyData.name ? 'name' : 'id'} exactly.`}</Text>
           </>
         ) : busy ? (
           <Text dimColor>Revoking…</Text>
         ) : (
-          <Text dimColor>{matches ? 'Press Enter to revoke · Esc to cancel' : 'Esc to cancel'}</Text>
+          <Text dimColor>{matches ? 'Name matches.' : 'Not matching yet.'}</Text>
         )}
       </Box>
+      ) : null}
     </Panel>
   );
 }

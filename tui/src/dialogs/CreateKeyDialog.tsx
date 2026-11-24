@@ -137,12 +137,9 @@ export function CreateKeyDialog({ upstreams, defaultDays, busy, error, errorLine
   if (upstreams.length === 0) {
     return (
       <Panel title="New virtual key" width={64}>
-        <Box marginTop={1} flexDirection="column">
+        <Box flexDirection="column">
           <Text>A key belongs to an upstream, and there is none yet.</Text>
           <Text dimColor>Add one first: kman upstream add openai --preset openai</Text>
-          <Box marginTop={1}>
-            <Text dimColor>Esc to close</Text>
-          </Box>
         </Box>
       </Panel>
     );
@@ -185,7 +182,7 @@ export function CreateKeyDialog({ upstreams, defaultDays, busy, error, errorLine
 
   return (
     <Panel title="New virtual key" width={72}>
-      <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="column">
         {row('name', 'Name', 'optional; unnamed keys go by id', 'unnamed')}
         {picker('upstream', 'Upstream', up?.name ?? '', upstreams.length > 1 ? `${upstream + 1} of ${upstreams.length}, ← → to change` : 'your only upstream')}
         {choosesCredential &&
@@ -199,21 +196,15 @@ export function CreateKeyDialog({ upstreams, defaultDays, busy, error, errorLine
           <Wrapped text={warning} marker="▲ " width={64} maxLines={2} tone={color.warn} />
         ) : !text.daily && !text.monthly ? (
           <Text color={color.warn}>▲ With no cap, a leaked key can spend without limit.</Text>
-        ) : (
-          <Text> </Text>
-        )}
+        ) : null}
         {problem || error ? (
           <Wrapped text={problem ?? error ?? ''} marker="✖ " width={64} maxLines={Math.max(3, errorLines - extraRows)} tone={color.danger} />
-        ) : (
-          <Text> </Text>
-        )}
-        <Text color={discardArmed ? color.warn : undefined} dimColor={!discardArmed}>
-          {busy
-            ? 'Creating…'
-            : discardArmed
-              ? 'Esc again discards · any other key keeps editing'
-              : 'Enter next (the last field creates) · Ctrl+S create now · Esc cancel'}
-        </Text>
+        ) : null}
+        {busy || discardArmed ? (
+          <Text color={discardArmed ? color.warn : undefined} dimColor={!discardArmed}>
+            {busy ? 'Creating…' : 'Esc again discards · any other key keeps editing'}
+          </Text>
+        ) : null}
       </Box>
     </Panel>
   );

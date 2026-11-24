@@ -4,7 +4,7 @@
 // border, so the top and bottom edges are drawn here and Ink draws the sides.
 import { Box, Text } from 'ink';
 import type { ReactNode } from 'react';
-import { fit } from '../format.js';
+import { fit, textWidth } from '../format.js';
 import { color, noColor } from './theme.js';
 
 const EDGES = {
@@ -20,6 +20,8 @@ interface FrameProps {
   count?: string;
   /** The right end of the bottom border: "2 of 7". */
   position?: string;
+  /** Dim text at the right end of the top border, shown only if it fits beside the title. */
+  subtitle?: string;
   /** The focused panel: green and bold. Others are muted. */
   focused?: boolean;
   /** Overrides the border colour, for a warning or a search. */
@@ -33,34 +35,69 @@ interface FrameProps {
 
 /** Whether a panel `width` wide shows the whole of this title and count, or cuts it. */
 export function titleFits(title: string, count: string | undefined, width: number): boolean {
-  return [...` ${title}${count ? ` ${count}` : ''} `].length <= Math.max(0, width - 4);
+  return textWidth(` ${title}${count ? ` ${count}` : ''} `) <= Math.max(0, width - 4);
 }
 
-export function Frame({ title, count, position, focused, tone, heavy = noColor, width, height, children }: FrameProps) {
+/** Whether `subtitle` fits in the top border of a panel `width` wide, beside its title and count. */
+export function subtitleFits(subtitle: string, title: string, count: string | undefined, width: number): boolean {
+  const label = textWidth(` ${title}${count ? ` ${count}` : ''} `);
+  return textWidth(subtitle) + 2 + Math.min(label, Math.max(0, width - 4)) + 4 <= width;
+}
+
+/** The width a strip's label takes: its title and count, and a space. */
+export function stripLabelWidth(title: string, count?: string): number {
+  return textWidth(` ${title}${count ? ` ${count}` : ''} `);
+}
+
+/**
+ * A panel squeezed to one line with no border: its title, then what its selected line
+ * would have shown. This is how the inactive panels fit when the terminal is short.
+ */
+export function Strip({ title, count, width, children }: { title: string; count?: string; width: number; children: ReactNode }) {
+  return (
+    <Box width={width} height={1} flexShrink={0} overflow="hidden">
+      <Text bold dimColor>
+        {` ${title}${count ? ` ${count}` : ''} `}
+      </Text>
+      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
+export function Frame({ title, count, position, subtitle, focused, tone, heavy = noColor, width, height, children }: FrameProps) {
   const edge = EDGES[focused && heavy ? 'bold' : 'round'];
   const border = tone ?? (focused ? color.ok : undefined);
   const dim = !focused && tone === undefined;
   const style = { color: border, dimColor: dim, bold: focused };
 
   const label = title ? ` ${title}${count ? ` ${count}` : ''} ` : '';
-  const shownLabel = fit(label, Math.max(0, width - 4));
-  const topFill = Math.max(0, width - 3 - [...shownLabel].length);
+  // A title that has to be cut keeps a rule before the corner.
+  const shownLabel = fit(label, Math.max(0, textWidth(label) > width - 4 ? width - 5 : width - 4));
+  const sub = subtitle ? ` ${subtitle} ` : '';
+  const showSub = sub !== '' && textWidth(sub) + textWidth(shownLabel) + 4 <= width;
+  const topFill = Math.max(0, width - 3 - textWidth(shownLabel) - (showSub ? textWidth(sub) : 0));
   const pos = position ? ` ${position} ` : '';
   const shownPos = fit(pos, Math.max(0, width - 4));
-  const bottomFill = Math.max(0, width - 3 - [...shownPos].length);
+  const bottomFill = Math.max(0, width - 3 - textWidth(shownPos));
 
   return (
     <Box flexDirection="column" width={width} height={height} flexShrink={0}>
-      <Box width={width}>
+      <Box width={width} flexShrink={0}>
         <Text {...style}>{edge.tl + edge.h}</Text>
         <Text color={border} bold={focused || title !== undefined} dimColor={dim && !title}>
           {shownLabel}
         </Text>
-        <Text {...style}>{edge.h.repeat(topFill) + edge.tr}</Text>
+        <Text {...style}>{edge.h.repeat(topFill)}</Text>
+        {showSub ? <Text dimColor>{sub}</Text> : null}
+        <Text {...style}>{edge.tr}</Text>
       </Box>
       <Box
         flexDirection="column"
         flexGrow={1}
+        flexShrink={1}
+        minHeight={0}
         width={width}
         borderStyle={focused && heavy ? 'bold' : 'round'}
         borderTop={false}
@@ -71,7 +108,7 @@ export function Frame({ title, count, position, focused, tone, heavy = noColor, 
       >
         {children}
       </Box>
-      <Box width={width}>
+      <Box width={width} flexShrink={0}>
         <Text {...style}>{edge.bl + edge.h.repeat(bottomFill)}</Text>
         <Text color={border} dimColor={dim}>
           {shownPos}

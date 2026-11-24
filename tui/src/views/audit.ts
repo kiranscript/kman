@@ -36,3 +36,11 @@ export function targetName(e: AuditEntry, { keys, upstreams }: Names): string {
   }
   return name ?? e.target_id;
 }
+
+/**
+ * What a list row says the entry is about: the target's name. "key.disable" already
+ * says it is a key, so only an action that does not name its kind gets the kind first.
+ */
+export function rowTarget(e: AuditEntry, names: Names): string {
+  return e.action.startsWith(`${e.target_kind}.`) ? targetName(e, names) : targetText(e, names);
+}

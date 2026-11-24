@@ -97,13 +97,12 @@ export function ClientsDialog({ client, keyData, width, height, now, onClose }: 
 
   return (
     <Panel title={title} width={panelW} tone={color.accent}>
-      <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="column">
         {state.kind === 'ok' && state.got.clients.length > 0 ? <Text dimColor>By address, from the events kman keeps</Text> : null}
         {body}
       </Box>
-      <Box marginTop={1}>
-        <Text dimColor>{maxScroll > 0 ? '↑↓ scroll · Esc close' : 'Esc close'}</Text>
-      </Box>
+      {/* Esc is in the footer; this is the one thing it cannot know. */}
+      {maxScroll > 0 ? <Text dimColor>↑↓ scroll</Text> : null}
     </Panel>
   );
 }

@@ -4,6 +4,7 @@ import type { KeyStatus, SpendPeriod } from '../api.js';
 import { bar, capMoney, money, padEnd, wrapLines } from '../format.js';
 import { capRatio } from '../risk.js';
 import type { Risk } from '../risk.js';
+import { Frame } from './frame.js';
 import { color, ratioColor, severityColor, severityGlyph, statusStyle } from './theme.js';
 
 export function StatusBadge({ status, expired }: { status: KeyStatus; expired?: boolean }) {
@@ -46,47 +47,28 @@ export function spendText(p: SpendPeriod | undefined): string {
   return p.cap_micro ? `${money(p.cost_micro)} / ${capMoney(p.cap_micro)}` : money(p.cost_micro);
 }
 
-/** A bordered box with its title set into the top edge. */
+/** A bordered box with its title set into the top edge, as the panels have theirs. */
 export function Panel({
   title,
   hint,
   width,
-  height,
   children,
   tone,
 }: {
   title?: string;
-  /** Dim text at the right end of the title row, such as a scroll indicator. */
+  /** Dim text at the right end of the bottom border, such as a scroll indicator. */
   hint?: string;
-  width?: number | string;
-  height?: number;
+  width: number;
   children: ReactNode;
   tone?: string;
 }) {
   return (
-    <Box
-      flexDirection="column"
-      width={width}
-      height={height}
-      borderStyle="round"
-      borderColor={tone}
-      borderDimColor={tone === undefined}
-      paddingX={1}
-      overflow="hidden"
-    >
-      {title ? (
-        <Box justifyContent="space-between" flexShrink={0}>
-          <Text bold color={tone} wrap="truncate-end">
-            {title}
-          </Text>
-          {hint ? <Text dimColor>{hint}</Text> : null}
-        </Box>
-      ) : null}
+    <Frame title={title} position={hint} width={width} tone={tone} focused={tone === undefined} heavy={false}>
       {/* Content keeps its own height and is clipped by the panel, never squashed. */}
-      <Box flexDirection="column" flexShrink={0}>
+      <Box flexDirection="column" flexShrink={0} paddingX={1}>
         {children}
       </Box>
-    </Box>
+    </Frame>
   );
 }
 

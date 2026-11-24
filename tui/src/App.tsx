@@ -8,7 +8,7 @@ import { RevokeDialog } from './dialogs/RevokeDialog.js';
 import { SecretDialog } from './dialogs/SecretDialog.js';
 import { fit } from './format.js';
 import { keyLabel, visibleKeys } from './keys.js';
-import { attention } from './risk.js';
+import { attention, upstreamAttention } from './risk.js';
 import { layout } from './layout.js';
 import { Footer, noticeRows, TABS } from './ui/chrome.js';
 import type { HintItem, Notice, Tab } from './ui/chrome.js';
@@ -16,9 +16,9 @@ import { Hint, Panel } from './ui/parts.js';
 import { editText } from './ui/TextField.js';
 import { color } from './ui/theme.js';
 import { AUDIT_LIMIT, useAdmin } from './useAdmin.js';
-import { AuditMain, KeyMain, StatusMain, UpstreamMain } from './views/detail.js';
+import { AuditMain, KeyMain, StartMain, StatusMain, UPSTREAM_COMMAND, UpstreamMain } from './views/detail.js';
 import type { Scroll } from './views/detail.js';
-import { AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
+import { attentionItems, AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
 
 export interface AppProps {
   client: AdminClient;
@@ -77,6 +77,12 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   // again whenever something else is selected.
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollMax, setScrollMax] = useState(0);
+  // Enter on a list hands the keyboard to the detail panel, as lazygit does for its main
+  // view: the arrow keys scroll it, and Esc gives the keyboard back to the list.
+  const [detail, setDetail] = useState(false);
+  const [viewRows, setViewRows] = useState(8);
+  // Whether the name typed in the revoke dialog matches, so the footer offers Enter only then.
+  const [revokeReady, setRevokeReady] = useState(false);
 
   // A success fades. A failure stays until the next key press: someone who looks away
   // must not come back believing a key was disabled when it was not.
@@ -91,13 +97,23 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   const selectedId = visible.some((k) => k.id === keySel) ? keySel : visible[0]?.id;
   const selectedKey = visible.find((k) => k.id === selectedId);
   const needs = useMemo(() => attention(data.keys, now), [data.keys, now]);
-  const attnSelKey = needs[Math.min(attentionSel, Math.max(0, needs.length - 1))]?.key.id;
-  const watching = `${tab}:${tab === 'keys' ? selectedId : tab === 'status' ? attnSelKey : tab === 'upstreams' ? upstreamSel : auditSel}`;
+  const upNeeds = useMemo(() => upstreamAttention(data.upstreams), [data.upstreams]);
+  const items = useMemo(() => attentionItems(needs, upNeeds, data.upstreams.length), [needs, upNeeds, data.upstreams.length]);
+  const attnItem = items[Math.min(attentionSel, Math.max(0, items.length - 1))];
+  const watching = `${tab}:${tab === 'keys' ? selectedId : tab === 'status' ? attnItem?.id : tab === 'upstreams' ? upstreamSel : auditSel}`;
   useEffect(() => setScrollTop(0), [watching]);
   const scroll: Scroll = {
     offset: scrollTop,
     onMax: (m) => setScrollMax((c) => (c === m ? c : m)),
+    focused: detail,
+    onView: (r) => setViewRows((c) => (c === r ? c : r)),
   };
+  /** Whether the focused list has more than one row, so up and down have somewhere to go. */
+  const movable =
+    tab === 'status' ? items.length > 1 : tab === 'keys' ? visible.length > 1 : tab === 'upstreams' ? data.upstreams.length > 1 : data.audit.length > 1;
+  /** Whether the focused list has rows to move over. */
+  const selectable =
+    tab === 'status' ? items.length > 0 : tab === 'keys' ? visible.length > 0 : tab === 'upstreams' ? data.upstreams.length > 0 : data.audit.length > 0;
   // A long failure takes more rows, which the body gives up.
   const shownNotice = link.state === 'denied' ? undefined : notice;
   const bodyRows = rows - 1 - noticeRows(shownNotice, columns);
@@ -127,7 +143,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
       const cur = Math.max(0, visible.findIndex((k) => k.id === selectedId));
       setKeySel(visible[step(cur, visible.length)]?.id);
     } else if (tab === 'status') {
-      setAttentionSel((c) => step(c, needs.length));
+      setAttentionSel((c) => step(c, items.length));
     } else if (tab === 'upstreams') {
       setUpstreamSel((c) => step(c, data.upstreams.length));
     } else if (tab === 'audit') {
@@ -137,6 +153,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
 
   function goTab(t: Tab) {
     setTab(t);
+    setDetail(false);
   }
 
   /** Runs one admin API call; resolves to the error message, or undefined on success. */
@@ -260,7 +277,22 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
       }
 
       if (input === 'q') return exit();
-      if (input === '?') return setMode({ kind: 'help' });
+      if (input === '?') {
+        setNotice(undefined);
+        return setMode({ kind: 'help' });
+      }
+      // With the detail panel focused the movement keys scroll it, a line or a page at a
+      // time; panels, help, refresh and quit keep working.
+      if (detail) {
+        const by = (n: number) => setScrollTop((t) => Math.max(0, Math.min(scrollMax, t + n)));
+        if (key.escape || key.return) return setDetail(false);
+        if (key.upArrow || input === 'k') return by(-1);
+        if (key.downArrow || input === 'j') return by(1);
+        if (key.pageUp) return by(-Math.max(1, viewRows - 1));
+        if (key.pageDown) return by(Math.max(1, viewRows - 1));
+        if (key.home || input === 'g') return setScrollTop(0);
+        if (key.end || input === 'G') return setScrollTop(scrollMax);
+      }
       if (input === 'r') {
         setNotice({ tone: 'info', text: 'Refreshing…' });
         void refresh().then((why) =>
@@ -286,13 +318,25 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
       if (input === 'J') return setScrollTop((t) => Math.min(scrollMax, t + 3));
       if (input === 'K') return setScrollTop((t) => Math.max(0, t - 3));
 
+      // The detail panel has no actions of its own: what the list does waits for Esc.
+      if (detail) return;
       if (input === 'n') return offline() || busyNow() ? undefined : setMode({ kind: 'create' });
       if (tab === 'status' && key.return) {
-        const target = needs[Math.min(attentionSel, needs.length - 1)];
-        if (!target) return;
+        if (attnItem?.noUpstream) return goTab('upstreams');
+        if (attnItem?.upstream) {
+          const id = attnItem.upstream.id;
+          setUpstreamSel(Math.max(0, data.upstreams.findIndex((u) => u.id === id)));
+          return goTab('upstreams');
+        }
+        if (!attnItem?.key) return;
         setFilter('');
-        setKeySel(target.key.id);
+        setKeySel(attnItem.key.id);
         return goTab('keys');
+      }
+      // Enter only hands the keyboard over when there is something to scroll to.
+      if (key.return && tab !== 'status' && selectable) {
+        if (scrollMax > 0) return setDetail(true);
+        return setNotice({ tone: 'info', text: 'The whole detail is already showing.' });
       }
       if (tab === 'keys') {
         if (input === '/') return setMode({ kind: 'filter' });
@@ -322,26 +366,86 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   }
 
   const width = columns;
-  const selectable =
-    tab === 'status' ? needs.length > 0 : tab === 'keys' ? visible.length > 0 : tab === 'upstreams' ? data.upstreams.length > 0 : data.audit.length > 0;
-  const want =
-    tab === 'status'
-      ? 7 + needs.length
-      : tab === 'keys'
-        ? Math.max(1, visible.length) + (filter !== '' || mode.kind === 'filter' ? 1 : 0)
-        : tab === 'upstreams'
-          ? data.upstreams.length
-          : data.audit.length;
-  const lay = layout(columns, bodyRows, tab, want);
+  // The summary is a line when there are no keys to count, else three.
+  const summaryLines = data.keys.length === 0 ? 1 : 3;
+  // What each list could fill; Status is its summary, and under it the list when focused.
+  const wants = {
+    status: summaryLines + (tab === 'status' ? (items.length > 0 ? 1 : 0) + Math.max(1, items.length) : 1),
+    // While filtering the panel keeps the height of the whole list, so it does not shrink under the cursor.
+    keys:
+      Math.max(1, tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? data.keys.length : visible.length) +
+      (tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? 1 : 0),
+    upstreams: Math.max(1, data.upstreams.length),
+    audit: Math.max(1, data.audit.length),
+  };
+  const lay = layout(columns, bodyRows, tab, wants);
+
+  const popup = usable && mode.kind !== 'none' && mode.kind !== 'filter';
+  const h = lay.heights;
+  const names = { keys: data.keys, upstreams: data.upstreams };
+  const upSel = Math.min(upstreamSel, Math.max(0, data.upstreams.length - 1));
+  const auSel = Math.min(auditSel, Math.max(0, data.audit.length - 1));
+  const left = (
+    <Box flexDirection="column" width={lay.leftW} height={lay.wide ? bodyRows : undefined} flexShrink={0}>
+      <StatusPanel
+        width={lay.leftW}
+        height={h.status}
+        focused={tab === 'status' && !detail && !popup}
+        link={link}
+        url={url}
+        actor={data.actor}
+        keys={data.keys}
+        items={items}
+        selected={attentionSel}
+        price={data.price}
+        upstreamCount={data.upstreams.length}
+      />
+      <KeysPanel
+        width={lay.leftW}
+        height={h.keys}
+        focused={tab === 'keys' && !detail && !popup}
+        keys={visible}
+        all={data.keys}
+        total={data.keys.length}
+        selectedId={selectedId}
+        filter={filter}
+        filtering={mode.kind === 'filter'}
+        hasUpstreams={data.upstreams.length > 0}
+        now={now}
+      />
+      <UpstreamsPanel
+        width={lay.leftW}
+        height={h.upstreams}
+        focused={tab === 'upstreams' && !detail && !popup}
+        upstreams={data.upstreams}
+        keys={data.keys}
+        selected={upstreamSel}
+      />
+      <AuditPanel
+        width={lay.leftW}
+        height={h.audit}
+        focused={tab === 'audit' && !detail && !popup}
+        audit={data.audit}
+        names={names}
+        fresh={fresh}
+        selected={auditSel}
+        now={now}
+      />
+    </Box>
+  );
+
+  // A popup stays beside the panels when the main panel is wide enough to hold it,
+  // so the list a change applies to is still in view; otherwise it takes the screen.
+  const overlay = lay.wide && lay.mainW >= 78;
+  const dw = overlay ? lay.mainW : width;
 
   let body;
   if (link.state === 'denied') {
     body = (
       <Centered width={width} height={bodyRows}>
         <Panel title="The admin API refused this token" width={66} tone={color.danger}>
-          <Box flexDirection="column" marginTop={1}>
+          <Box flexDirection="column">
             <Text>{link.error}</Text>
-            <Text dimColor>The token may be revoked or rotated.</Text>
             <Text dimColor>Save a current one with kman login, or set KMAN_ADMIN_TOKEN,</Text>
             <Text dimColor>then start this again.</Text>
           </Box>
@@ -352,11 +456,12 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
     body = (
       <Centered width={width} height={bodyRows}>
         {link.state === 'down' ? (
-          <Panel title="Cannot reach kman" width={66} tone={color.warn}>
-            <Box flexDirection="column" marginTop={1}>
+          <Panel title={link.answered ? 'kman answered with an error' : 'Cannot reach kman'} width={66} tone={link.answered ? color.danger : color.warn}>
+            <Box flexDirection="column">
               <Text>{link.error}</Text>
-              <Text dimColor>Is it running? Start it with: kman serve</Text>
-              <Text dimColor>Retrying every few seconds. r retries now, q quits.</Text>
+              {/* An answer means it is running: do not tell anyone to start it. */}
+              <Text dimColor>{link.answered ? 'kman is running but could not serve this request.' : 'Is it running? Start it with: kman serve'}</Text>
+              <Text dimColor>Retrying every few seconds.</Text>
             </Box>
           </Panel>
         ) : (
@@ -366,7 +471,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
     );
   } else if (mode.kind === 'create') {
     body = (
-      <Centered width={width} height={bodyRows}>
+      <Centered width={dw} height={bodyRows}>
         <CreateKeyDialog
           upstreams={data.upstreams}
           defaultDays={data.settings ? Math.round(data.settings.default_key_ttl_seconds / 86_400) : undefined}
@@ -381,42 +486,43 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
     );
   } else if (mode.kind === 'revoke') {
     body = (
-      <Centered width={width} height={bodyRows}>
+      <Centered width={dw} height={bodyRows}>
         <RevokeDialog
           keyData={mode.key}
-          maxWidth={width}
+          maxWidth={dw}
           busy={working === 'revoke'}
           // The dialog is at most 14 rows without its error (its hint line included).
           errorLines={Math.max(3, bodyRows - 14)}
           error={dialogError}
           onConfirm={() => void revoke(mode.key)}
+          onReady={setRevokeReady}
           onCancel={() => setMode({ kind: 'none' })}
         />
       </Centered>
     );
   } else if (mode.kind === 'secret') {
     body = (
-      <Centered width={width} height={bodyRows}>
-        <SecretDialog created={mode.created} width={width} onCopy={copy} armMs={secretGuardMs} onClose={() => setMode({ kind: 'none' })} />
+      <Centered width={dw} height={bodyRows}>
+        <SecretDialog created={mode.created} width={dw} onCopy={copy} armMs={secretGuardMs} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'clients') {
     body = (
-      <Centered width={width} height={bodyRows}>
-        <ClientsDialog client={client} keyData={mode.key} width={width} height={bodyRows} now={now} onClose={() => setMode({ kind: 'none' })} />
+      <Centered width={dw} height={bodyRows}>
+        <ClientsDialog client={client} keyData={mode.key} width={dw} height={bodyRows} now={now} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'help') {
     body = (
-      <Centered width={width} height={bodyRows}>
-        <HelpDialog focus={tab} onClose={() => setMode({ kind: 'none' })} />
+      <Centered width={dw} height={bodyRows}>
+        <HelpDialog focus={tab} detail={detail} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'confirm') {
     body = (
-      <Centered width={width} height={bodyRows}>
-        <Panel title={`${mode.action === 'disable' ? 'Disable' : 'Enable'} this key?`} width={Math.min(70, width)} tone={color.warn}>
-          <Box flexDirection="column" marginTop={1}>
+      <Centered width={dw} height={bodyRows}>
+        <Panel title={`${mode.action === 'disable' ? 'Disable' : 'Enable'} this key?`} width={Math.min(70, dw)} tone={color.warn}>
+          <Box flexDirection="column">
             {/* Never cut: two names can differ only at the end. */}
             <Text bold wrap="wrap">
               {keyLabel(mode.key)}
@@ -432,74 +538,27 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
                 : 'It works again from its next request.'}
             </Text>
           </Box>
-          <Box marginTop={1}>
-            <Hint k="y">yes</Hint>
-            <Text>{'   '}</Text>
-            <Hint k="n">cancel</Hint>
-          </Box>
         </Panel>
       </Centered>
     );
   } else {
-    const h = lay.heights;
-    const names = { keys: data.keys, upstreams: data.upstreams };
-    const upSel = Math.min(upstreamSel, Math.max(0, data.upstreams.length - 1));
-    const auSel = Math.min(auditSel, Math.max(0, data.audit.length - 1));
-    const left = (
-      <Box flexDirection="column" width={lay.leftW} height={lay.wide ? bodyRows : undefined} flexShrink={0}>
-        <StatusPanel
-          width={lay.leftW}
-          height={h.status}
-          focused={tab === 'status'}
-          link={link}
-          url={url}
-          actor={data.actor}
-          keys={data.keys}
-          needs={needs}
-          selected={attentionSel}
-          price={data.price}
-          upstreamCount={data.upstreams.length}
-        />
-        <KeysPanel
-          width={lay.leftW}
-          height={h.keys}
-          focused={tab === 'keys'}
-          keys={visible}
-          total={data.keys.length}
-          selectedId={selectedId}
-          filter={filter}
-          filtering={mode.kind === 'filter'}
-          hasUpstreams={data.upstreams.length > 0}
-          now={now}
-        />
-        <UpstreamsPanel
-          width={lay.leftW}
-          height={h.upstreams}
-          focused={tab === 'upstreams'}
-          upstreams={data.upstreams}
-          keys={data.keys}
-          selected={upstreamSel}
-        />
-        <AuditPanel
-          width={lay.leftW}
-          height={h.audit}
-          focused={tab === 'audit'}
-          audit={data.audit}
-          names={names}
-          fresh={fresh}
-          selected={auditSel}
-          now={now}
-        />
-      </Box>
-    );
-    const attn = needs[Math.min(attentionSel, Math.max(0, needs.length - 1))]?.key;
+    const attn = attnItem?.key;
+    const attnUp = attnItem?.upstream;
     const main =
       tab === 'status' ? (
         attn ? (
           <KeyMain key={attn.id} keyData={attn} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} />
+        ) : attnItem?.noUpstream ? (
+          <UpstreamMain upstream={undefined} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} none={NO_UPSTREAM} command={UPSTREAM_COMMAND} />
+        ) : attnUp ? (
+          <UpstreamMain key={attnUp.id} upstream={attnUp} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} />
+        ) : data.keys.length === 0 ? (
+          <StartMain width={lay.mainW} height={lay.mainH} scroll={scroll} canCreate={data.upstreams.length > 0} />
         ) : (
           <StatusMain width={lay.mainW} height={lay.mainH} audit={data.audit} names={names} now={now} scroll={scroll} />
         )
+      ) : tab === 'keys' && data.keys.length === 0 ? (
+        <StartMain width={lay.mainW} height={lay.mainH} scroll={scroll} canCreate={data.upstreams.length > 0} />
       ) : tab === 'keys' ? (
         <KeyMain
           keyData={selectedKey}
@@ -517,7 +576,8 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
           width={lay.mainW}
           height={lay.mainH}
           scroll={scroll}
-          none="No upstreams yet. An upstream is an API kman sits in front of. Add one with: kman upstream add openai --preset openai"
+          none={NO_UPSTREAM}
+          command={UPSTREAM_COMMAND}
         />
       ) : (
         <AuditMain
@@ -530,6 +590,15 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
       <Box width={width} height={bodyRows} flexDirection={lay.wide ? 'row' : 'column'}>
         {left}
         {main}
+      </Box>
+    );
+  }
+
+  if (overlay && popup) {
+    body = (
+      <Box width={width} height={bodyRows}>
+        {left}
+        {body}
       </Box>
     );
   }
@@ -552,11 +621,14 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
                   key: selectedKey,
                   filtered: filter !== '',
                   selectable,
+                  movable,
+                  revokeReady,
                   offline: link.state === 'down',
                   working: working !== undefined,
                   canCreate: data.upstreams.length > 0,
                   hasKeys: data.keys.length > 0,
                   scrollable: scrollMax > 0,
+                  detail,
                 })
               : [{ k: 'r', label: 'retry' }, { k: 'q', label: 'quit' }]
         }
@@ -565,6 +637,8 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
     </Box>
   );
 }
+
+const NO_UPSTREAM = 'No upstreams yet. An upstream is an API kman sits in front of. Add one with:';
 
 function Centered({ width, height, children }: { width: number; height: number; children: React.ReactNode }) {
   return (
@@ -581,6 +655,10 @@ interface HintState {
   filtered: boolean;
   /** Whether the panel has rows to move over. */
   selectable: boolean;
+  /** Whether it has more than one, so the arrows have somewhere to go. */
+  movable: boolean;
+  /** The name typed in the revoke dialog matches. */
+  revokeReady: boolean;
   offline: boolean;
   /** A change is being sent: another cannot start. */
   working: boolean;
@@ -589,55 +667,81 @@ interface HintState {
   hasKeys: boolean;
   /** The detail panel has more than it shows. */
   scrollable: boolean;
+  /** The detail panel has the keyboard. */
+  detail: boolean;
 }
 
-/** Only keys that would do something are offered. */
-function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canCreate, hasKeys, scrollable }: HintState): HintItem[] {
+/**
+ * Only keys that would do something are offered. When the line is too short the least
+ * missed go first (`rank`): scrolling and the panel keys, then selecting, and last the
+ * actions on the selected row, which stay unless nothing else can.
+ */
+function hintsFor({ tab, mode, key, filtered, selectable, movable, revokeReady, offline, working, canCreate, hasKeys, scrollable, detail }: HintState): HintItem[] {
   const canChange = !offline && !working;
   if (mode === 'confirm') return [{ k: 'y', label: 'yes' }, { k: 'n', label: 'cancel' }];
   if (mode === 'filter') {
     return [
-      { k: 'Enter', label: 'keep filter' },
-      { k: 'Esc', label: 'clear' },
-      { k: '↑↓', label: 'select' },
+      { k: 'Enter', label: 'keep filter', always: true },
+      { k: 'Esc', label: 'clear', always: true },
+      ...(movable ? [{ k: '↑↓', label: 'select' }] : []),
     ];
   }
+  // With no upstream the form only explains, and Esc is all that works in it.
+  if (mode === 'create' && !canCreate) return [{ k: 'Esc', label: 'close', always: true }];
   if (mode === 'create') {
     return [
-      { k: 'Tab', label: 'next field' },
+      { k: 'Tab/Enter', label: 'next field' },
       { k: 'Ctrl+S', label: 'create', always: true },
       { k: 'Esc', label: 'cancel', always: true },
     ];
   }
-  if (mode === 'revoke') return [{ k: 'Enter', label: 'revoke', always: true }, { k: 'Esc', label: 'cancel', always: true }];
+  if (mode === 'revoke') return [...(revokeReady ? [{ k: 'Enter', label: 'revoke', always: true }] : []), { k: 'Esc', label: 'cancel', always: true }];
   if (mode === 'secret') return [{ k: 'c', label: 'copy' }, { k: 'Enter', label: 'done', always: true }];
-  if (mode === 'clients') return [{ k: 'Esc', label: 'close' }];
+  if (mode === 'clients') return [{ k: 'Esc', label: 'close', always: true }];
   if (mode !== 'none') return [{ k: 'Esc', label: 'close' }];
+  if (detail) {
+    return [
+      { k: '↑↓', label: 'scroll', always: true },
+      { k: 'PgUp/PgDn', label: 'page', rank: 1 },
+      { k: 'g/G', label: 'top/bottom', rank: 0 },
+      { k: 'Esc', label: 'back to list', always: true },
+      { k: '1-4', label: 'panels', rank: 0 },
+      { k: '?', label: 'help', always: true },
+      { k: 'q', label: 'quit', always: true },
+    ];
+  }
   const common: HintItem[] = [
-    { k: 'r', label: offline ? 'retry' : 'refresh', always: true },
-    ...(scrollable ? [{ k: 'J/K', label: 'scroll', always: true }] : []),
-    { k: '1-4', label: 'panels' },
+    { k: 'r', label: offline ? 'retry' : 'refresh', always: offline, rank: 2 },
+    // The detail's border already says how to scroll, so this is the first of these to go.
+    ...(scrollable ? [{ k: 'J/K', label: 'scroll', rank: 2.9 }] : []),
+    { k: '1-4', label: 'panels', rank: 3.2 },
     { k: '?', label: 'help', always: true },
     { k: 'q', label: 'quit', always: true },
   ];
-  const create = canChange && canCreate ? [{ k: 'n', label: 'new key' }] : [];
+  const create = canChange && canCreate ? [{ k: 'n', label: 'new key', rank: 4 }] : [];
+  // Only offered when the detail has more than it shows: otherwise there is nothing to go to.
+  const open = selectable && scrollable ? [{ k: 'Enter', label: 'details', rank: 3.6 }] : [];
+  // Moving over the rows and reaching the other panels outrank a secondary action like c IPs.
+  const select = movable ? [{ k: '↑↓', label: 'select', rank: 3.3 }] : [];
   if (tab === 'keys') {
     const act =
       key?.status === 'active'
-        ? [{ k: 'd', label: 'disable' }]
+        ? [{ k: 'd', label: 'disable', rank: 5 }]
         : key?.status === 'disabled'
-          ? [{ k: 'e', label: 'enable' }]
+          ? [{ k: 'e', label: 'enable', rank: 5 }]
           : [];
     return [
-      ...(selectable ? [{ k: '↑↓', label: 'select', always: true }] : []),
-      ...(canChange ? [...create, ...act, ...(key && key.status !== 'revoked' ? [{ k: 'x', label: 'revoke' }] : [])] : []),
-      ...(key && !offline ? [{ k: 'c', label: 'IPs' }] : []),
-      ...(filtered ? [{ k: 'Esc', label: 'clear filter', always: true }] : hasKeys ? [{ k: '/', label: 'filter', always: true }] : []),
+      ...select,
+      ...open,
+      // Revoke is documented in help and confirmed in a dialog, so it goes before the panel keys do.
+      ...(canChange ? [...create, ...act, ...(key && key.status !== 'revoked' ? [{ k: 'x', label: 'revoke', rank: 3.1 }] : [])] : []),
+      ...(key && !offline ? [{ k: 'c', label: 'IPs', rank: 3 }] : []),
+      ...(filtered ? [{ k: 'Esc', label: 'clear filter', always: true }] : hasKeys ? [{ k: '/', label: 'filter', rank: 6 }] : []),
       ...common,
     ];
   }
   if (tab === 'status') {
-    return [...(selectable ? [{ k: '↑↓', label: 'select', always: true }, { k: 'Enter', label: 'open key' }] : []), ...create, ...common];
+    return [...select, ...(selectable ? [{ k: 'Enter', label: 'open', rank: 5 }] : []), ...create, ...common];
   }
-  return [...(selectable ? [{ k: '↑↓', label: 'select' }] : []), ...create, ...common];
+  return [...select, ...open, ...create, ...common];
 }
