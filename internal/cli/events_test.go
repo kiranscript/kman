@@ -33,9 +33,9 @@ func withFeed(t *testing.T) (*install, admin.Key) {
 	at := t0.Add(-time.Hour)
 	err := in.store.Do(t.Context(), func(tx *store.Tx) error {
 		return tx.AddEvents([]store.EventRow{
-			{Time: at, Kind: "request", KeyID: k.ID, ClientIP: "203.0.113.7", Country: "DE", ASN: 3320, ASOrg: "Deutsche Telekom\x1b[31m AG", Model: "gpt-5.4", Operation: "POST /v1/chat/completions?api_key=sk-leak", Status: 200},
-			{Time: at.Add(time.Minute), Kind: "blocked", KeyID: k.ID, ClientIP: "198.51.100.9", Country: "US", Operation: "POST /v1/chat/completions", Status: 403, BlockedCode: "address_not_allowed"},
-			{Time: at.Add(2 * time.Minute), Kind: "blocked", ClientIP: "192.0.2.4", Country: "RU", ASN: 12389, Operation: "GET /v1/models", Status: 401, BlockedCode: "invalid_key"},
+			{Time: at, Kind: "request", KeyID: k.ID, ClientIP: "203.0.113.7", Country: "DE", ASN: 3320, ASOrg: "Deutsche Telekom\x1b[31m AG", Client: "openai-python/3", Model: "gpt-5.4", Operation: "POST /v1/chat/completions?api_key=sk-leak", Status: 200},
+			{Time: at.Add(time.Minute), Kind: "blocked", KeyID: k.ID, ClientIP: "198.51.100.9", Country: "US", Client: "curl/8", Operation: "POST /v1/chat/completions", Status: 403, BlockedCode: "address_not_allowed"},
+			{Time: at.Add(2 * time.Minute), Kind: "blocked", ClientIP: "192.0.2.4", Country: "RU", ASN: 12389, Client: "none", Operation: "GET /v1/models", Status: 401, BlockedCode: "invalid_key"},
 		})
 	})
 	if err != nil {
@@ -51,12 +51,18 @@ func TestEventsListsRecentRequestsNewestFirstWithoutTheAddressWhileItIsOff(t *te
 	if len(lines) < 4 || !strings.HasPrefix(lines[0], "TIME") {
 		t.Fatalf("kman events:\n%s", out)
 	}
-	for _, col := range []string{"KEY", "CLIENT", "COUNTRY", "ASN", "OPERATION", "MODEL", "STATUS", "CODE"} {
+	for _, col := range []string{"KEY", "CLIENT", "ADDRESS", "COUNTRY", "ASN", "OPERATION", "MODEL", "STATUS", "CODE"} {
 		if !strings.Contains(lines[0], col) {
 			t.Errorf("the header lacks %s: %s", col, lines[0])
 		}
 	}
 	probe, refused, forwarded := lines[1], lines[2], lines[3]
+	// What called is shown whatever the setting: a client is a program, not a person.
+	for line, client := range map[string]string{probe: " none ", refused: " curl/8 ", forwarded: " openai-python/3 "} {
+		if !strings.Contains(line, client) {
+			t.Errorf("the line lacks the client %q:\n%s", strings.TrimSpace(client), line)
+		}
+	}
 	if !strings.Contains(probe, "invalid_key") || !strings.Contains(probe, "(no key)") || !strings.Contains(probe, "RU") || !strings.Contains(probe, "AS12389") || !strings.Contains(probe, "401") {
 		t.Errorf("the request with no key:\n%s", probe)
 	}

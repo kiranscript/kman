@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The SDKs are pinned under testdata/sdk and installed by its install.sh. CI's
@@ -102,6 +103,17 @@ var sdkScenarios = []struct {
 	{name: "anthropic-error", profile: "anthropic", authHeader: authAPIKey, wantText: "rate_limit_error", wantSpend: 0, models: []string{"claude-sonnet-5-5"}},
 }
 
+// sdkClients is the client kman records for each SDK, by runtime and profile:
+// the SDK's own User-Agent, as it sends it, reduced to a product and a major
+// version (ADR 0012). The versions are the pinned ones' majors, so bumping a pin
+// across a major fails here, and in internal/events' table, until both are updated.
+var sdkClients = map[string]string{
+	"python/openai":    "openai-python/3",
+	"python/anthropic": "anthropic-python/2",
+	"node/openai":      "openai-js/7",
+	"node/anthropic":   "anthropic-js/1",
+}
+
 // The official SDKs, pinned, work through the real binary, against transcripts:
 // with the virtual key as their API key, and kman's address as their base URL, and
 // no other change. The transcripts' notes say where each came from.
@@ -149,6 +161,8 @@ func TestOfficialSDKsWorkThroughKman(t *testing.T) {
 					if spent.Today.CostMicro != sc.wantSpend || spent.Month.CostMicro != sc.wantSpend || spent.Today.EstimatedMicro != 0 {
 						t.Errorf("the key was charged %+v this month, want %d µ$ reported and none estimated", spent, sc.wantSpend)
 					}
+					// And the SDK is recorded as the key's client, from its User-Agent.
+					p.wantClient(sdkClients[rt.name+"/"+sc.profile])
 				})
 			}
 		})
@@ -187,5 +201,34 @@ func wantForwardedAsAMeteredRequest(t *testing.T, req received, secret, authHead
 	}
 	if asked != (body.Options != nil && body.Options.IncludeUsage) {
 		t.Errorf("asked for usage = %v, want %v: %s", body.Options, asked, req.Body)
+	}
+}
+
+// wantClient waits for the key to show want as its one client, in key places:
+// events reach the store in batches, every 5 seconds.
+func (p *proxied) wantClient(want string) {
+	p.t.Helper()
+	var got struct {
+		Places []struct {
+			Value    string `json:"value"`
+			Requests int64  `json:"requests"`
+		} `json:"places"`
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		out, _ := p.h.mustRun(p.t, "key", "places", "my-app", "--kind", "client", "--json")
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			p.t.Fatalf("key places --json printed %q: %v", out, err)
+		}
+		if len(got.Places) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			p.t.Fatal("the key never showed a client")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if len(got.Places) != 1 || got.Places[0].Value != want || got.Places[0].Requests != 1 {
+		p.t.Errorf("the key's clients = %+v, want just %s, once", got.Places, want)
 	}
 }

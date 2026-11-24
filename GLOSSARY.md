@@ -139,7 +139,7 @@ A virtual key's old secret after its grace period has ended. It no longer works,
 ### Detection
 
 **Event**:
-The record of one request or realtime session through kman: which key sent it, from where, what it was allowed to do, and what it cost. Never its content.
+The record of one request or realtime session through kman: which key sent it, what was calling, from where, what it was allowed to do, and what it cost. Never its content.
 _Avoid_: Log line, request log
 
 **Event feed**:
@@ -147,8 +147,12 @@ The events as they happen, or the recent ones: `kman events`, and `kman events -
 _Avoid_: Request log, activity log
 
 **Place**:
-Where a virtual key has been used from, at one of three grains: a country, an autonomous system (ASN), or a network (an IPv4 /24 or an IPv6 /64). kman keeps each place a key turns up at, with when it was first and last seen and how many requests it forwarded and refused, forever. `kman key places` lists them.
+Where a virtual key has been used from, at one of three grains: a country, an autonomous system (ASN), or a network (an IPv4 /24 or an IPv6 /64); and, listed with them, the **client** that used it. kman keeps each place a key turns up at, with when it was first and last seen and how many requests it forwarded and refused, forever. `kman key places` lists them.
 _Avoid_: Source (a known source is an operator's label for a place), location
+
+**Client**:
+What is calling a key: the request's `User-Agent` reduced to a product and its major version, such as `openai-python/3`, `anthropic-js/1`, `curl/8` or `python-requests/2`, or `none` when the request sent no `User-Agent`, or `unknown` when it holds no product kman keeps. It is the one header an event keeps, and only reduced (ADR 0012): the header itself is never stored, logged or sent in an alert, and anything in it that is not a product name and a number, such as a key, an address or an email, is cut. A client is a program, not a person, so it is always shown, unlike a client address. It is an app's own claim and no proof of who is calling. Do not confuse it with a client address, or with a client of the admin API.
+_Avoid_: User agent, UA, caller (the **client address** is the other half of "who is calling")
 
 **Client address**:
 The IP address a request came from: the connection's, or `X-Forwarded-For` only through `trusted_proxies`. It is stored on each event, and it is personal data, so the admin API shows which addresses used a key, and the address of each event in the event feed, only when the `expose_client_addresses` setting is on.

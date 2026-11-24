@@ -293,6 +293,34 @@ func TestKeyLifecycleCommandsNeedOneKeyAndKnowIt(t *testing.T) {
 	}
 }
 
+func TestKeyPlacesListsTheClientsThatUsedAKeyWhateverTheAddressSetting(t *testing.T) {
+	in := withOpenAI(t)
+	var created admin.CreatedKey
+	in.kmanJSON(t, &created, "key", "create", "my-app", "--upstream", "openai")
+	id := created.Key.ID
+	seed := `INSERT INTO baseline_places (key_id, kind, value, label, first_seen, last_seen, count, blocked) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	in.sqlExec(t, seed, id, "client", "openai-python/3", nil, t0.UnixMilli(), t0.Add(time.Hour).UnixMilli(), 41, 0)
+	in.sqlExec(t, seed, id, "client", "curl/8", nil, t0.Add(2*time.Hour).UnixMilli(), t0.Add(2*time.Hour).UnixMilli(), 0, 3)
+	in.sqlExec(t, seed, id, "network", "198.51.100.0/24", nil, t0.UnixMilli(), t0.UnixMilli(), 1, 0)
+
+	// A client is a program, not a person: it is listed with the networks left out.
+	out := in.kman(t, "key", "places", "my-app", "--kind", "client")
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 || !strings.HasPrefix(lines[0], "KIND") || !strings.HasPrefix(lines[1], "client") || !strings.Contains(lines[1], "curl/8") ||
+		!strings.Contains(lines[2], "openai-python/3") || strings.Contains(out, "198.51.100.0/24") {
+		t.Errorf("key places --kind client:\n%s", out)
+	}
+	all := in.kman(t, "key", "places", "my-app")
+	if !strings.Contains(all, "openai-python/3") || !strings.Contains(all, "curl/8") || strings.Contains(all, "198.51.100.0/24") || !strings.Contains(all, "expose_client_addresses") {
+		t.Errorf("key places:\n%s", all)
+	}
+	var got admin.KeyPlaces
+	in.kmanJSON(t, &got, "key", "places", "my-app", "--kind", "client")
+	if len(got.Places) != 2 || got.Places[0].Kind != "client" || got.Places[0].Value != "curl/8" {
+		t.Errorf("--kind client --json = %+v", got)
+	}
+}
+
 func TestKeyPlacesSaysWhereAKeyWasUsedFromByNameOrKeyId(t *testing.T) {
 	in := withOpenAI(t)
 	var created admin.CreatedKey
@@ -335,7 +363,7 @@ func TestKeyPlacesSaysWhereAKeyWasUsedFromByNameOrKeyId(t *testing.T) {
 	if got.KeyID != id || len(got.Places) != 2 {
 		t.Errorf("--kind network --json = %+v", got)
 	}
-	if r := in.run(t, nil, "", "key", "places", "my-app", "--kind", "city"); r.code != 1 || !strings.Contains(r.stderr, "country, asn or network") {
+	if r := in.run(t, nil, "", "key", "places", "my-app", "--kind", "city"); r.code != 1 || !strings.Contains(r.stderr, "country, asn, network or client") {
 		t.Errorf("--kind city: exit %d, %s", r.code, r.stderr)
 	}
 

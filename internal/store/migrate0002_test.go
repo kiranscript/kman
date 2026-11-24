@@ -54,6 +54,26 @@ func TestMigration0002FillsPlacesFromTheEventsAlreadyStored(t *testing.T) {
 	}
 	var n int
 	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM baseline_places`).Scan(&n); err != nil || n != 3 {
-		t.Errorf("baseline_places holds %d rows (%v), want only the key's 3", n, err)
+		t.Errorf("baseline_places holds %d rows (%v), want only the key's 3 and no client", n, err)
+	}
+	// The events from before have no client, which is not the same as none: no
+	// header was not recorded then, and no place is made up for it.
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM events WHERE client IS NOT NULL`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("%d migrated events have a client (%v), want none", n, err)
+	}
+}
+
+func TestMigration0002AddsTheClientColumnAndTheClientKind(t *testing.T) {
+	s := openTest(t, t.TempDir())
+	ctx := context.Background()
+	var typ string
+	if err := s.db.QueryRowContext(ctx, `SELECT type FROM pragma_table_info('events') WHERE name = 'client'`).Scan(&typ); err != nil || typ != "TEXT" {
+		t.Fatalf("events.client = %q (%v), want a TEXT column", typ, err)
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO baseline_places (key_id, kind, value, first_seen, last_seen) VALUES ('kkkk1111', 'client', 'curl/8', 1, 1)`); err != nil {
+		t.Errorf("baseline_places refuses the client kind: %v", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO baseline_places (key_id, kind, value, first_seen, last_seen) VALUES ('kkkk1111', 'user_agent', 'curl/8', 1, 1)`); err == nil {
+		t.Error("baseline_places accepts a kind it does not know")
 	}
 }

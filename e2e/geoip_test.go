@@ -207,7 +207,7 @@ func TestKeyPlacesSaysWhereAKeyWasUsedFromThroughTheRealBinary(t *testing.T) {
 		if err := json.Unmarshal([]byte(out), &got); err != nil {
 			t.Fatalf("key places --json printed %q: %v", out, err)
 		}
-		if len(got.Places) == 3 && got.Places[0].Requests+got.Places[0].Refused == 2 {
+		if len(got.Places) == 4 && got.Places[0].Requests+got.Places[0].Refused == 2 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -227,6 +227,11 @@ func TestKeyPlacesSaysWhereAKeyWasUsedFromThroughTheRealBinary(t *testing.T) {
 	}
 	if n := byKind["network"]; n.Value != "127.0.0.0/24" && n.Value != "::/64" {
 		t.Errorf("network = %+v, want the loopback network", n)
+	}
+	// The client is what the test's Go HTTP client says it is, as a product and a
+	// major version.
+	if c := byKind["client"]; c.Value != "go-http-client/1" || c.Requests != 1 || c.Refused != 1 {
+		t.Errorf("client = %+v, want go-http-client/1, 1 forwarded and 1 refused", c)
 	}
 	if out, _ := h.mustRun(t, "key", "places", "my-app"); !strings.Contains(out, "AS64500") || !strings.Contains(out, "Test Network") {
 		t.Errorf("key places:\n%s", out)

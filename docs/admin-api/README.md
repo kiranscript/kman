@@ -30,7 +30,7 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `DELETE /admin/v1/credentials/{ref}` | Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it |
 | `PATCH /admin/v1/credentials/{ref}` | Rename a credential or replace its secret |
 | `POST /admin/v1/credentials/{ref}/compromise` | Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once |
-| `GET /admin/v1/events` | List stored events, newest first: which key, from where, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on |
+| `GET /admin/v1/events` | List stored events, newest first: which key, from where, by what client, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on |
 | `GET /admin/v1/events/stream` | Follow new events as they happen, as server-sent events, with the filters of the list. A client that cannot keep up loses events and is told how many |
 | `GET /admin/v1/exposure` | List the keys that work now and would be easy to abuse: open to every address, never expiring, or unused for 30 days, each with the command that fixes it |
 | `GET /admin/v1/keys` | List every virtual key, or the one with a name, never their secrets |
@@ -40,7 +40,7 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `GET /admin/v1/keys/{id}/clients` | List the client addresses a virtual key was used from, grouped, from the events kept; refused unless the expose_client_addresses setting is on |
 | `POST /admin/v1/keys/{id}/disable` | Stop a virtual key from the next request until it is enabled again |
 | `POST /admin/v1/keys/{id}/enable` | Let a disabled virtual key work again; a revoked key cannot be enabled |
-| `GET /admin/v1/keys/{id}/places` | List where a virtual key has been used from: each country, AS and network, with when it was first and last seen and how many requests were forwarded and refused |
+| `GET /admin/v1/keys/{id}/places` | List where a virtual key has been used from: each country, AS and network, and each client (the User-Agent reduced to a product and major version) that used it, with when it was first and last seen and how many requests were forwarded and refused |
 | `POST /admin/v1/keys/{id}/revoke` | End a virtual key for good, from the next request; it cannot be undone |
 | `POST /admin/v1/keys/{id}/rotate` | Replace a virtual key's secret and keep the key; the new secret is returned only this once |
 | `GET /admin/v1/openapi.json` | This document. It needs no admin token. |
@@ -192,7 +192,7 @@ Response 200: [CompromisedCredential](#compromisedcredential).
 
 ### `GET /admin/v1/events`
 
-List stored events, newest first: which key, from where, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on. Operation id `listEvents`.
+List stored events, newest first: which key, from where, by what client, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on. Operation id `listEvents`.
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
@@ -296,12 +296,12 @@ Response 200: [Key](#key).
 
 ### `GET /admin/v1/keys/{id}/places`
 
-List where a virtual key has been used from: each country, AS and network, with when it was first and last seen and how many requests were forwarded and refused. Operation id `listKeyPlaces`.
+List where a virtual key has been used from: each country, AS and network, and each client (the User-Agent reduced to a product and major version) that used it, with when it was first and last seen and how many requests were forwarded and refused. Operation id `listKeyPlaces`.
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
 | `id` | path | string | yes | The key id. |
-| `kind` | query | string | no | Only places of this kind: country, asn or network. |
+| `kind` | query | string | no | Only places of this kind: country, asn, network or client. |
 
 Response 200: [KeyPlaces](#keyplaces).
 
@@ -687,6 +687,7 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `asn` | integer | no | The autonomous system number, from the ASN database, when there is one that knows the address. |
 | `asn_label` | string | no | The autonomous system's organisation, when the ASN database names one. |
+| `client` | string | no | What made the request: its User-Agent reduced to a product and major version, such as openai-python/3 or curl/8, or none when it sent no User-Agent. Never the header itself. Empty for an event stored before kman recorded it. It is not personal data, so it is always shown. |
 | `client_address` | string | no | The client address: the connection's, or X-Forwarded-For only through trusted_proxies. Left out unless the expose_client_addresses setting is on. |
 | `client_address_withheld` | boolean | no | The event has a client address, which is left out because expose_client_addresses is off. |
 | `country` | string | no | ISO 3166-1 code, from the country database, when there is one that knows the address. |
@@ -813,13 +814,13 @@ Response 200: [Whoami](#whoami).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `first_seen` | string | yes |  |
-| `kind` | string | yes | country, asn or network. |
+| `kind` | string | yes | country, asn, network or client. |
 | `label` | string | no | A name for the value, when kman has one: an AS's organisation, from the ASN database. |
 | `last_seen` | string | yes |  |
 | `other` | boolean | no | This row counts every place of its kind past the first 1,000 the key was seen from. |
 | `refused` | integer | yes | Requests kman refused from here. |
 | `requests` | integer | yes | Requests kman forwarded from here, and realtime sessions. |
-| `value` | string | yes | An ISO 3166-1 alpha-2 country code, an AS number, or an IPv4 /24 or IPv6 /64 network. Empty for the other row. |
+| `value` | string | yes | An ISO 3166-1 alpha-2 country code, an AS number, an IPv4 /24 or IPv6 /64 network, or a client: the User-Agent reduced to a product and major version, such as openai-python/3, or none. Empty for the other row. |
 
 ### `PriceBand`
 

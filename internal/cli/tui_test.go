@@ -318,7 +318,7 @@ func TestDashboardKeyDetailShowsWhereTheKeyIsUsedFrom(t *testing.T) {
 	m.cursor = i
 	m = press(t, m, "enter")
 	view := m.View()
-	for _, want := range []string{"WHERE IT IS USED FROM", "185.220.101.0/24", "AS60729 Stiftung Erneuerbare Freiheit", "0 forwarded, 57 refused"} {
+	for _, want := range []string{"WHERE IT IS USED FROM", "185.220.101.0/24", "AS60729 Stiftung Erneuerbare Freiheit", "0 forwarded, 57 refused", "client   curl/8", "client   anthropic-python/2"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the key's detail lacks %q:\n%s", want, view)
 		}

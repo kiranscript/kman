@@ -182,6 +182,10 @@ func TestTheAPIListsAKeysPlacesAndTakesAKind(t *testing.T) {
 	if r := s.do(t, s.owner, "GET", "/admin/v1/keys/"+created.Key.ID+"/places?kind=network", ""); r.status != http.StatusConflict {
 		t.Errorf("networks with client addresses off: %d %s, want 409", r.status, r.body)
 	}
+	// A client is a program, not a person, so it is given out with the setting off.
+	if r := s.do(t, s.owner, "GET", "/admin/v1/keys/"+created.Key.ID+"/places?kind=client", ""); r.status != http.StatusOK {
+		t.Errorf("clients with client addresses off: %d %s, want 200", r.status, r.body)
+	}
 	if r := s.do(t, s.owner, "PATCH", "/admin/v1/settings", `{"expose_client_addresses":true}`); r.status != http.StatusOK {
 		t.Fatalf("PATCH settings: %d %s", r.status, r.body)
 	}

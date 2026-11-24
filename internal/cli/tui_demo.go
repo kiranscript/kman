@@ -93,15 +93,19 @@ func newDemoData(now time.Time) *demoData {
 	}
 	d.places = map[string][]admin.Place{
 		"k_9f2a1c": {
+			place("client", "openai-python/3", "", 29*day, 2*time.Minute, 2125, 0),
 			place("network", "10.0.4.0/24", "", 29*day, 2*time.Minute, 2125, 0),
+			place("client", "curl/8", "", 29*day, 26*time.Hour, 0, 15),
 			place("network", "203.0.113.0/24", "", 29*day, 26*time.Hour, 0, 15),
 			place("asn", "3320", "Deutsche Telekom AG", 29*day, 26*time.Hour, 0, 15),
 			place("country", "DE", "", 29*day, 26*time.Hour, 0, 15),
 		},
 		"k_0a44f9": {
+			place("client", "curl/8", "", 2*day, 40*time.Minute, 0, 57),
 			place("network", "185.220.101.0/24", "", 2*day, 40*time.Minute, 0, 57),
 			place("asn", "60729", "Stiftung Erneuerbare Freiheit", 2*day, 40*time.Minute, 0, 57),
 			place("country", "DE", "", 2*day, 40*time.Minute, 0, 57),
+			place("client", "anthropic-python/2", "", 25*day, 9*day, 420, 0),
 			place("network", "10.20.4.0/24", "", 25*day, 9*day, 420, 0),
 			place("asn", "16509", "Amazon.com, Inc.", 25*day, 9*day, 420, 0),
 			place("country", "US", "", 25*day, 9*day, 420, 0),

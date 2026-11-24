@@ -18,6 +18,10 @@ type EventRow struct {
 	ClientIP string
 	Country  string
 	ASN      int64
+	// Client is the User-Agent reduced to a product and major version, or none
+	// when the request sent none (events.ClientOf). Empty for an event stored
+	// before kman recorded it. It is recorded for a request with no key too.
+	Client string
 	// ASOrg is the organisation the ASN belongs to. It is not kept in the events
 	// table: it labels the key's place for the ASN, so it reads back empty from
 	// EventsSince and is the place's label from ListEvents.
@@ -63,9 +67,9 @@ const hourMS = int64(time.Hour / time.Millisecond)
 func (tx *Tx) AddEvents(rows []EventRow) error {
 	insert, err := tx.tx.PrepareContext(tx.ctx, `INSERT INTO events (ts, key_id, kind, client_ip, country, asn, upstream_id, model, operation,
 		status, blocked_code, latency_ms, req_bytes, resp_bytes, tokens_in, tokens_out, tokens_cached, tokens_cache_write,
-		tokens_audio_in, tokens_audio_out, cost_micro, cost_estimated)
+		tokens_audio_in, tokens_audio_out, cost_micro, cost_estimated, client)
 		VALUES (?1, NULLIF(?2, ''), ?3, NULLIF(?4, ''), NULLIF(?5, ''), NULLIF(?6, 0), NULLIF(?7, ''), NULLIF(?8, ''), NULLIF(?9, ''),
-		NULLIF(?10, 0), NULLIF(?11, ''), ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)`)
+		NULLIF(?10, 0), NULLIF(?11, ''), ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, NULLIF(?23, ''))`)
 	if err != nil {
 		return typed(err, "add events")
 	}
@@ -81,7 +85,7 @@ func (tx *Tx) AddEvents(rows []EventRow) error {
 		}
 		if _, err := insert.ExecContext(tx.ctx, toMilli(r.Time), r.KeyID, r.Kind, r.ClientIP, r.Country, r.ASN, r.UpstreamID, r.Model, r.Operation,
 			r.Status, r.BlockedCode, r.LatencyMS, r.ReqBytes, r.RespBytes, r.TokensIn, r.TokensOut, r.TokensCached, r.TokensCacheWrite,
-			r.TokensAudioIn, r.TokensAudioOut, cost, boolInt(r.CostEstimated)); err != nil {
+			r.TokensAudioIn, r.TokensAudioOut, cost, boolInt(r.CostEstimated), r.Client); err != nil {
 			return typed(err, "add events")
 		}
 		if r.KeyID == "" {
@@ -151,7 +155,7 @@ func (tx *Tx) EventsSince(since time.Time) ([]EventRow, error) {
 		COALESCE(asn, 0), COALESCE(upstream_id, ''), COALESCE(model, ''), COALESCE(operation, ''), COALESCE(status, 0),
 		COALESCE(blocked_code, ''), COALESCE(latency_ms, 0), COALESCE(req_bytes, 0), COALESCE(resp_bytes, 0),
 		COALESCE(tokens_in, 0), COALESCE(tokens_out, 0), COALESCE(tokens_cached, 0), COALESCE(tokens_cache_write, 0),
-		COALESCE(tokens_audio_in, 0), COALESCE(tokens_audio_out, 0), cost_micro, cost_estimated
+		COALESCE(tokens_audio_in, 0), COALESCE(tokens_audio_out, 0), cost_micro, cost_estimated, COALESCE(client, '')
 		FROM events WHERE ts >= ? ORDER BY ts, id`, toMilli(since))
 	if err != nil {
 		return nil, typed(err, "read events")
@@ -165,7 +169,7 @@ func (tx *Tx) EventsSince(since time.Time) ([]EventRow, error) {
 		var estimated int
 		if err := rows.Scan(&ts, &r.KeyID, &r.Kind, &r.ClientIP, &r.Country, &r.ASN, &r.UpstreamID, &r.Model, &r.Operation, &r.Status,
 			&r.BlockedCode, &r.LatencyMS, &r.ReqBytes, &r.RespBytes, &r.TokensIn, &r.TokensOut, &r.TokensCached, &r.TokensCacheWrite,
-			&r.TokensAudioIn, &r.TokensAudioOut, &cost, &estimated); err != nil {
+			&r.TokensAudioIn, &r.TokensAudioOut, &cost, &estimated, &r.Client); err != nil {
 			return nil, typed(err, "read events")
 		}
 		r.Time = fromMilli(ts)
@@ -356,7 +360,7 @@ func (tx *Tx) ListEvents(f EventFilter, limit int) ([]StoredEvent, error) {
 	}
 	query := `SELECT e.id, e.ts, COALESCE(e.key_id, ''), COALESCE(k.name, ''), e.kind, COALESCE(e.client_ip, ''), COALESCE(e.country, ''),
 			COALESCE(e.asn, 0), COALESCE(p.label, ''), COALESCE(e.upstream_id, ''), COALESCE(e.model, ''), COALESCE(e.operation, ''),
-			COALESCE(e.status, 0), COALESCE(e.blocked_code, '')
+			COALESCE(e.status, 0), COALESCE(e.blocked_code, ''), COALESCE(e.client, '')
 		FROM events e
 		LEFT JOIN virtual_keys k ON k.key_id = e.key_id
 		LEFT JOIN baseline_places p ON p.key_id = e.key_id AND p.kind = 'asn' AND p.value = CAST(e.asn AS TEXT)`
@@ -373,7 +377,7 @@ func (tx *Tx) ListEvents(f EventFilter, limit int) ([]StoredEvent, error) {
 		var e StoredEvent
 		var ts int64
 		if err := rows.Scan(&e.ID, &ts, &e.KeyID, &e.KeyName, &e.Kind, &e.ClientIP, &e.Country, &e.ASN, &e.ASOrg,
-			&e.UpstreamID, &e.Model, &e.Operation, &e.Status, &e.BlockedCode); err != nil {
+			&e.UpstreamID, &e.Model, &e.Operation, &e.Status, &e.BlockedCode, &e.Client); err != nil {
 			return nil, typed(err, "read events")
 		}
 		e.Time = fromMilli(ts)
