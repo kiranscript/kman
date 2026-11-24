@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -27,6 +28,53 @@ const SchemaVersion = 2
 // i+1. Once a release is tagged, its migrations never change; the schema
 // moves on only by appending a migration.
 var migrations = []migration{migrate0001, migrate0002}
+
+// schemaPart is something a migration creates: a table, or one column of a
+// table that an earlier migration made.
+type schemaPart struct{ table, column string }
+
+// unreleased is what each migration that is not in a tagged release creates,
+// by version. Such a migration grows with each M2 ticket (SPEC §14), so a data
+// directory made by an earlier build of it is at the same version and lacks the
+// later parts. checkUnreleased looks for them when the database is opened, so
+// that mismatch is one clear error and not a failure of whatever query first
+// touches what is missing. When a release is tagged, take its version off this
+// list: its migration is then fixed, and a later one is appended instead.
+var unreleased = map[int][]schemaPart{
+	2: {{"events", "client"}, {"baseline_places", ""}, {"canaries", ""}},
+}
+
+// checkUnreleased refuses a database that is at a version listed in unreleased
+// but lacks part of what that version now creates. Only a version the
+// migrations in ms reach is checked.
+func (s *Store) checkUnreleased(ctx context.Context, ms []migration) error {
+	for version := 1; version <= len(ms); version++ {
+		var missing []string
+		for _, p := range unreleased[version] {
+			var n int
+			var err error
+			if p.column == "" {
+				err = s.db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, p.table).Scan(&n)
+			} else {
+				err = s.db.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info(?) WHERE name = ?`, p.table, p.column).Scan(&n)
+			}
+			if err != nil {
+				return fmt.Errorf("store: check the schema: %w", err)
+			}
+			if n == 0 {
+				name := p.table
+				if p.column != "" {
+					name += "." + p.column
+				}
+				missing = append(missing, name)
+			}
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf("store: %w: it lacks %s; rebuild the data directory (unreleased migration changed)", ErrStaleSchema, strings.Join(missing, ", "))
+		}
+	}
+	return nil
+}
 
 // migrate applies every migration in ms that the database has not had yet.
 // It runs forward only: a database from a newer kman is refused.
