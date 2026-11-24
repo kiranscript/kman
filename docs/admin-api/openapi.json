@@ -262,6 +262,154 @@
         ],
         "type": "object"
       },
+      "Canary": {
+        "additionalProperties": false,
+        "properties": {
+          "armed_at": {
+            "description": "When it was made or last reset.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fired_at": {
+            "description": "The first use since it was armed. Absent while it is armed.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "fires": {
+            "description": "How many uses were counted since the canary was made, from addresses not on its ignore list.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "description": "The key id: the non-secret handle inside the canary's key, and how this API addresses it. It is the id the canary's alerts and its events name.",
+            "type": "string"
+          },
+          "ignore": {
+            "description": "Addresses and networks whose use does not fire it, such as the operator's own scanners. The use is still an event.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "last_fired_at": {
+            "description": "The last use. A reset keeps it.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_use": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CanaryOrigin"
+              }
+            ],
+            "description": "Where the last use came from."
+          },
+          "name": {
+            "description": "An optional label, unique among keys not revoked.",
+            "type": "string"
+          },
+          "planted": {
+            "description": "Where it was planted, in the operator's words: what an alert says so that the leak can be found.",
+            "type": "string"
+          },
+          "state": {
+            "description": "armed: its next use raises an alert. fired: it was used since it was armed, so more uses count and only now and then alert again, until it is reset. revoked: it is over and answers key_revoked.",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "planted",
+          "tags",
+          "state",
+          "ignore",
+          "created_at",
+          "armed_at",
+          "fires"
+        ],
+        "type": "object"
+      },
+      "CanaryList": {
+        "additionalProperties": false,
+        "properties": {
+          "canaries": {
+            "items": {
+              "$ref": "#/components/schemas/Canary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "canaries"
+        ],
+        "type": "object"
+      },
+      "CanaryOrigin": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "description": "The client address. Left out unless the expose_client_addresses setting is on.",
+            "type": "string"
+          },
+          "address_withheld": {
+            "description": "There is an address, which is left out because expose_client_addresses is off.",
+            "type": "boolean"
+          },
+          "as_org": {
+            "description": "The organisation the ASN belongs to, when the ASN database names one.",
+            "type": "string"
+          },
+          "asn": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "client": {
+            "description": "What called: the User-Agent reduced to a product and major version, such as curl/8, or none.",
+            "type": "string"
+          },
+          "country": {
+            "description": "An ISO 3166-1 alpha-2 code, when a GeoIP database names one.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "CanaryUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "ignore": {
+            "description": "The new ignore list, which replaces the old one; empty clears it.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "planted": {
+            "description": "A new place it was planted.",
+            "type": "string"
+          },
+          "tags": {
+            "description": "The new tags, which replace the old ones.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "Channel": {
         "additionalProperties": false,
         "properties": {
@@ -401,6 +549,49 @@
         ],
         "type": "object"
       },
+      "CreateCanaryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "base_url": {
+            "description": "kman's proxy URL, as an app would be told it. When given, the snippet sets the variable's base URL too, so a thief who finds the snippet alone can reach kman with it.",
+            "type": "string"
+          },
+          "format": {
+            "description": "The snippet to plant: env (a .env line), mcp (an MCP server config's env block), shell (an export line) or ci (a gh secret set command). Defaults to env.",
+            "type": "string"
+          },
+          "ignore": {
+            "description": "Addresses and networks (CIDR) whose use does not fire the canary. At most 100, none wider than an IPv4 /8 or an IPv6 /16.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "An optional label: 1 to 63 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit, unique among keys not revoked. It stays out of the snippet.",
+            "type": "string"
+          },
+          "planted": {
+            "description": "Where it will be planted: 1 to 200 characters, with no control characters. An alert names it.",
+            "type": "string"
+          },
+          "tags": {
+            "description": "At most 32 labels of a-z, 0-9, '.', '_', ':' and '-'.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "var": {
+            "description": "The variable the snippet sets, such as OPENAI_API_KEY (the default). A thief finds a key by the name it is under.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "planted"
+        ],
+        "type": "object"
+      },
       "CreateKeyRequest": {
         "additionalProperties": false,
         "properties": {
@@ -455,6 +646,33 @@
         "required": [
           "token",
           "secret"
+        ],
+        "type": "object"
+      },
+      "CreatedCanary": {
+        "additionalProperties": false,
+        "properties": {
+          "canary": {
+            "$ref": "#/components/schemas/Canary"
+          },
+          "format": {
+            "description": "The format of the snippet.",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The canary's key (kmn_...), in the standard format: nothing in it says it is a canary. kman keeps only its hash, so it is shown only this once.",
+            "type": "string"
+          },
+          "snippet": {
+            "description": "What to plant, in the format asked for. It holds the secret, so it is shown only this once, and it says nothing of what it is: not the canary's name, where it is planted, or its tags.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "canary",
+          "secret",
+          "format",
+          "snippet"
         ],
         "type": "object"
       },
@@ -772,6 +990,10 @@
             "description": "The key id: the non-secret handle inside the key, and how this API addresses it.",
             "type": "string"
           },
+          "kind": {
+            "description": "standard, or canary: a key with no credential that forwards nothing and raises an alert when used. A canary is not in the list of keys; GET /canaries lists them.",
+            "type": "string"
+          },
           "name": {
             "description": "An optional label, unique among keys not revoked.",
             "type": "string"
@@ -814,6 +1036,7 @@
         },
         "required": [
           "id",
+          "kind",
           "status",
           "expired",
           "tags",
@@ -2205,6 +2428,195 @@
           }
         },
         "summary": "Download a consistent copy of the database, made while kman runs; it holds ciphertext only, so it opens only with the master key"
+      }
+    },
+    "/admin/v1/canaries": {
+      "get": {
+        "operationId": "listCanaries",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanaryList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List every canary, with where it was planted, whether it has fired and when it last did, and where its last use came from; the address is left out unless the expose_client_addresses setting is on"
+      },
+      "post": {
+        "operationId": "createCanary",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCanaryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedCanary"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Make a canary: a key in the standard format with no credential, which forwards nothing and raises a critical alert when used. Its secret and the snippet to plant are returned only this once"
+      }
+    },
+    "/admin/v1/canaries/{id}": {
+      "get": {
+        "operationId": "getCanary",
+        "parameters": [
+          {
+            "description": "The canary's key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Canary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Read one canary, by key id"
+      },
+      "patch": {
+        "operationId": "updateCanary",
+        "parameters": [
+          {
+            "description": "The canary's key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanaryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Canary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Change where a canary was planted, its tags and its ignore list"
+      }
+    },
+    "/admin/v1/canaries/{id}/reset": {
+      "post": {
+        "operationId": "resetCanary",
+        "parameters": [
+          {
+            "description": "The canary's key id.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Canary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Arm a fired canary again, so its next use alerts; what it recorded stays"
       }
     },
     "/admin/v1/channels": {

@@ -12,6 +12,9 @@ import (
 // so it is a conflict.
 func (s *Service) DisableKey(ctx context.Context, req KeyRef) (Key, error) {
 	return s.moveKey(ctx, req, "key.disable", func(k *store.VirtualKey, now time.Time) (bool, error) {
+		if err := refuseCanary(*k); err != nil {
+			return false, err
+		}
 		switch k.Status {
 		case store.KeyRevoked:
 			return false, errorf(CodeConflict, "key %s is revoked, so it cannot be disabled", k.ID)
@@ -28,6 +31,9 @@ func (s *Service) DisableKey(ctx context.Context, req KeyRef) (Key, error) {
 // expired: enabling does not extend it.
 func (s *Service) EnableKey(ctx context.Context, req KeyRef) (Key, error) {
 	return s.moveKey(ctx, req, "key.enable", func(k *store.VirtualKey, _ time.Time) (bool, error) {
+		if err := refuseCanary(*k); err != nil {
+			return false, err
+		}
 		switch k.Status {
 		case store.KeyRevoked:
 			return false, errorf(CodeConflict, "key %s is revoked, and a revoked key cannot be enabled: create a new key", k.ID)

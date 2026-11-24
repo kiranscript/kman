@@ -30,6 +30,7 @@ const (
 type Key struct {
 	ID            string          `json:"id" doc:"The key id: the non-secret handle inside the key, and how this API addresses it."`
 	Name          string          `json:"name,omitempty" doc:"An optional label, unique among keys not revoked."`
+	Kind          string          `json:"kind" doc:"standard, or canary: a key with no credential that forwards nothing and raises an alert when used. A canary is not in the list of keys; GET /canaries lists them."`
 	UpstreamID    string          `json:"upstream_id,omitempty"`
 	Upstream      string          `json:"upstream,omitempty" doc:"The upstream's name. Absent once a revoked key's upstream is deleted."`
 	CredentialID  string          `json:"credential_id,omitempty"`
@@ -295,8 +296,9 @@ func keyCredential(tx *store.Tx, u store.Upstream, ref string) (store.Credential
 	return store.Credential{}, errorf(CodeInvalid, "upstream %s has %d credentials: name one of %s", u.Name, len(on), strings.Join(names, ", "))
 }
 
-// ListKeys returns every key, oldest first, or the key not revoked with
-// req.Name. The list has no key when no key has that name.
+// ListKeys returns every key but the canaries, oldest first, or the key not
+// revoked with req.Name, a canary included. The list has no key when no key has
+// that name.
 func (s *Service) ListKeys(ctx context.Context, req KeyQuery) (KeyList, error) {
 	out := KeyList{Keys: []Key{}}
 	now := s.now()
@@ -304,7 +306,7 @@ func (s *Service) ListKeys(ctx context.Context, req KeyQuery) (KeyList, error) {
 		var rows []store.VirtualKey
 		var err error
 		if req.Name != "" {
-			var k store.VirtualKey
+			var k store.VirtualKey // by name, a canary is found too, so a command can be given its name
 			switch k, err = tx.KeyByName(req.Name); {
 			case isNotFound(err):
 				return nil
@@ -320,6 +322,9 @@ func (s *Service) ListKeys(ctx context.Context, req KeyQuery) (KeyList, error) {
 			return err
 		}
 		for _, k := range rows {
+			if k.Kind == store.KeyCanary && req.Name == "" {
+				continue // a canary is not a key at risk: kman canary list shows them
+			}
 			dto, err := keyDTO(k, now, names)
 			if err != nil {
 				return err
@@ -391,6 +396,9 @@ func (s *Service) UpdateKey(ctx context.Context, req KeyUpdate) (Key, error) {
 		}
 		if before.Status == store.KeyRevoked {
 			return nil, errorf(CodeConflict, "key %s is revoked", req.ID)
+		}
+		if err := refuseCanary(before); err != nil {
+			return nil, err
 		}
 		row := before
 		set(&row.Name, req.Name)
@@ -495,8 +503,9 @@ func keyDTO(k store.VirtualKey, now time.Time, names keyNames) (Key, error) {
 		return Key{}, fmt.Errorf("admin: key %s: tags: %w", k.ID, err)
 	}
 	n := names[k.CredentialID]
-	return Key{ID: k.ID, Name: k.Name, UpstreamID: n.upstreamID, Upstream: n.upstream, CredentialID: k.CredentialID, Credential: n.credential,
-		Status: k.Status, Expired: !now.Before(k.ExpiresAt), Note: k.Note, Tags: tags,
+	// A key that has no expiry, which only a canary has, has not expired.
+	return Key{ID: k.ID, Name: k.Name, Kind: k.Kind, UpstreamID: n.upstreamID, Upstream: n.upstream, CredentialID: k.CredentialID, Credential: n.credential,
+		Status: k.Status, Expired: !k.ExpiresAt.IsZero() && !now.Before(k.ExpiresAt), Note: k.Note, Tags: tags,
 		Policy: json.RawMessage(k.PolicyJSON), PolicyVersion: k.PolicyVersion, ExpiresAt: k.ExpiresAt, CreatedAt: k.CreatedAt}, nil
 }
 
