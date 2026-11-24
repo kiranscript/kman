@@ -335,7 +335,7 @@ func TestTheIgnoreListIsNormalisedAndUpdatable(t *testing.T) {
 		t.Errorf("an ignore list of 101 = %v, want invalid", err)
 	}
 	// Everything is not an address to ignore: 0.0.0.0/0 would silence the canary.
-	for _, wide := range []string{"0.0.0.0/0", "::/0", "10.0.0.0/7", "2001::/15"} {
+	for _, wide := range []string{"0.0.0.0/0", "::/0", "10.0.0.0/7", "2001::/15", "10.0.0.0/15", "2001:db8::/31"} {
 		if _, err := in.svc.CreateCanary(as("owner"), admin.CreateCanaryRequest{Planted: "x", Ignore: []string{wide}}); code(err) != admin.CodeInvalid {
 			t.Errorf("ignore %s = %v, want invalid: it would silence the canary", wide, err)
 		}
