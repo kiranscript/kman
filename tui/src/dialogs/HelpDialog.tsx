@@ -9,11 +9,11 @@ const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
   {
     title: 'GLOBAL',
     rows: [
-      ['1-4  h l  ← →', 'jump to a panel; step to the next or last'],
+      ['1-4  h l  ← →', 'jump to a panel; step to the next or previous'],
       ['Tab  ⇧Tab', 'next panel, previous panel'],
       ['↑ ↓  j k  PgUp PgDn', 'move in the focused panel'],
       ['g  G  Home  End', 'first, last'],
-      ['Enter', 'on a list: scroll its detail; Esc returns'],
+      ['Enter', 'on Keys, Upstreams, Audit: focus the detail; Esc returns'],
       ['J  K', 'scroll the detail panel without leaving the list'],
       ['n  r', 'new key; refresh now'],
       ['q  Ctrl+C', 'quit (this help: Esc or ? closes)'],
@@ -61,7 +61,7 @@ export function HelpDialog({ onClose, focus }: { onClose: () => void; focus?: Ta
       <Box marginTop={1} flexDirection="column">
         <SectionTitle>MARKS</SectionTitle>
         <Text dimColor>● active   ◐ disabled   ✖ revoked or danger   ▲ warning</Text>
-        <Text dimColor>○ note   ◆ new entry   ◌ no link</Text>
+        <Text dimColor>○ note   ◆ new entry   ◌ not connected</Text>
       </Box>
     </Panel>
   );

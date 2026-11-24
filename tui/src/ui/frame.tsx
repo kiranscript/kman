@@ -83,7 +83,7 @@ export function Frame({ title, count, position, subtitle, focused, tone, heavy =
 
   return (
     <Box flexDirection="column" width={width} height={height} flexShrink={0}>
-      <Box width={width}>
+      <Box width={width} flexShrink={0}>
         <Text {...style}>{edge.tl + edge.h}</Text>
         <Text color={border} bold={focused || title !== undefined} dimColor={dim && !title}>
           {shownLabel}
@@ -95,6 +95,8 @@ export function Frame({ title, count, position, subtitle, focused, tone, heavy =
       <Box
         flexDirection="column"
         flexGrow={1}
+        flexShrink={1}
+        minHeight={0}
         width={width}
         borderStyle={focused && heavy ? 'bold' : 'round'}
         borderTop={false}
@@ -105,7 +107,7 @@ export function Frame({ title, count, position, subtitle, focused, tone, heavy =
       >
         {children}
       </Box>
-      <Box width={width}>
+      <Box width={width} flexShrink={0}>
         <Text {...style}>{edge.bl + edge.h.repeat(bottomFill)}</Text>
         <Text color={border} dimColor={dim}>
           {shownPos}

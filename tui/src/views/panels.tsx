@@ -68,6 +68,11 @@ const position = (selected: number, count: number) => (count > 0 ? `${selected +
 
 const segLen = (segs: Seg[]) => segs.reduce((n, x) => n + [...x.t].length, 0);
 
+/** The segments padded with spaces to `w` columns. */
+const pad = (segs: Seg[], w: number): Seg[] => [...segs, { t: ' '.repeat(Math.max(0, w - segLen(segs))) }];
+/** The segments right-aligned in `w` columns. */
+const padStartSegs = (segs: Seg[], w: number): Seg[] => [{ t: ' '.repeat(Math.max(0, w - segLen(segs))) }, ...segs];
+
 /** The parts that fit in `max` columns, in order of priority, one space between. */
 function fitParts(parts: Seg[][], max: number): Seg[] {
   const out: Seg[] = [];
@@ -93,14 +98,29 @@ export interface Item {
   /** Exactly one of these: what the row is. */
   key?: Key;
   upstream?: Upstream;
+  /** Nothing to act on yet: an install with no upstream is told so here. */
+  noUpstream?: boolean;
 }
 
 const severityOrder: Record<Severity, number> = { danger: 0, warn: 1, info: 2 };
 const weightOf = (i: Item) => topRisk(i.risks)?.weight ?? 0;
 
 /** Everything that needs a look as one list, worst first: a key and an upstream rank alike. */
-export function attentionItems(needs: Attention[], ups: UpstreamAttention[]): Item[] {
+export function attentionItems(needs: Attention[], ups: UpstreamAttention[], upstreamCount = 1): Item[] {
+  const setup: Item[] =
+    upstreamCount === 0
+      ? [
+          {
+            id: 'setup:upstream',
+            name: 'no upstream',
+            risks: [{ severity: 'danger', label: 'no upstream: add one with kman upstream add', short: 'kman upstream add', weight: 3000 }],
+            top: 'danger',
+            noUpstream: true,
+          },
+        ]
+      : [];
   const all: Item[] = [
+    ...setup,
     ...needs.map((n) => ({ id: n.key.id, name: keyLabel(n.key), risks: n.risks, top: n.top, key: n.key })),
     ...ups.map((u) => ({ id: `upstream:${u.upstream.id}`, name: u.upstream.name, risks: u.risks, top: u.top, upstream: u.upstream })),
   ];
@@ -137,9 +157,14 @@ export function StatusPanel({
   const disabled = keys.filter((k) => k.status === 'disabled').length;
   const revoked = keys.filter((k) => k.status === 'revoked').length;
   const spend = (which: 'today' | 'month') => keys.reduce((n, k) => n + (k.spend?.[which].cost_micro ?? 0), 0);
-  const urgent = items.filter((n) => n.top !== 'info').length;
   const title = '[1] Status';
-  const count = urgent > 0 ? `▲${urgent}` : undefined;
+  // How many need a look, by how much: "✖1 ▲3 ○1". The border counts the same rows.
+  const count =
+    (['danger', 'warn', 'info'] as const)
+      .map((sev) => ({ sev, n: items.filter((i) => i.top === sev).length }))
+      .filter((c) => c.n > 0)
+      .map((c) => `${severityGlyph[c.sev]}${c.n}`)
+      .join(' ') || undefined;
   const strip = height <= 1;
   const inner = innerWidth(width, height, title, count);
   const lead: Seg[] = strip ? [] : [{ t: ' ' }];
@@ -245,11 +270,7 @@ export function StatusPanel({
       count={count}
       subtitle={inBorder ? where : undefined}
       position={
-        focused && items.length > 0
-          ? `${sel + 1} of ${items.length} need attention`
-          : items.length > 0
-            ? `${items.length} ${items.length === 1 ? 'needs' : 'need'} attention`
-            : undefined
+        focused && items.length > 0 ? `${sel + 1} of ${items.length}` : items.length > 0 ? `${items.length} to review` : undefined
       }
       focused={focused}
       width={width}
@@ -330,6 +351,39 @@ export function KeysPanel({
   // The filter takes the last row, so a list that is empty still shows its message above it.
   const rows = height <= 1 ? 1 : Math.max(0, height - 2 - (showFilter ? 1 : 0));
   const { shown } = windowed(keys, sel, Math.max(1, rows));
+  /** What a key's row says on its right: the mark and word, the warning, today's spend. */
+  const parts = (k: Key) => {
+    const risks = keyRisks(k, now);
+    const risk = lapsed0(k) ? undefined : topRisk(risks);
+    const today = k.spend?.today;
+    const ratio = capRatio(today);
+    const gone = k.status !== 'active' || k.expired;
+    const lapsed = k.expired && k.status === 'active';
+    const st = statusStyle[k.status];
+    const status: Seg[] = [
+      { t: lapsed ? '✖' : st.glyph, color: lapsed ? color.danger : st.color, dim: st.dim },
+      { t: ` ${lapsed ? 'expired' : k.status}`, color: lapsed ? color.danger : undefined, dim: !lapsed },
+    ];
+    const warn: Seg[] = risk ? [{ t: `${severityGlyph[risk.severity]} ${risk.short}`, color: severityColor[risk.severity], dim: risk.severity === 'info' }] : [];
+    const spend: Seg[] =
+      !gone && today
+        ? [{ t: money(today.cost_micro), color: ratio === undefined ? undefined : ratioColor(ratio), dim: ratio === undefined || ratio < 0.8 }]
+        : [];
+    return { label: keyLabel(k), status, risk: warn, spend };
+  };
+  const rowsInfo = (rows > 0 ? shown : []).map(parts);
+  const cols = {
+    s: Math.max(0, ...rowsInfo.map((p) => segLen(p.status))),
+    r: Math.max(0, ...rowsInfo.map((p) => segLen(p.risk))),
+    c: Math.max(0, ...rowsInfo.map((p) => segLen(p.spend))),
+    mode: 'tight' as 'all' | 'noSpend' | 'tight',
+  };
+  {
+    const room = inner - 4 - Math.min(Math.max(0, ...rowsInfo.map((p) => [...p.label].length)), 20);
+    const base = cols.s + (cols.r ? 1 + cols.r : 0);
+    if (base + (cols.c ? 1 + cols.c : 0) <= room) cols.mode = 'all';
+    else if (base <= room) cols.mode = 'noSpend';
+  }
   return (
     <Shell
       title={title}
@@ -348,39 +402,24 @@ export function KeysPanel({
         </Text>
       ) : null}
       {(rows > 0 ? shown : []).map((k) => {
-        const risks = keyRisks(k, now);
-        const risk = lapsed0(k) ? undefined : topRisk(risks);
-        const top = risk?.severity;
-        const today = k.spend?.today;
-        const ratio = capRatio(today);
-        const gone = k.status !== 'active' || k.expired;
-        const lapsed = k.expired && k.status === 'active';
-        const s = statusStyle[k.status];
-        const label = keyLabel(k);
-        // The mark and its word come first and are never dropped for the spend.
-        const word = lapsed ? 'expired' : k.status;
-        const statusPart: Seg[] = [
-          { t: lapsed ? '✖' : s.glyph, color: lapsed ? color.danger : s.color, dim: s.dim },
-          { t: ` ${word}`, color: lapsed ? color.danger : undefined, dim: !lapsed },
-        ];
-        const riskPart: Seg[][] = risk && top ? [[{ t: `${severityGlyph[top]} ${risk.short}`, color: severityColor[top], dim: top === 'info' }]] : [];
-        const spendPart: Seg[][] =
-          !gone && today
-            ? [[{ t: money(today.cost_micro), color: ratio === undefined ? undefined : ratioColor(ratio), dim: ratio === undefined || ratio < 0.8 }]]
-            : [];
-        const nameLen = [...label].length;
-        // The mark, its word and the warning are never dropped for the spend: if all
-        // three cannot sit beside a reasonable part of the name, the spend goes and
-        // the name is cut shorter.
-        const roomy = fitParts([statusPart, ...riskPart, ...spendPart], Math.max(0, inner - 2 - Math.min(nameLen, 14) - 1));
-        const right =
-          riskPart.length === 0 || segLen(roomy) >= segLen(statusPart) + 1 + segLen(riskPart[0]!)
-            ? roomy
-            : fitParts([statusPart, ...riskPart], Math.max(0, inner - 2 - Math.min(nameLen, 6) - 1));
+        const p = parts(k);
+        const nameLen = [...p.label].length;
+        // Aligned columns when they fit beside a reasonable part of the names; if not the
+        // spend goes, then the alignment: the mark, its word and the warning are never dropped.
+        const right: Seg[] =
+          cols.mode === 'all'
+            ? [
+                ...pad(p.status, cols.s),
+                ...(cols.r ? [{ t: ' ' }, ...pad(p.risk, cols.r)] : []),
+                ...(cols.c ? [{ t: ' ' }, ...padStartSegs(p.spend, cols.c)] : []),
+              ]
+            : cols.mode === 'noSpend'
+              ? [...pad(p.status, cols.s), ...(cols.r ? [{ t: ' ' }, ...pad(p.risk, cols.r)] : [])]
+              : fitParts([p.status, ...(p.risk.length ? [p.risk] : [])], Math.max(0, inner - 2 - Math.min(nameLen, 6) - 1));
         return (
           <Row
             key={k.id}
-            left={[...lead, { t: fitMiddle(label, Math.max(6, inner - 2 - segLen(right) - 2)), dim: k.status === 'revoked' }]}
+            left={[...lead, { t: fitMiddle(p.label, Math.max(6, inner - 2 - segLen(right) - 2)), dim: k.status === 'revoked' }]}
             right={[...right, { t: ' ' }]}
             width={inner}
             selected={k.id === selectedId}
@@ -428,7 +467,7 @@ export function UpstreamsPanel({
     >
       {upstreams.length === 0 ? (
         <Text dimColor wrap="truncate-end">
-          {' '}
+          {lead.length ? ' ' : ''}
           None yet: kman upstream add
         </Text>
       ) : null}
@@ -491,8 +530,7 @@ export function AuditPanel({
     >
       {audit.length === 0 ? (
         <Text dimColor wrap="truncate-end">
-          {' '}
-          The audit log is empty: nothing yet.
+          {lead}The audit log is empty: nothing yet.
         </Text>
       ) : null}
       {shown.map((e) => (

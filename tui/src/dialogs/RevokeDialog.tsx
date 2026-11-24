@@ -42,7 +42,7 @@ export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, o
 
   return (
     <Panel title={`Revoke ${expected}?`} width={panelWidth} tone={color.danger}>
-      <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="column">
         <Text>This ends the key for good. Apps using it are refused from their next request, and a revoked key cannot be enabled again.</Text>
         <Text dimColor>To stop it for now, disable it instead.</Text>
       </Box>

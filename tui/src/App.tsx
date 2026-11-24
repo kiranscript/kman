@@ -96,7 +96,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   const selectedKey = visible.find((k) => k.id === selectedId);
   const needs = useMemo(() => attention(data.keys, now), [data.keys, now]);
   const upNeeds = useMemo(() => upstreamAttention(data.upstreams), [data.upstreams]);
-  const items = useMemo(() => attentionItems(needs, upNeeds), [needs, upNeeds]);
+  const items = useMemo(() => attentionItems(needs, upNeeds, data.upstreams.length), [needs, upNeeds, data.upstreams.length]);
   const attnItem = items[Math.min(attentionSel, Math.max(0, items.length - 1))];
   const watching = `${tab}:${tab === 'keys' ? selectedId : tab === 'status' ? attnItem?.id : tab === 'upstreams' ? upstreamSel : auditSel}`;
   useEffect(() => setScrollTop(0), [watching]);
@@ -310,8 +310,11 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
       if (input === 'J') return setScrollTop((t) => Math.min(scrollMax, t + 3));
       if (input === 'K') return setScrollTop((t) => Math.max(0, t - 3));
 
+      // The detail panel has no actions of its own: what the list does waits for Esc.
+      if (detail) return;
       if (input === 'n') return offline() || busyNow() ? undefined : setMode({ kind: 'create' });
       if (tab === 'status' && key.return) {
+        if (attnItem?.noUpstream) return goTab('upstreams');
         if (attnItem?.upstream) {
           const id = attnItem.upstream.id;
           setUpstreamSel(Math.max(0, data.upstreams.findIndex((u) => u.id === id)));
@@ -322,7 +325,8 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
         setKeySel(attnItem.key.id);
         return goTab('keys');
       }
-      if (key.return && tab !== 'status' && selectable) return setDetail(true);
+      // Enter only hands the keyboard over when there is something to scroll to.
+      if (key.return && tab !== 'status' && selectable && scrollMax > 0) return setDetail(true);
       if (tab === 'keys') {
         if (input === '/') return setMode({ kind: 'filter' });
         if (key.escape && filter) {
@@ -351,15 +355,14 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   }
 
   const width = columns;
-  const want =
-    tab === 'status'
-      ? 6 + items.length
-      : tab === 'keys'
-        ? Math.max(1, visible.length) + (filter !== '' || mode.kind === 'filter' ? 1 : 0)
-        : tab === 'upstreams'
-          ? data.upstreams.length
-          : data.audit.length;
-  const lay = layout(columns, bodyRows, tab, want);
+  // What each list could fill; Status is its summary, and under it the list when focused.
+  const wants = {
+    status: tab === 'status' ? 6 + items.length : 5,
+    keys: Math.max(1, visible.length) + (tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? 1 : 0),
+    upstreams: Math.max(1, data.upstreams.length),
+    audit: Math.max(1, data.audit.length),
+  };
+  const lay = layout(columns, bodyRows, tab, wants);
 
   let body;
   if (link.state === 'denied') {
@@ -525,6 +528,8 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
       tab === 'status' ? (
         attn ? (
           <KeyMain key={attn.id} keyData={attn} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} />
+        ) : attnItem?.noUpstream ? (
+          <UpstreamMain upstream={undefined} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} none={NO_UPSTREAM} />
         ) : attnUp ? (
           <UpstreamMain key={attnUp.id} upstream={attnUp} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} />
         ) : (
@@ -547,7 +552,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
           width={lay.mainW}
           height={lay.mainH}
           scroll={scroll}
-          none="No upstreams yet. An upstream is an API kman sits in front of. Add one with: kman upstream add openai --preset openai"
+          none={NO_UPSTREAM}
         />
       ) : (
         <AuditMain
@@ -597,6 +602,8 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   );
 }
 
+const NO_UPSTREAM = 'No upstreams yet. An upstream is an API kman sits in front of. Add one with: kman upstream add openai --preset openai';
+
 function Centered({ width, height, children }: { width: number; height: number; children: React.ReactNode }) {
   return (
     <Box width={width} height={height} alignItems="center" justifyContent="center">
@@ -641,7 +648,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canC
   }
   if (mode === 'create') {
     return [
-      { k: 'Tab', label: 'next field' },
+      { k: 'Tab/Enter', label: 'next field' },
       { k: 'Ctrl+S', label: 'create', always: true },
       { k: 'Esc', label: 'cancel', always: true },
     ];
@@ -654,6 +661,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canC
     return [
       { k: '↑↓', label: 'scroll', always: true },
       { k: 'PgUp/PgDn', label: 'page', rank: 1 },
+      { k: 'g/G', label: 'top/bottom', rank: 0 },
       { k: 'Esc', label: 'back to list', always: true },
       { k: '1-4', label: 'panels', rank: 0 },
       { k: '?', label: 'help', always: true },
@@ -668,7 +676,8 @@ function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canC
     { k: 'q', label: 'quit', always: true },
   ];
   const create = canChange && canCreate ? [{ k: 'n', label: 'new key', rank: 4 }] : [];
-  const open = selectable ? [{ k: 'Enter', label: 'details', rank: 2 }] : [];
+  // Only offered when the detail has more than it shows: otherwise there is nothing to go to.
+  const open = selectable && scrollable ? [{ k: 'Enter', label: 'details', rank: 3.6 }] : [];
   const select = selectable ? [{ k: '↑↓', label: 'select', rank: 1 }] : [];
   if (tab === 'keys') {
     const act =

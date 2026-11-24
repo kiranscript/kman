@@ -44,6 +44,16 @@ describe('layout', () => {
     expect(layout(200, 40, 'keys').leftW).toBe(56);
   });
 
+  it('gives each wide panel only what it can use, and what nothing wants to the focused one', () => {
+    const l = layout(140, 40, 'upstreams', { status: 5, keys: 3, upstreams: 1, audit: 1 });
+    expect([l.heights.status, l.heights.keys, l.heights.audit]).toEqual([7, 5, 3]);
+    expect(l.heights.upstreams).toBe(40 - 7 - 5 - 3);
+    // A focused list with more than the screen holds keeps the rest, the others staying at one line.
+    const busy = layout(140, 40, 'keys', { status: 5, keys: 100, upstreams: 1, audit: 100 });
+    expect([busy.heights.status, busy.heights.upstreams, busy.heights.audit]).toEqual([3, 3, 3]);
+    expect(busy.heights.keys).toBe(40 - 9);
+  });
+
   it('puts the main panel beside the panels when wide and under them when narrow', () => {
     expect(layout(120, 32, 'keys').mainH).toBe(32);
     const narrow = layout(80, 22, 'keys');

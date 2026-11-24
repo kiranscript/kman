@@ -137,7 +137,7 @@ export function CreateKeyDialog({ upstreams, defaultDays, busy, error, errorLine
   if (upstreams.length === 0) {
     return (
       <Panel title="New virtual key" width={64}>
-        <Box marginTop={1} flexDirection="column">
+        <Box flexDirection="column">
           <Text>A key belongs to an upstream, and there is none yet.</Text>
           <Text dimColor>Add one first: kman upstream add openai --preset openai</Text>
           <Box marginTop={1}>
@@ -185,7 +185,7 @@ export function CreateKeyDialog({ upstreams, defaultDays, busy, error, errorLine
 
   return (
     <Panel title="New virtual key" width={72}>
-      <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="column">
         {row('name', 'Name', 'optional; unnamed keys go by id', 'unnamed')}
         {picker('upstream', 'Upstream', up?.name ?? '', upstreams.length > 1 ? `${upstream + 1} of ${upstreams.length}, ← → to change` : 'your only upstream')}
         {choosesCredential &&

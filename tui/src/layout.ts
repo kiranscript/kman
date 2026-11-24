@@ -29,25 +29,38 @@ export interface Layout {
 const PANELS: Tab[] = ['status', 'keys', 'upstreams', 'audit'];
 
 /**
- * `want` is how many lines the focused panel could use: when it has few, the rest
- * goes to the main panel instead of being left empty.
+ * `want` is how many lines each panel could use (a number is the focused panel's): a
+ * panel gets no more than that, plus its border, so a short list does not leave blank
+ * rows and the rest goes to the panels that can use it, as in lazygit, where every
+ * panel keeps a share of the column.
  */
-export function layout(columns: number, rows: number, focus: Tab, want = Infinity): Layout {
+export function layout(columns: number, rows: number, focus: Tab, want: number | Partial<Record<Tab, number>> = Infinity): Layout {
   const wide = columns >= WIDE;
   // About two fifths of the screen, so names and targets keep room beside the detail.
   const leftW = wide ? Math.min(56, Math.max(42, Math.floor(columns * 0.4))) : columns;
   const strips = !wide && rows < STRIP_ROWS;
   const small = strips ? 1 : COLLAPSED;
   const heights: Record<Tab, number> = { status: small, keys: small, upstreams: small, audit: small };
+  const wants: Partial<Record<Tab, number>> = typeof want === 'number' ? { [focus]: want } : want;
+  const need = (t: Tab) => Math.max(COLLAPSED, (wants[t] ?? Infinity) + 2);
 
   if (wide) {
-    const others = PANELS.reduce((n, t) => n + (t === focus ? 0 : heights[t]), 0);
-    heights[focus] = rows - others;
+    // Extra rows go to the focused panel first, then Keys, then the rest, each up to what it can use.
+    let spare = rows - COLLAPSED * PANELS.length;
+    const order = [focus, ...(['keys', 'status', 'upstreams', 'audit'] as Tab[]).filter((t) => t !== focus)];
+    for (const t of order) {
+      const give = Math.max(0, Math.min(spare, need(t) - COLLAPSED));
+      heights[t] += give;
+      spare -= give;
+    }
+    // Whatever nothing wants goes to the focused panel, so the column is always full.
+    heights[focus] += spare;
     return { wide, strips, leftW, mainW: columns - leftW, mainH: rows, heights };
   }
 
   const rest = rows - small * 3;
-  const own = Math.max(COLLAPSED, Math.min(Number.isFinite(want) ? want + 2 : rest, Math.max(5, Math.floor(rest / 2)), rest - MAIN_MIN));
+  const w = wants[focus] ?? Infinity;
+  const own = Math.max(COLLAPSED, Math.min(Number.isFinite(w) ? w + 2 : rest, Math.max(5, Math.floor(rest / 2)), rest - MAIN_MIN));
   heights[focus] = own;
   return { wide, strips, leftW, mainW: columns, mainH: rest - own, heights };
 }

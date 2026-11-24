@@ -103,10 +103,18 @@ function ScrollFrame({
   });
   const max = Math.max(0, content - view);
   const off = Math.min(scroll.offset, max);
-  // With the keyboard on the panel the arrow keys scroll; otherwise J and K do.
-  const down = scroll.focused ? '↓ more' : '↓ J more';
-  const up = scroll.focused ? '↑ back' : '↑ K back';
-  const hint = max === 0 ? undefined : off === 0 ? down : off >= max ? up : scroll.focused ? '↑↓ more' : '↑↓ J K more';
+  // With the keyboard on the panel the border says where it is, as the lists do ("4-12 of 30");
+  // otherwise it says which keys scroll it.
+  const hint =
+    max === 0
+      ? undefined
+      : scroll.focused
+        ? `${off + 1}-${Math.min(content, off + view)} of ${content}`
+        : off === 0
+          ? '↓ J more'
+          : off >= max
+            ? '↑ K back'
+            : '↑↓ J K more';
   return (
     <Frame title={title} position={hint} focused={scroll.focused} width={width} height={height}>
       <Box ref={ref} flexDirection="column" flexShrink={0} marginTop={-off}>
@@ -304,7 +312,16 @@ export function UpstreamMain({
         </Field>
         <Field label="sdk env">{u.sdk_env ?? '—'}</Field>
         <Field label="keys">{own.length === 0 ? 'none' : `${own.length} (${live} active)`}</Field>
-        <Field label="routes">{u.path_allowlist.length ? u.path_allowlist.join('   ') : 'none'}</Field>
+        {/* One route a line: a method and its path are never split across two. */}
+        {u.path_allowlist.length ? (
+          u.path_allowlist.map((r, i) => (
+            <Field key={r} label={i === 0 ? 'routes' : ''}>
+              {r}
+            </Field>
+          ))
+        ) : (
+          <Field label="routes">none</Field>
+        )}
       </Body>
     </ScrollFrame>
   );
