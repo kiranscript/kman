@@ -27,7 +27,7 @@ const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
       ['/   Esc', 'filter by name, id, tag or upstream; clear it'],
       ['Enter', 'focus the detail, when it has more than it shows'],
       ['d  e', 'disable, enable the key (y confirms, n cancels)'],
-      ['c', 'the addresses a key was used from'],
+      ['c', 'the IP addresses a key was used from'],
       ['x', 'revoke the key (type its name to confirm)'],
     ],
   },

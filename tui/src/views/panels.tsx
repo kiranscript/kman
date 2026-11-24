@@ -189,7 +189,7 @@ export function StatusPanel({
     link.state === 'ok'
       ? `updated ${since(link.at, Date.now())}`
       : link.state === 'down' && link.lastOk
-        ? `last data ${since(link.lastOk, Date.now())}`
+        ? `data ${since(link.lastOk, Date.now())}`
         : link.state === 'denied'
           ? link.error
           : '';
@@ -252,7 +252,6 @@ export function StatusPanel({
     link.state === 'ok'
       ? [{ t: linkText, dim: true }, ...(priceJoins ? [{ t: ' ' }, dot, { t: ' ' }, ...priceSeg(true)] : [])]
       : [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }, ...(priceJoins ? [{ t: ' ' }, dot, { t: ' ' }, ...priceSeg(true)] : [])],
-    ...(inBorder ? [] : [whereLine]),
     countsLine,
     ...(noKeys
       ? []
@@ -262,6 +261,8 @@ export function StatusPanel({
             { t: ` · ${money(spend('month'))} this month`, dim: true },
           ],
         ]),
+    // Who and where come after the numbers: the border carries the address when it fits.
+    ...(inBorder ? [] : [whereLine]),
     ...(priceJoins ? [] : [priceSeg(false)]),
   ];
   const activePart: Seg[] = noKeys
@@ -291,7 +292,7 @@ export function StatusPanel({
   const tierFor = (n: number): Seg[][] => {
     if (n <= 1) return [compactLine];
     if (n === 2) return [head(true), money2(head(true))];
-    return [head(false), ...(inBorder ? [] : [whereLine]), countsLine, money2(head(false))];
+    return [head(false), countsLine, money2(head(false)), ...(inBorder ? [] : [whereLine])];
   };
 
   const rows = Math.max(1, height - 2);

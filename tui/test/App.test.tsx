@@ -1656,7 +1656,7 @@ describe('App', () => {
       await m.press('2');
       expect(lines(m).at(-1)).toContain('c IPs');
       await m.press('?');
-      expect(m.screen()).toContain('the addresses a key was used from');
+      expect(m.screen()).toContain('the IP addresses a key was used from');
       await m.press(ESC);
       client.fail = new ApiError('unreachable', 'cannot reach http://127.0.0.1:8081: connection refused');
       await m.press('r');
@@ -2787,6 +2787,41 @@ describe('review round 10', () => {
     expect(lines(m).find((l) => l.includes('✖ ollama'))).toContain('+1 issue');
     await m.press('2');
     expect(m.screen()).toMatch(/· \+1 more/);
+    m.unmount();
+  });
+});
+
+describe('review round 12', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+
+  it('does not tell anyone to start kman when a first load is answered with an error', async () => {
+    const client = fakeClient();
+    client.fail = new ApiError('internal', 'SQLITE_BUSY', 500);
+    const m = mount(client, { columns: 100, rows: 30 });
+    await until(() => m.screen().includes('server error'), 'the server error flag');
+    expect(m.screen()).toContain('kman answered with an error');
+    expect(m.screen()).not.toContain('kman serve');
+    expect(m.screen()).not.toContain('Cannot reach kman');
+    m.unmount();
+  });
+
+  it('keeps the spend ahead of the owner line when the title carries two badges', async () => {
+    const client = fakeClient();
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(m.screen()).toContain('$1.12 today');
+    m.unmount();
+  });
+
+  it('sizes a focused Status on an empty install to its one line', async () => {
+    const client = fakeClient();
+    client.keys = [];
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    const at = lines(m).findIndex((l) => l.includes('Nothing to review.'));
+    expect(at).toBeGreaterThan(0);
+    expect(lines(m)[at + 1]).toMatch(/^╰|^┗/);
     m.unmount();
   });
 });

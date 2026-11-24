@@ -363,10 +363,11 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   }
 
   const width = columns;
+  // The summary is a line when there are no keys to count, else three.
+  const summaryLines = data.keys.length === 0 ? 1 : 3;
   // What each list could fill; Status is its summary, and under it the list when focused.
   const wants = {
-    // The summary (three lines), the heading and the list; unfocused, the summary and its last line.
-    status: tab === 'status' ? 4 + items.length : 4,
+    status: summaryLines + (tab === 'status' ? (items.length > 0 ? 1 : 0) + Math.max(1, items.length) : 1),
     // While filtering the panel keeps the height of the whole list, so it does not shrink under the cursor.
     keys:
       Math.max(1, tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? data.keys.length : visible.length) +
@@ -453,10 +454,11 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
     body = (
       <Centered width={width} height={bodyRows}>
         {link.state === 'down' ? (
-          <Panel title="Cannot reach kman" width={66} tone={color.warn}>
+          <Panel title={link.answered ? 'kman answered with an error' : 'Cannot reach kman'} width={66} tone={link.answered ? color.danger : color.warn}>
             <Box flexDirection="column">
               <Text>{link.error}</Text>
-              <Text dimColor>Is it running? Start it with: kman serve</Text>
+              {/* An answer means it is running: do not tell anyone to start it. */}
+              <Text dimColor>{link.answered ? 'kman is running but could not serve this request.' : 'Is it running? Start it with: kman serve'}</Text>
               <Text dimColor>Retrying every few seconds.</Text>
             </Box>
           </Panel>
