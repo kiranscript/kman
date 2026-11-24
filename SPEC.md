@@ -131,10 +131,12 @@ then optionally `kman dashboard` and `kman canary create`. Plain `kman` prints a
 - **Credential compromise** replaces a credential and rotates every virtual key on it in one step, then lists the apps that need new keys.
 - Disabling, revoking, or rotating with grace 0 takes effect on the next request and closes the key's realtime sessions within 1 s.
 
-**Canary keys** (M2):
-- Never forward anything. Any use opens a critical incident and alerts through the priority lane.
-- Plant formats: `.env`, MCP server config, shell-profile `export`, CI-secrets snippet. Each canary records where it was planted, tags, and a per-canary ignore list of addresses. Known sources never silence a canary.
-- After firing, `kman canary reset` re-arms it.
+**Canary keys** (M2; built as [ADR 0013](docs/adr/0013-a-canary-is-a-key-with-no-credential-and-a-row-of-its-own.md) has it):
+- A canary is a virtual key of kind `canary` with no credential, so it never forwards anything and answers `invalid_key` like any bad key, and a `canaries` row holding where it was planted, its ignore list, and whether it has fired. It never expires: an expired key answers `key_expired` and a canary must go on telling it was used. Any use raises a critical alert through the priority lane (and, once incidents land, opens an incident).
+- Plant formats, from `kman canary create --format`: `env` (a `.env` line, `OPENAI_API_KEY=kmn_…`), `mcp` (an `mcpServers` block with an `env` object), `shell` (an `export` line) and `ci` (a `gh secret set` command). The snippet holds the key, and with `--base-url` kman's URL, and nothing that says what it is. It is shown once, with the secret.
+- Each canary records where it was planted (required), tags, and a per-canary **ignore list** of addresses and CIDR networks (at most 100, none wider than an IPv4 /8 or an IPv6 /16) whose use is still an event but does not fire the canary or alert. Known sources never silence a canary, and neither does anything else.
+- A canary is **armed** until it is used, then **fired**. The first use after it was armed always alerts; more uses while it is fired are counted and alert at most once per throttle window, saying how many they held back. `kman canary reset` re-arms it and keeps its history.
+- A canary alert names the canary, where it was planted, and the address, country, ASN and its organisation, and client of the request. A canary is not a key at risk: `kman exposure` does not count it and `kman key list` does not list it.
 
 ## 5. Upstreams, presets, credentials, and secrets
 
@@ -228,7 +230,7 @@ The default LLM allowlists exclude batch, files, fine-tune, and multipart audio 
   - Channels: Slack and signed webhook in M1; Discord and ntfy in M2. A webhook can bridge to anything else.
   - Each channel has `min_severity` (default medium) and a toggle for spend and lifecycle warnings (default on).
   - Contents: key name and id, severity, rules, evidence, the incident id, and copy-paste CLI commands. Never a secret or request content. No action links; a deep link to the incident page only if `dashboard.url` is set.
-- M1 producers: the audit log, soft budgets, and credential and expiry warnings. The code goes beyond that list with the **priority lane's** alerts: the use of a disabled key (high) and of a canary key (critical). They name the key and where the request came from, and never the request's path or anything else it said.
+- M1 producers: the audit log, soft budgets, and credential and expiry warnings. The code goes beyond that list with the **priority lane's** alerts: the use of a disabled key (high) and of a canary key (critical). They name the key and where the request came from (address, country, ASN and its organisation, and client), and never the request's path or anything else it said. A canary's alert also says where it was planted, and its use is recorded on its row in the transaction that queues the alert ([ADR 0013](docs/adr/0013-a-canary-is-a-key-with-no-credential-and-a-row-of-its-own.md)).
 - Prometheus metrics are served on the admin listener at `/metrics`, behind the admin token. An opt-in `metrics_listen` serves them without auth for scrapers.
 
 ## 10. Detection and incidents
@@ -281,7 +283,7 @@ From [realtime](https://github.com/kirank55/kman/issues/13), [ADR 0005](docs/adr
   - Install: `init`, `keygen`, `rekey`, `serve`, `login`, `logout`, `dashboard`, `demo`, `version [--check]`, `geoip update`, `backup`, `restore`, `prune`, `settings get|set`, plain `kman` (status summary).
   - Admin tokens: `admin-token create|list|rotate|revoke`. Rotating or revoking a token ends its dashboard sessions.
   - Upstreams and credentials: `upstream add|list|show|update|rm|sync`, `credential add|update|rm|compromise`.
-  - Keys: `key create|list|show|places|clients|update|disable|enable|revoke|rotate [--grace]`, `canary create|list|reset`. `key clients` (`GET /admin/v1/keys/{id}/clients`) groups a key's events by client address and works only with `expose_client_addresses` on. `key places` (`GET /admin/v1/keys/{id}/places`) lists the countries, ASNs, networks and clients a key was used from; its networks (a client's /24 or /64) are left out unless `expose_client_addresses` is on, and its clients, which name a program and not a person, never are.
+  - Keys: `key create|list|show|places|clients|update|disable|enable|revoke|rotate [--grace]`, `canary create|list|show|update|reset`. `canary create [<name>] --planted <where> [--format env|mcp|shell|ci] [--var <NAME>] [--base-url <url>] [--tag <tag>]... [--ignore <address>]...` prints the snippet to plant once. `canary list` shows each canary, where it was planted, whether it has fired and when it last did, and where the last use came from; the admin API (`/admin/v1/canaries`) withholds that address unless `expose_client_addresses` is on, and still says that it fired and when. `key clients` (`GET /admin/v1/keys/{id}/clients`) groups a key's events by client address and works only with `expose_client_addresses` on. `key places` (`GET /admin/v1/keys/{id}/places`) lists the countries, ASNs, networks and clients a key was used from; its networks (a client's /24 or /64) are left out unless `expose_client_addresses` is on, and its clients, which name a program and not a person, never are.
   - Events: `events [--key] [--refused] [--code] [--since] [--limit] [--follow]`, which shows each event's client beside its address. `GET /admin/v1/events` lists stored events, newest first, filtered by key, kind (`forwarded` or `refused`), refusal code and time, and paged by `before`; `GET /admin/v1/events/stream` is a server-sent events stream of new ones with the same filters. Both leave out an event's client address unless `expose_client_addresses` is on, and say so (`client_addresses_withheld`, `client_address_withheld`).
   - Spend: `price set|rm|list|import`.
   - Detection (M2): `incidents`, `incident …`, `known-source …`, `detections --follow`, `detection test`.
@@ -317,6 +319,7 @@ The full table-by-table schema is in [the schema ticket](https://github.com/kira
 - **Never persisted:** reservations, limiter windows, child keys, live sessions, login links, plaintext secrets. **Rebuilt at startup:** the registry snapshot, detection's rolling windows (from the last 24 h of events), and month-to-date spend.
 - **Retention defaults:** events 30 days, hourly usage 400 days, daily spend, key places (`baseline_places`), incidents, and the audit log forever, the alert outbox 30 days after delivery. `retention: keep_everything` disables pruning. `kman prune --before <date>` is always available and audited, including a guarded prune of the audit log.
 - **Known gap:** the `budget_alerts` table (the periods a budget warning has already been sent for) has no retention and grows by a few rows per key per period.
+- **Unreleased migrations:** while a migration is not in a tagged release, tickets extend it in place, and `Open` refuses a database that ran an earlier build of it with "rebuild the data directory (unreleased migration changed)". `0002` so far adds `baseline_places`, `events.client` and `canaries`.
 - **Fixtures:** each release tag commits `internal/store/fixtures/<tag>.db` from a deterministic generator. A migration test upgrades every past fixture.
 
 ## 15. Release and supply chain
@@ -400,13 +403,13 @@ Notice a leak before the bill does.
 
 1. **Baselines and rules:** migration `0002`, `detect` with baselines, the learning period, the 9 rules, configurable thresholds and per-key overrides, the replay fixtures and golden files.
 2. **Incidents:** incidents and detections, quiet and expiry, the response actions, `--incident` on containment commands, baseline hold-out, the incident CLI.
-2. **Known sources and canaries:** `known-source` commands; canary keys with the four plant formats, the ignore list, and reset.
+2. **Known sources and canaries:** `known-source` commands; canary keys with the four plant formats, the ignore list, and reset (canary keys landed, [#87](https://github.com/kirank55/kman/issues/87); `known-source` has not).
 3. **Auto-disable:** the trigger, `system:detect` through `admin`, dry-run results on the incident, the 1 h pause.
 3. **Alert channels and streams:** Discord and ntfy, per-channel `min_severity`, incident throttling, `detections --follow` and `audit --follow`, `detection test --key`.
 
 **Done when:**
 - Every replay scenario matches its golden file, and `kman detection test` replays the same embedded scenarios.
-- The canary deadline gate passes: canary and disabled-key alerts arrive within 5 s under 256-way load with another channel hung.
+- The canary deadline gate passes: canary and disabled-key alerts arrive within 5 s under 256-way load with another channel hung (`TestCanaryDeadlineGate` in `e2e`, on the real binary and the real clock, a job of its own in CI; the logic is also tested on a fake clock in `internal/alerts`).
 - Regression tests F5 (dry-run never resets) and F9 (auto-disable bypassing admin) are green.
 - An e2e incident flow by CLI alone: a new-country detection opens an incident, escalates, is acknowledged, and is resolved by rotation, with the timeline and audit entries correct.
 
