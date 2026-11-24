@@ -8,7 +8,7 @@ import { RevokeDialog } from './dialogs/RevokeDialog.js';
 import { SecretDialog } from './dialogs/SecretDialog.js';
 import { fit } from './format.js';
 import { keyLabel, visibleKeys } from './keys.js';
-import { attention } from './risk.js';
+import { attention, upstreamAttention } from './risk.js';
 import { layout } from './layout.js';
 import { Footer, noticeRows, TABS } from './ui/chrome.js';
 import type { HintItem, Notice, Tab } from './ui/chrome.js';
@@ -18,7 +18,7 @@ import { color } from './ui/theme.js';
 import { AUDIT_LIMIT, useAdmin } from './useAdmin.js';
 import { AuditMain, KeyMain, StatusMain, UpstreamMain } from './views/detail.js';
 import type { Scroll } from './views/detail.js';
-import { AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
+import { attentionItems, AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
 
 export interface AppProps {
   client: AdminClient;
@@ -77,6 +77,10 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   // again whenever something else is selected.
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollMax, setScrollMax] = useState(0);
+  // Enter on a list hands the keyboard to the detail panel, as lazygit does for its main
+  // view: the arrow keys scroll it, and Esc gives the keyboard back to the list.
+  const [detail, setDetail] = useState(false);
+  const [viewRows, setViewRows] = useState(8);
 
   // A success fades. A failure stays until the next key press: someone who looks away
   // must not come back believing a key was disabled when it was not.
@@ -91,13 +95,20 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   const selectedId = visible.some((k) => k.id === keySel) ? keySel : visible[0]?.id;
   const selectedKey = visible.find((k) => k.id === selectedId);
   const needs = useMemo(() => attention(data.keys, now), [data.keys, now]);
-  const attnSelKey = needs[Math.min(attentionSel, Math.max(0, needs.length - 1))]?.key.id;
-  const watching = `${tab}:${tab === 'keys' ? selectedId : tab === 'status' ? attnSelKey : tab === 'upstreams' ? upstreamSel : auditSel}`;
+  const upNeeds = useMemo(() => upstreamAttention(data.upstreams), [data.upstreams]);
+  const items = useMemo(() => attentionItems(needs, upNeeds), [needs, upNeeds]);
+  const attnItem = items[Math.min(attentionSel, Math.max(0, items.length - 1))];
+  const watching = `${tab}:${tab === 'keys' ? selectedId : tab === 'status' ? attnItem?.id : tab === 'upstreams' ? upstreamSel : auditSel}`;
   useEffect(() => setScrollTop(0), [watching]);
   const scroll: Scroll = {
     offset: scrollTop,
     onMax: (m) => setScrollMax((c) => (c === m ? c : m)),
+    focused: detail,
+    onView: (r) => setViewRows((c) => (c === r ? c : r)),
   };
+  /** Whether the focused list has rows to move over. */
+  const selectable =
+    tab === 'status' ? items.length > 0 : tab === 'keys' ? visible.length > 0 : tab === 'upstreams' ? data.upstreams.length > 0 : data.audit.length > 0;
   // A long failure takes more rows, which the body gives up.
   const shownNotice = link.state === 'denied' ? undefined : notice;
   const bodyRows = rows - 1 - noticeRows(shownNotice, columns);
@@ -127,7 +138,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
       const cur = Math.max(0, visible.findIndex((k) => k.id === selectedId));
       setKeySel(visible[step(cur, visible.length)]?.id);
     } else if (tab === 'status') {
-      setAttentionSel((c) => step(c, needs.length));
+      setAttentionSel((c) => step(c, items.length));
     } else if (tab === 'upstreams') {
       setUpstreamSel((c) => step(c, data.upstreams.length));
     } else if (tab === 'audit') {
@@ -137,6 +148,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
 
   function goTab(t: Tab) {
     setTab(t);
+    setDetail(false);
   }
 
   /** Runs one admin API call; resolves to the error message, or undefined on success. */
@@ -261,6 +273,18 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
 
       if (input === 'q') return exit();
       if (input === '?') return setMode({ kind: 'help' });
+      // With the detail panel focused the movement keys scroll it, a line or a page at a
+      // time; panels, help, refresh and quit keep working.
+      if (detail) {
+        const by = (n: number) => setScrollTop((t) => Math.max(0, Math.min(scrollMax, t + n)));
+        if (key.escape || key.return) return setDetail(false);
+        if (key.upArrow || input === 'k') return by(-1);
+        if (key.downArrow || input === 'j') return by(1);
+        if (key.pageUp) return by(-Math.max(1, viewRows - 1));
+        if (key.pageDown) return by(Math.max(1, viewRows - 1));
+        if (key.home || input === 'g') return setScrollTop(0);
+        if (key.end || input === 'G') return setScrollTop(scrollMax);
+      }
       if (input === 'r') {
         setNotice({ tone: 'info', text: 'Refreshing…' });
         void refresh().then((why) =>
@@ -288,12 +312,17 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
 
       if (input === 'n') return offline() || busyNow() ? undefined : setMode({ kind: 'create' });
       if (tab === 'status' && key.return) {
-        const target = needs[Math.min(attentionSel, needs.length - 1)];
-        if (!target) return;
+        if (attnItem?.upstream) {
+          const id = attnItem.upstream.id;
+          setUpstreamSel(Math.max(0, data.upstreams.findIndex((u) => u.id === id)));
+          return goTab('upstreams');
+        }
+        if (!attnItem?.key) return;
         setFilter('');
-        setKeySel(target.key.id);
+        setKeySel(attnItem.key.id);
         return goTab('keys');
       }
+      if (key.return && tab !== 'status' && selectable) return setDetail(true);
       if (tab === 'keys') {
         if (input === '/') return setMode({ kind: 'filter' });
         if (key.escape && filter) {
@@ -322,11 +351,9 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   }
 
   const width = columns;
-  const selectable =
-    tab === 'status' ? needs.length > 0 : tab === 'keys' ? visible.length > 0 : tab === 'upstreams' ? data.upstreams.length > 0 : data.audit.length > 0;
   const want =
     tab === 'status'
-      ? 7 + needs.length
+      ? 6 + items.length
       : tab === 'keys'
         ? Math.max(1, visible.length) + (filter !== '' || mode.kind === 'filter' ? 1 : 0)
         : tab === 'upstreams'
@@ -450,12 +477,12 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
         <StatusPanel
           width={lay.leftW}
           height={h.status}
-          focused={tab === 'status'}
+          focused={tab === 'status' && !detail}
           link={link}
           url={url}
           actor={data.actor}
           keys={data.keys}
-          needs={needs}
+          items={items}
           selected={attentionSel}
           price={data.price}
           upstreamCount={data.upstreams.length}
@@ -463,7 +490,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
         <KeysPanel
           width={lay.leftW}
           height={h.keys}
-          focused={tab === 'keys'}
+          focused={tab === 'keys' && !detail}
           keys={visible}
           total={data.keys.length}
           selectedId={selectedId}
@@ -475,7 +502,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
         <UpstreamsPanel
           width={lay.leftW}
           height={h.upstreams}
-          focused={tab === 'upstreams'}
+          focused={tab === 'upstreams' && !detail}
           upstreams={data.upstreams}
           keys={data.keys}
           selected={upstreamSel}
@@ -483,7 +510,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
         <AuditPanel
           width={lay.leftW}
           height={h.audit}
-          focused={tab === 'audit'}
+          focused={tab === 'audit' && !detail}
           audit={data.audit}
           names={names}
           fresh={fresh}
@@ -492,11 +519,14 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
         />
       </Box>
     );
-    const attn = needs[Math.min(attentionSel, Math.max(0, needs.length - 1))]?.key;
+    const attn = attnItem?.key;
+    const attnUp = attnItem?.upstream;
     const main =
       tab === 'status' ? (
         attn ? (
           <KeyMain key={attn.id} keyData={attn} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} />
+        ) : attnUp ? (
+          <UpstreamMain key={attnUp.id} upstream={attnUp} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} />
         ) : (
           <StatusMain width={lay.mainW} height={lay.mainH} audit={data.audit} names={names} now={now} scroll={scroll} />
         )
@@ -557,6 +587,7 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
                   canCreate: data.upstreams.length > 0,
                   hasKeys: data.keys.length > 0,
                   scrollable: scrollMax > 0,
+                  detail,
                 })
               : [{ k: 'r', label: 'retry' }, { k: 'q', label: 'quit' }]
         }
@@ -589,17 +620,23 @@ interface HintState {
   hasKeys: boolean;
   /** The detail panel has more than it shows. */
   scrollable: boolean;
+  /** The detail panel has the keyboard. */
+  detail: boolean;
 }
 
-/** Only keys that would do something are offered. */
-function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canCreate, hasKeys, scrollable }: HintState): HintItem[] {
+/**
+ * Only keys that would do something are offered. When the line is too short the least
+ * missed go first (`rank`): scrolling and the panel keys, then selecting, and last the
+ * actions on the selected row, which stay unless nothing else can.
+ */
+function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canCreate, hasKeys, scrollable, detail }: HintState): HintItem[] {
   const canChange = !offline && !working;
   if (mode === 'confirm') return [{ k: 'y', label: 'yes' }, { k: 'n', label: 'cancel' }];
   if (mode === 'filter') {
     return [
-      { k: 'Enter', label: 'keep filter' },
-      { k: 'Esc', label: 'clear' },
-      { k: '↑↓', label: 'select' },
+      { k: 'Enter', label: 'keep filter', always: true },
+      { k: 'Esc', label: 'clear', always: true },
+      ...(selectable ? [{ k: '↑↓', label: 'select' }] : []),
     ];
   }
   if (mode === 'create') {
@@ -613,31 +650,44 @@ function hintsFor({ tab, mode, key, filtered, selectable, offline, working, canC
   if (mode === 'secret') return [{ k: 'c', label: 'copy' }, { k: 'Enter', label: 'done', always: true }];
   if (mode === 'clients') return [{ k: 'Esc', label: 'close' }];
   if (mode !== 'none') return [{ k: 'Esc', label: 'close' }];
+  if (detail) {
+    return [
+      { k: '↑↓', label: 'scroll', always: true },
+      { k: 'PgUp/PgDn', label: 'page', rank: 1 },
+      { k: 'Esc', label: 'back to list', always: true },
+      { k: '1-4', label: 'panels', rank: 0 },
+      { k: '?', label: 'help', always: true },
+      { k: 'q', label: 'quit', always: true },
+    ];
+  }
   const common: HintItem[] = [
-    { k: 'r', label: offline ? 'retry' : 'refresh', always: true },
-    ...(scrollable ? [{ k: 'J/K', label: 'scroll', always: true }] : []),
-    { k: '1-4', label: 'panels' },
+    { k: 'r', label: offline ? 'retry' : 'refresh', always: offline, rank: 2 },
+    ...(scrollable ? [{ k: 'J/K', label: 'scroll', rank: 3.5 }] : []),
+    { k: '1-4', label: 'panels', rank: 0 },
     { k: '?', label: 'help', always: true },
     { k: 'q', label: 'quit', always: true },
   ];
-  const create = canChange && canCreate ? [{ k: 'n', label: 'new key' }] : [];
+  const create = canChange && canCreate ? [{ k: 'n', label: 'new key', rank: 4 }] : [];
+  const open = selectable ? [{ k: 'Enter', label: 'details', rank: 2 }] : [];
+  const select = selectable ? [{ k: '↑↓', label: 'select', rank: 1 }] : [];
   if (tab === 'keys') {
     const act =
       key?.status === 'active'
-        ? [{ k: 'd', label: 'disable' }]
+        ? [{ k: 'd', label: 'disable', rank: 5 }]
         : key?.status === 'disabled'
-          ? [{ k: 'e', label: 'enable' }]
+          ? [{ k: 'e', label: 'enable', rank: 5 }]
           : [];
     return [
-      ...(selectable ? [{ k: '↑↓', label: 'select', always: true }] : []),
-      ...(canChange ? [...create, ...act, ...(key && key.status !== 'revoked' ? [{ k: 'x', label: 'revoke' }] : [])] : []),
-      ...(key && !offline ? [{ k: 'c', label: 'IPs' }] : []),
-      ...(filtered ? [{ k: 'Esc', label: 'clear filter', always: true }] : hasKeys ? [{ k: '/', label: 'filter', always: true }] : []),
+      ...select,
+      ...open,
+      ...(canChange ? [...create, ...act, ...(key && key.status !== 'revoked' ? [{ k: 'x', label: 'revoke', rank: 5 }] : [])] : []),
+      ...(key && !offline ? [{ k: 'c', label: 'IPs', rank: 3 }] : []),
+      ...(filtered ? [{ k: 'Esc', label: 'clear filter', always: true }] : hasKeys ? [{ k: '/', label: 'filter', rank: 6 }] : []),
       ...common,
     ];
   }
   if (tab === 'status') {
-    return [...(selectable ? [{ k: '↑↓', label: 'select', always: true }, { k: 'Enter', label: 'open key' }] : []), ...create, ...common];
+    return [...select, ...(selectable ? [{ k: 'Enter', label: 'open', rank: 5 }] : []), ...create, ...common];
   }
-  return [...(selectable ? [{ k: '↑↓', label: 'select' }] : []), ...create, ...common];
+  return [...select, ...open, ...create, ...common];
 }

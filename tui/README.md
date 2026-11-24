@@ -21,7 +21,7 @@ It finds the admin address and token the way the kman CLI does: the credentials 
 
 ## Layout
 
-The screen follows [lazygit](https://github.com/jesseduffield/lazygit): numbered panels down the left (Status, Keys, Upstreams, Audit), the details of the selected line in the main panel on the right, and the keys that work right now along the bottom. The focused panel has a green border and is the tall one; the others shrink to the one line that is selected. The selected line is a blue bar, and a panel's bottom border says where it is (`2 of 7`). Below 100 columns the main panel goes under the panels instead of beside them.
+The screen follows [lazygit](https://github.com/jesseduffield/lazygit): numbered panels down the left (Status, Keys, Upstreams, Audit), the details of the selected line in the main panel on the right, and the keys that work right now along the bottom. The focused panel has a green border and is the tall one; the others shrink to the one line that is selected. The selected line is a blue bar, and a panel's bottom border says where it is (`2 of 7`). Below 100 columns the main panel goes under the panels instead of beside them, and on a short terminal (under 30 rows) the panels that are not focused shrink to a single line each, so the detail keeps the room. Status names the install (`owner @ host:port`) in its top border and counts both keys and upstreams that need attention.
 
 ## Keys
 
@@ -30,7 +30,8 @@ The screen follows [lazygit](https://github.com/jesseduffield/lazygit): numbered
 | `1`–`4`, `←` `→`, `h` `l`, `Tab` | focus a panel: Status, Keys, Upstreams, Audit |
 | `↑` `↓`, `j` `k`, `PgUp` `PgDn`, `g` `G` | move |
 | `Enter` (Status) | open the selected key from Needs attention |
-| `J` `K` | scroll the main panel when its content is taller than it (the bottom border says so) |
+| `Enter` | on Keys, Upstreams or Audit: hand the keyboard to the main panel, so the arrow keys, `PgUp`/`PgDn`, `g`/`G` scroll it; `Esc` gives it back (on Status, `Enter` opens the selected key or upstream) |
+| `J` `K` | scroll the main panel without leaving the list, when its content is taller than it (the bottom border says so) |
 | `/`, `Esc` | filter keys by name, id, tag or upstream, and clear the filter |
 | `n` | create a key |
 | `d`, `e` | disable, enable the selected key (asks y/n) |

@@ -6,15 +6,16 @@ import type { AuditEntry, Key, PriceDataStatus, Upstream } from '../api.js';
 import { clock, fitMiddle, money, padEnd, since, tailCells } from '../format.js';
 import { keyLabel } from '../keys.js';
 import { keyRisks, topRisk } from '../risk.js';
-import type { Attention } from '../risk.js';
+import type { Attention, Severity, Risk, UpstreamAttention } from '../risk.js';
 import { linkBadge, useTick } from '../ui/chrome.js';
-import { Frame } from '../ui/frame.js';
+import { Frame, Strip, stripLabelWidth, subtitleFits } from '../ui/frame.js';
+import type { ReactNode } from 'react';
 import { Row } from '../ui/row.js';
 import type { Seg } from '../ui/row.js';
 import { color, ratioColor, severityColor, severityGlyph, statusStyle } from '../ui/theme.js';
 import { capRatio } from '../risk.js';
 import type { Link } from '../useAdmin.js';
-import { actionColor, targetText } from './audit.js';
+import { actionColor, rowTarget } from './audit.js';
 import type { Names } from './audit.js';
 import { windowStart } from '../ui/parts.js';
 
@@ -23,6 +24,34 @@ interface PanelProps {
   height: number;
   focused: boolean;
 }
+
+interface ShellProps {
+  title: string;
+  count?: string;
+  position?: string;
+  subtitle?: string;
+  focused: boolean;
+  tone?: string;
+  width: number;
+  height: number;
+  children: ReactNode;
+}
+
+/** A bordered panel, or, one row high, a borderless strip: the same rows either way. */
+function Shell({ children, ...p }: ShellProps) {
+  if (p.height <= 1) {
+    return (
+      <Strip title={p.title} count={p.count} width={p.width}>
+        {children}
+      </Strip>
+    );
+  }
+  return <Frame {...p}>{children}</Frame>;
+}
+
+/** The columns a panel's rows have: inside the border, or after a strip's label. */
+const innerWidth = (width: number, height: number, title: string, count?: string) =>
+  height <= 1 ? width - stripLabelWidth(title, count) : width - 2;
 
 /** The rows that fit, scrolled to keep `selected` in view, and what was cut. */
 function windowed<T>(items: T[], selected: number, rows: number) {
@@ -53,7 +82,33 @@ function fitParts(parts: Seg[][], max: number): Seg[] {
   return out;
 }
 
-/** Status: the summary of the install and, when focused, the keys that need attention. */
+/** The address without the scheme a local admin API always has: "127.0.0.1:8081". https stays, as it says something. */
+const shortUrl = (url: string) => url.replace(/^http:\/\//, '').replace(/\/$/, '');
+
+export interface Item {
+  id: string;
+  name: string;
+  risks: Risk[];
+  top: Severity;
+  /** Exactly one of these: what the row is. */
+  key?: Key;
+  upstream?: Upstream;
+}
+
+const severityOrder: Record<Severity, number> = { danger: 0, warn: 1, info: 2 };
+const weightOf = (i: Item) => topRisk(i.risks)?.weight ?? 0;
+
+/** Everything that needs a look as one list, worst first: a key and an upstream rank alike. */
+export function attentionItems(needs: Attention[], ups: UpstreamAttention[]): Item[] {
+  const all: Item[] = [
+    ...needs.map((n) => ({ id: n.key.id, name: keyLabel(n.key), risks: n.risks, top: n.top, key: n.key })),
+    ...ups.map((u) => ({ id: `upstream:${u.upstream.id}`, name: u.upstream.name, risks: u.risks, top: u.top, upstream: u.upstream })),
+  ];
+  // The sort is stable: keys already came worst first, and stay in that order among equals.
+  return all.sort((a, b) => severityOrder[a.top] - severityOrder[b.top] || weightOf(b) - weightOf(a));
+}
+
+/** Status: the summary of the install and, when focused, what needs attention. */
 export function StatusPanel({
   width,
   height,
@@ -62,7 +117,7 @@ export function StatusPanel({
   url,
   actor,
   keys,
-  needs,
+  items,
   selected,
   price,
   upstreamCount,
@@ -71,7 +126,7 @@ export function StatusPanel({
   url: string;
   actor?: string;
   keys: Key[];
-  needs: Attention[];
+  items: Item[];
   selected: number;
   price?: PriceDataStatus;
   upstreamCount: number;
@@ -82,8 +137,15 @@ export function StatusPanel({
   const disabled = keys.filter((k) => k.status === 'disabled').length;
   const revoked = keys.filter((k) => k.status === 'revoked').length;
   const spend = (which: 'today' | 'month') => keys.reduce((n, k) => n + (k.spend?.[which].cost_micro ?? 0), 0);
-  const urgent = needs.filter((n) => n.top !== 'info').length;
-  const inner = width - 2;
+  const urgent = items.filter((n) => n.top !== 'info').length;
+  const title = '[1] Status';
+  const count = urgent > 0 ? `▲${urgent}` : undefined;
+  const strip = height <= 1;
+  const inner = innerWidth(width, height, title, count);
+  const lead: Seg[] = strip ? [] : [{ t: ' ' }];
+  // Who this is and where: in the top border when it fits, else a line of the summary.
+  const where = `${actor ? `${actor} @ ` : ''}${shortUrl(url)}`;
+  const inBorder = !strip && subtitleFits(where, title, count, width);
 
   const linkText =
     link.state === 'ok'
@@ -100,26 +162,32 @@ export function StatusPanel({
         : [{ t: `price ${compact ? `${price.age_days}d` : `data ${price.age_days} days old`}`, dim: true }]
       : [{ t: 'price data unknown', dim: true }];
   const badgeSeg: Seg = { t: `${badge.glyph} ${badge.word}`, color: badge.color, dim: badge.color === undefined };
-  // One line that carries the connection, the count, the spend and the price: the
-  // summary when there is room for only one line. What does not fit is dropped from the end.
+  const dot: Seg = { t: '·', dim: true };
+  const whereSeg: Seg[] = [dot, { t: ' ' + where, dim: true }];
+  const priceOk = price && !price.stale ? [[dot, { t: ' ' }, ...priceSeg(true)]] : [];
+  const priceStale = price?.stale ? [[dot, { t: ' ' }, ...priceSeg(true)]] : [];
+  // One line that carries the connection, the count, the spend, who and where, and the
+  // price: the summary when there is room for only one line. What does not fit is dropped
+  // from the end.
   const compactLine: Seg[] = fitParts(
     [
       [badgeSeg],
-      ...(price?.stale ? [[{ t: '·', dim: true }, { t: ' ' }, ...priceSeg(true)]] : []),
-      [{ t: '·', dim: true }, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
-      [{ t: '·', dim: true }, { t: ` ${money(spend('today'))} today`, bold: true }],
-      ...(price && !price.stale ? [[{ t: '·', dim: true }, { t: ' ' }, ...priceSeg(true)]] : []),
+      ...priceStale,
+      [dot, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
+      [dot, { t: ` ${money(spend('today'))} today`, bold: true }],
+      ...(inBorder ? [] : [whereSeg]),
+      ...priceOk,
     ],
     inner - 1,
   );
-  const whereLine: Seg[] = [{ t: `${actor ? `${actor} @ ` : ''}${url}`, dim: true }];
+  const whereLine: Seg[] = [{ t: where, dim: true }];
   const countsLine: Seg[] = [
     { t: `${live} active`, color: live > 0 ? color.ok : undefined },
     { t: ` · ${disabled} disabled · ${revoked} revoked`, dim: true },
   ];
   const fullLines: Seg[][] = [
     [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }],
-    whereLine,
+    ...(inBorder ? [] : [whereLine]),
     countsLine,
     [
       { t: `${money(spend('today'))} today`, bold: true },
@@ -127,9 +195,6 @@ export function StatusPanel({
     ],
     priceSeg(false),
   ];
-  const dot: Seg = { t: '·', dim: true };
-  const priceOk = price && !price.stale ? [[dot, { t: ' ' }, ...priceSeg(true)]] : [];
-  const priceStale = price?.stale ? [[dot, { t: ' ' }, ...priceSeg(true)]] : [];
   const activePart: Seg[] = [
     dot,
     { t: ` ${live} active`, color: live > 0 ? color.ok : undefined },
@@ -153,7 +218,7 @@ export function StatusPanel({
   const tierFor = (n: number): Seg[][] => {
     if (n <= 1) return [compactLine];
     if (n === 2) return [head(true), money2(head(true))];
-    return [head(false), money2(head(false)), countsLine, whereLine];
+    return [head(false), money2(head(false)), countsLine, ...(inBorder ? [] : [whereLine])];
   };
 
   const rows = Math.max(1, height - 2);
@@ -163,37 +228,44 @@ export function StatusPanel({
   // summary gets everything else, down to a few lines.
   // The label sits on the list only when there is room; otherwise the border says it
   // (`1 of 7 need attention`), and at least one selectable line is always kept.
-  const header = needs.length > 0 && rows >= 8 ? 1 : 0;
-  const needed = needs.length === 0 ? 1 : header + needs.length;
+  const header = items.length > 0 && rows >= 8 ? 1 : 0;
+  const needed = items.length === 0 ? 1 : header + items.length;
   const listArea = focused ? Math.min(needed, Math.max(header + 1, rows >= 8 ? rows - 3 : rows - 2)) : 0;
   const summaryRows = focused ? rows - listArea : rows;
   const lines = summaryRows >= 5 ? fullLines : tierFor(summaryRows);
   const listRows = listArea - header;
-  const sel = Math.min(selected, Math.max(0, needs.length - 1));
-  const start = windowStart(sel, needs.length, Math.max(1, listRows));
-  const shown = needs.slice(start, start + listRows);
-  const nameW = Math.min(24, Math.max(4, ...shown.map((n) => [...keyLabel(n.key)].length)));
+  const sel = Math.min(selected, Math.max(0, items.length - 1));
+  const start = windowStart(sel, items.length, Math.max(1, listRows));
+  const shown = items.slice(start, start + listRows);
+  const nameW = Math.min(24, Math.max(4, ...shown.map((n) => [...n.name].length)));
 
   return (
-    <Frame
-      title="[1] Status"
-      count={urgent > 0 ? `▲${urgent}` : undefined}
-      position={focused && needs.length > 0 ? `${sel + 1} of ${needs.length} need attention` : needs.length > 0 ? `${needs.length} to look at` : undefined}
+    <Shell
+      title={title}
+      count={count}
+      subtitle={inBorder ? where : undefined}
+      position={
+        focused && items.length > 0
+          ? `${sel + 1} of ${items.length} need attention`
+          : items.length > 0
+            ? `${items.length} ${items.length === 1 ? 'needs' : 'need'} attention`
+            : undefined
+      }
       focused={focused}
       width={width}
       height={height}
     >
       {lines.slice(0, summaryRows).map((segs, i) => (
-        <Row key={i} left={[{ t: ' ' }, ...segs]} width={inner} />
+        <Row key={i} left={[...lead, ...segs]} width={inner} />
       ))}
       {focused && listRows > 0 ? (
         <>
           {header > 0 ? (
             <Text dimColor bold wrap="truncate-end">
-              {' '}NEEDS ATTENTION ({needs.length})
+              {' '}NEEDS ATTENTION ({items.length})
             </Text>
           ) : null}
-          {needs.length === 0 ? (
+          {items.length === 0 ? (
             keys.some((k) => k.status === 'active') ? (
               <Text color={color.ok}> ✔ every key is capped and current</Text>
             ) : (
@@ -202,16 +274,16 @@ export function StatusPanel({
               </Text>
             )
           ) : (
-            shown.map(({ key, risks, top }, i) => (
+            shown.map(({ id, name, risks, top }, i) => (
               <Row
-                key={key.id}
+                key={id}
                 width={inner}
                 selected={start + i === sel}
                 focused
                 left={[
                   { t: ' ' },
                   { t: severityGlyph[top], color: severityColor[top], dim: top === 'info' },
-                  { t: ` ${padEnd(keyLabel(key), nameW)}` },
+                  { t: ` ${padEnd(name, nameW)}` },
                 ]}
                 right={[
                   { t: topRisk(risks)!.short, color: severityColor[top], dim: top === 'info' },
@@ -222,7 +294,7 @@ export function StatusPanel({
           )}
         </>
       ) : null}
-    </Frame>
+    </Shell>
   );
 }
 
@@ -248,27 +320,31 @@ export function KeysPanel({
   hasUpstreams: boolean;
   now: number;
 }) {
-  const inner = width - 2;
+  const title = '[2] Keys';
+  const filtered = filter !== '';
+  const count = filtered ? `(${keys.length}/${total})` : `(${total})`;
+  const inner = innerWidth(width, height, title, count);
+  const lead: Seg[] = height <= 1 ? [] : [{ t: ' ' }];
   const sel = Math.max(0, keys.findIndex((k) => k.id === selectedId));
   const showFilter = focused && (filtering || filter !== '');
   // The filter takes the last row, so a list that is empty still shows its message above it.
-  const rows = Math.max(0, height - 2 - (showFilter ? 1 : 0));
+  const rows = height <= 1 ? 1 : Math.max(0, height - 2 - (showFilter ? 1 : 0));
   const { shown } = windowed(keys, sel, Math.max(1, rows));
-  const filtered = filter !== '';
   return (
-    <Frame
-      title="[2] Keys"
-      count={filtered ? `(${keys.length}/${total})` : `(${total})`}
+    <Shell
+      title={title}
+      count={count}
       position={position(sel, keys.length)}
       focused={focused}
       tone={filtering ? color.accent : undefined}
       width={width}
       height={height}
     >
-      {keys.length === 0 && rows > 0 ? (
+      {/* With a filter the title says 0 of n and the detail says why: not three times. */}
+      {keys.length === 0 && rows > 0 && !filtered ? (
         <Text dimColor wrap="truncate-end">
-          {' '}
-          {total > 0 ? 'No key matches.' : hasUpstreams ? 'No keys yet. n creates one.' : 'No keys: add an upstream first'}
+          {lead.length ? ' ' : ''}
+          {hasUpstreams ? 'No keys yet. n creates one.' : 'No keys: add an upstream first'}
         </Text>
       ) : null}
       {(rows > 0 ? shown : []).map((k) => {
@@ -304,7 +380,7 @@ export function KeysPanel({
         return (
           <Row
             key={k.id}
-            left={[{ t: ' ' }, { t: fitMiddle(label, Math.max(6, inner - 2 - segLen(right) - 2)), dim: k.status === 'revoked' }]}
+            left={[...lead, { t: fitMiddle(label, Math.max(6, inner - 2 - segLen(right) - 2)), dim: k.status === 'revoked' }]}
             right={[...right, { t: ' ' }]}
             width={inner}
             selected={k.id === selectedId}
@@ -319,7 +395,7 @@ export function KeysPanel({
           {filtering ? <Text inverse> </Text> : <Text dimColor>  Esc clears</Text>}
         </Text>
       ) : null}
-    </Frame>
+    </Shell>
   );
 }
 
@@ -333,15 +409,18 @@ export function UpstreamsPanel({
   keys,
   selected,
 }: PanelProps & { upstreams: Upstream[]; keys: Key[]; selected: number }) {
-  const inner = width - 2;
+  const title = '[3] Upstreams';
+  const count = `(${upstreams.length})`;
+  const inner = innerWidth(width, height, title, count);
+  const lead: Seg[] = height <= 1 ? [] : [{ t: ' ' }];
   const sel = Math.min(selected, Math.max(0, upstreams.length - 1));
   const rows = Math.max(1, height - 2);
   const { shown } = windowed(upstreams, sel, rows);
   const live = (u: Upstream) => keys.filter((k) => k.upstream === u.name && k.status === 'active').length;
   return (
-    <Frame
-      title="[3] Upstreams"
-      count={`(${upstreams.length})`}
+    <Shell
+      title={title}
+      count={count}
       position={position(sel, upstreams.length)}
       focused={focused}
       width={width}
@@ -359,8 +438,9 @@ export function UpstreamsPanel({
           width={inner}
           selected={u === upstreams[sel]}
           focused={focused}
-          left={[{ t: ' ' }, { t: u.name }]}
+          left={[...lead, { t: u.name }]}
           right={[
+            // The warnings are glyphs when the name needs the room: ▲ no credential, ▲ http.
             ...fitParts(
               [
                 ...(u.credentials.length === 0 ? [[{ t: '▲ no credential', color: color.warn }]] : []),
@@ -368,13 +448,13 @@ export function UpstreamsPanel({
                 ...(u.update_available ? [[{ t: '▲ update', color: color.warn }]] : []),
                 [{ t: `${live(u)} active`, dim: true }],
               ],
-              Math.max(0, inner - 2 - Math.min([...u.name].length, 10) - 1),
+              Math.max(0, inner - 2 - Math.min([...u.name].length, 14) - 1),
             ),
             { t: ' ' },
           ]}
         />
       ))}
-    </Frame>
+    </Shell>
   );
 }
 
@@ -390,14 +470,20 @@ export function AuditPanel({
   selected,
   now,
 }: PanelProps & { audit: AuditEntry[]; names: Names; fresh: ReadonlySet<number>; selected: number; now: number }) {
-  const inner = width - 2;
+  const title = '[4] Audit';
+  const count = `(${audit.length})`;
+  const lead = height <= 1 ? '' : ' ';
   const sel = Math.min(selected, Math.max(0, audit.length - 1));
   const rows = Math.max(1, height - 2);
   const { shown } = windowed(audit, sel, rows);
+  // The columns are as wide as what is shown needs, so the target, which is what tells
+  // entries apart, keeps the rest. The action already names the kind, so only a name follows.
+  const timeW = Math.max(...shown.map((e) => [...clock(e.time, now)].length), 0) + 1;
+  const actionW = Math.max(...shown.map((e) => [...e.action].length), 0) + 1;
   return (
-    <Frame
-      title="[4] Audit"
-      count={`(${audit.length})`}
+    <Shell
+      title={title}
+      count={count}
       position={position(sel, audit.length)}
       focused={focused}
       width={width}
@@ -412,17 +498,17 @@ export function AuditPanel({
       {shown.map((e) => (
         <Row
           key={e.id}
-          width={inner}
+          width={innerWidth(width, height, title, count)}
           selected={e === audit[sel]}
           focused={focused}
           left={[
-            { t: fresh.has(e.id) ? '◆' : ' ', color: color.accent },
-            { t: padEnd(clock(e.time, now), 12), dim: true },
-            { t: padEnd(e.action, 17), color: actionColor(e.action) },
-            { t: targetText(e, names), dim: true },
+            { t: fresh.has(e.id) ? '◆' : lead, color: color.accent },
+            { t: padEnd(clock(e.time, now), timeW), dim: true },
+            { t: padEnd(e.action, actionW), color: actionColor(e.action) },
+            { t: rowTarget(e, names) },
           ]}
         />
       ))}
-    </Frame>
+    </Shell>
   );
 }

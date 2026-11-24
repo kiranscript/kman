@@ -1,7 +1,7 @@
 // "Key at risk" (GLOSSARY): a virtual key whose settings or state would make a
 // leak more costly. v0.1.0 has no address locks, so the signals are no spend
 // cap, close to a cap, and about to expire (or already expired).
-import type { Key, SpendPeriod } from './api.js';
+import type { Key, SpendPeriod, Upstream } from './api.js';
 import { daysCeil, daysLeft } from './format.js';
 
 export type Severity = 'danger' | 'warn' | 'info';
@@ -106,4 +106,28 @@ export function attention(keys: Key[], now: number): Attention[] {
 /** The most pressing risk of a key, for ordering keys of one severity. */
 function weightOf(a: { risks: Risk[]; top: Severity }): number {
   return Math.max(...a.risks.filter((r) => r.severity === a.top).map((r) => r.weight));
+}
+
+export interface UpstreamAttention {
+  upstream: Upstream;
+  risks: Risk[];
+  top: Severity;
+}
+
+/** What is wrong with an upstream: no credential (its keys cannot work), plain http, a newer preset. */
+export function upstreamRisks(u: Upstream): Risk[] {
+  const risks: Risk[] = [];
+  if (u.credentials.length === 0) risks.push({ severity: 'danger', label: 'no credential: its keys cannot work', short: 'no credential', weight: 2000 });
+  if (u.tls === false) risks.push({ severity: 'warn', label: 'plain http: traffic is not encrypted', short: 'plain http', weight: 1000 });
+  if (u.update_available) risks.push({ severity: 'info', label: 'a newer preset exists', short: 'update', weight: 0 });
+  return risks;
+}
+
+/** Upstreams with something to look at, worst first. */
+export function upstreamAttention(upstreams: Upstream[]): UpstreamAttention[] {
+  return upstreams
+    .map((upstream) => ({ upstream, risks: upstreamRisks(upstream) }))
+    .filter((a) => a.risks.length > 0)
+    .map((a) => ({ ...a, top: worst(a.risks) ?? 'info' }))
+    .sort((a, b) => order[a.top] - order[b.top] || weightOf(b) - weightOf(a) || a.upstream.name.localeCompare(b.upstream.name));
 }

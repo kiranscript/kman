@@ -13,8 +13,13 @@ export const COLLAPSED = 3;
 /** The least the main panel needs under the focused panel: a compact key detail. */
 export const MAIN_MIN = 7;
 
+/** Under this many rows, stacked panels other than the focused one shrink to one bare line each. */
+export const STRIP_ROWS = 28;
+
 export interface Layout {
   wide: boolean;
+  /** Inactive panels are one borderless line each, to leave the rows to the lists and the detail. */
+  strips: boolean;
   leftW: number;
   mainW: number;
   mainH: number;
@@ -29,17 +34,20 @@ const PANELS: Tab[] = ['status', 'keys', 'upstreams', 'audit'];
  */
 export function layout(columns: number, rows: number, focus: Tab, want = Infinity): Layout {
   const wide = columns >= WIDE;
-  const leftW = wide ? Math.min(52, Math.max(38, Math.floor(columns * 0.36))) : columns;
-  const heights: Record<Tab, number> = { status: COLLAPSED, keys: COLLAPSED, upstreams: COLLAPSED, audit: COLLAPSED };
+  // About two fifths of the screen, so names and targets keep room beside the detail.
+  const leftW = wide ? Math.min(56, Math.max(42, Math.floor(columns * 0.4))) : columns;
+  const strips = !wide && rows < STRIP_ROWS;
+  const small = strips ? 1 : COLLAPSED;
+  const heights: Record<Tab, number> = { status: small, keys: small, upstreams: small, audit: small };
 
   if (wide) {
     const others = PANELS.reduce((n, t) => n + (t === focus ? 0 : heights[t]), 0);
     heights[focus] = rows - others;
-    return { wide, leftW, mainW: columns - leftW, mainH: rows, heights };
+    return { wide, strips, leftW, mainW: columns - leftW, mainH: rows, heights };
   }
 
-  const rest = rows - COLLAPSED * 3;
+  const rest = rows - small * 3;
   const own = Math.max(COLLAPSED, Math.min(Number.isFinite(want) ? want + 2 : rest, Math.max(5, Math.floor(rest / 2)), rest - MAIN_MIN));
   heights[focus] = own;
-  return { wide, leftW, mainW: columns, mainH: rest - own, heights };
+  return { wide, strips, leftW, mainW: columns, mainH: rest - own, heights };
 }

@@ -20,6 +20,8 @@ interface FrameProps {
   count?: string;
   /** The right end of the bottom border: "2 of 7". */
   position?: string;
+  /** Dim text at the right end of the top border, shown only if it fits beside the title. */
+  subtitle?: string;
   /** The focused panel: green and bold. Others are muted. */
   focused?: boolean;
   /** Overrides the border colour, for a warning or a search. */
@@ -36,7 +38,35 @@ export function titleFits(title: string, count: string | undefined, width: numbe
   return [...` ${title}${count ? ` ${count}` : ''} `].length <= Math.max(0, width - 4);
 }
 
-export function Frame({ title, count, position, focused, tone, heavy = noColor, width, height, children }: FrameProps) {
+/** Whether `subtitle` fits in the top border of a panel `width` wide, beside its title and count. */
+export function subtitleFits(subtitle: string, title: string, count: string | undefined, width: number): boolean {
+  const label = [...` ${title}${count ? ` ${count}` : ''} `].length;
+  return [...subtitle].length + 2 + Math.min(label, Math.max(0, width - 4)) + 3 <= width;
+}
+
+/** The width a strip's label takes: its title and count, and a space. */
+export function stripLabelWidth(title: string, count?: string): number {
+  return [...` ${title}${count ? ` ${count}` : ''} `].length;
+}
+
+/**
+ * A panel squeezed to one line with no border: its title, then what its selected line
+ * would have shown. This is how the inactive panels fit when the terminal is short.
+ */
+export function Strip({ title, count, width, children }: { title: string; count?: string; width: number; children: ReactNode }) {
+  return (
+    <Box width={width} height={1} flexShrink={0} overflow="hidden">
+      <Text bold dimColor>
+        {` ${title}${count ? ` ${count}` : ''} `}
+      </Text>
+      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
+export function Frame({ title, count, position, subtitle, focused, tone, heavy = noColor, width, height, children }: FrameProps) {
   const edge = EDGES[focused && heavy ? 'bold' : 'round'];
   const border = tone ?? (focused ? color.ok : undefined);
   const dim = !focused && tone === undefined;
@@ -44,7 +74,9 @@ export function Frame({ title, count, position, focused, tone, heavy = noColor, 
 
   const label = title ? ` ${title}${count ? ` ${count}` : ''} ` : '';
   const shownLabel = fit(label, Math.max(0, width - 4));
-  const topFill = Math.max(0, width - 3 - [...shownLabel].length);
+  const sub = subtitle ? ` ${subtitle} ` : '';
+  const showSub = sub !== '' && [...sub].length + [...shownLabel].length + 3 <= width;
+  const topFill = Math.max(0, width - 3 - [...shownLabel].length - (showSub ? [...sub].length : 0));
   const pos = position ? ` ${position} ` : '';
   const shownPos = fit(pos, Math.max(0, width - 4));
   const bottomFill = Math.max(0, width - 3 - [...shownPos].length);
@@ -56,7 +88,9 @@ export function Frame({ title, count, position, focused, tone, heavy = noColor, 
         <Text color={border} bold={focused || title !== undefined} dimColor={dim && !title}>
           {shownLabel}
         </Text>
-        <Text {...style}>{edge.h.repeat(topFill) + edge.tr}</Text>
+        <Text {...style}>{edge.h.repeat(topFill)}</Text>
+        {showSub ? <Text dimColor>{sub}</Text> : null}
+        <Text {...style}>{edge.tr}</Text>
       </Box>
       <Box
         flexDirection="column"

@@ -9,6 +9,11 @@ const ENTER = '\r';
 const ESC = '\u001b';
 const CTRL_S = '\u0013';
 
+/** An upstream whose detail is taller than the detail panel at 80x24. */
+function longUpstream(client: ReturnType<typeof fakeClient>) {
+  client.upstreams = [{ ...upstream, path_allowlist: Array.from({ length: 40 }, (_, i) => `POST /v1/route/${i}`) }];
+}
+
 function mount(client = fakeClient(), size = SIZE, copy?: (text: string) => void, noticeMs?: number, secretGuardMs = 0) {
   const element = (sz: typeof SIZE) => (
     <App client={client} url="http://127.0.0.1:8081" size={sz} intervalMs={60_000} copy={copy} noticeMs={noticeMs} secretGuardMs={secretGuardMs} />
@@ -39,7 +44,7 @@ describe('App', () => {
     const m = mount();
     await loaded(m);
     const s = m.screen();
-    expect(s).toContain('owner @ http://127.0.0.1:8081');
+    expect(s).toContain('owner @ 127.0.0.1:8081');
     expect(s).toContain('2 active');
     expect(s).toContain('NEEDS ATTENTION');
     expect(s).toContain('ci-evals');
@@ -675,11 +680,12 @@ describe('App', () => {
       m.unmount();
     });
 
-    it('keeps the disable prompt and the r refresh hint within 80 columns', async () => {
+    it('keeps the disable prompt within 80 columns, and the key actions in the options bar', async () => {
       const m = mount(fakeClient(), { columns: 80, rows: 24 });
       await loaded(m);
       await m.press('2');
-      expect(lines(m).at(-1)).toContain('r refresh');
+      // What can be done to the selected key is dropped last; scrolling and selecting go first.
+      for (const hint of ['d disable', 'x revoke', 'c IPs', '/ filter', '? help', 'q quit']) expect(lines(m).at(-1)).toContain(hint);
       await m.press('d');
       expect(m.screen()).toContain('Disable this key?');
       expect(m.screen()).toContain('you can enable it again');
@@ -727,7 +733,7 @@ describe('App', () => {
       const m = mount(client, SIZE);
       await loaded(m);
       await m.press('4');
-      const main = m.screen().split('\n').map((l) => l.slice(38)).join(' ').replace(/[│┃\s]+/g, ' ');
+      const main = m.screen().split('\n').map((l) => l.slice(42)).join(' ').replace(/[│┃\s]+/g, ' ');
       expect(main).toContain('from 10.0.0.7');
       expect(main).toContain('The latest 100 entries');
       m.unmount();
@@ -856,7 +862,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('3');
       expect(lines(m).find((l) => /^[│┃] openai/.test(l))).toContain('▲ http');
-      expect(m.screen().split('\n').map((l) => l.slice(38)).join(' ').replace(/[│┃\s]+/g, ' ')).toContain('plain http ollama.internal.example.corp:11434');
+      expect(m.screen().split('\n').map((l) => l.slice(42)).join(' ').replace(/[│┃\s]+/g, ' ')).toContain('plain http ollama.internal.example.corp:11434');
       m.unmount();
     });
 
@@ -1182,7 +1188,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('2');
       const detail = lines(m).filter((l) => l.includes('Key: ') === false && l.includes('expired') && !/^[│┃] checkout/.test(l));
-      expect(detail.map((l) => l.slice(38)).filter((l) => l.includes('expired'))).toHaveLength(1);
+      expect(detail.map((l) => l.slice(42)).filter((l) => l.includes('expired'))).toHaveLength(1);
       m.unmount();
     });
 
@@ -1220,9 +1226,9 @@ describe('App', () => {
       const m = mount(client, { columns: 100, rows: 34 });
       await loaded(m);
       await m.press('3');
-      const main = m.screen().split('\n').map((l) => l.slice(38)).join(' ').replace(/[│┃\s]+/g, ' ');
+      const main = m.screen().split('\n').map((l) => l.slice(42)).join(' ').replace(/[│┃\s]+/g, ' ');
       expect(main).toContain('▲ plain http a-very-long-hostname');
-      expect(main).toContain('ROUTES');
+      expect(main).toContain('routes');
       expect(main).toContain('POST /v1/route/7');
       m.unmount();
     });
@@ -1535,7 +1541,7 @@ describe('App', () => {
       const m = mount(client, { columns: 80, rows: 24 });
       await loaded(m);
       await m.press('4');
-      const shown = lines(m).filter((l) => /key\.create +key k_\d+/.test(l)).length;
+      const shown = lines(m).filter((l) => /key\.create +k_\d+/.test(l)).length;
       await m.press('\u001b[6~');
       expect(m.screen()).toContain(`${shown} of 60`);
       m.unmount();
@@ -1712,16 +1718,32 @@ describe('App', () => {
 describe('review round 1', () => {
   const SMALL = { columns: 80, rows: 24 };
 
-  it('keeps every field of an upstream reachable at 80x24: the routes and the key count scroll into view', async () => {
+  it('shows every field of an upstream at 80x24, the other panels being single lines', async () => {
     const m = mount(fakeClient(), SMALL);
+    await loaded(m);
+    await m.press('3');
+    for (const text of ['address', 'routes', 'POST /v1/chat/completions', '3 (2 active)']) expect(m.screen()).toContain(text);
+    expect(m.screen()).not.toContain('J/K scroll');
+    m.unmount();
+  });
+
+  it('keeps every field of a long upstream reachable at 80x24 by scrolling', async () => {
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, SMALL);
     await loaded(m);
     await m.press('3');
     expect(m.screen()).toContain('↓ J more');
     expect(m.screen()).toContain('J/K scroll');
-    expect(m.screen()).not.toContain('POST /v1/chat/completions');
+    expect(m.screen()).not.toContain('/v1/route/39');
     await m.press('J');
-    expect(m.screen()).toContain('POST /v1/chat/completions');
-    expect(m.screen()).toContain('3 keys');
+    await m.press('J');
+    await m.press('J');
+    await m.press('J');
+    expect(m.screen()).toContain('/v1/route/39');
+    await m.press('K');
+    await m.press('K');
+    await m.press('K');
     await m.press('K');
     expect(m.screen()).toContain('address');
     m.unmount();
@@ -1753,7 +1775,8 @@ describe('review round 1', () => {
 
   it('shows the price data age in the Status panel, at every size, and says when it is stale', async () => {
     for (const [size, text] of [
-      [SMALL, /price 3d/],
+      // One line is all the strip has: the price goes before the address, and shows when there is room.
+      [SMALL, /owner @ 127\.0\.0\.1:8081/],
       [{ columns: 100, rows: 24 }, /price (3d|data 3 days old)/],
       [SIZE, /price data 3 days old/],
     ] as const) {
@@ -1789,10 +1812,12 @@ describe('review round 1', () => {
     await m.press('/');
     await m.press('zzz');
     const rows = () => m.screen().split('\n');
-    expect(rows().some((l) => l.includes('No key matches.'))).toBe(true);
+    // The title says 0 of 3 and the detail says why: the list does not say it a third time.
+    expect(rows().filter((l) => l.includes('No key matches')).length).toBe(1);
     expect(rows().find((l) => l.includes('/ zzz'))).not.toContain('No key matches');
+    expect(rows().find((l) => l.includes('Keys (0/3)'))).toBeDefined();
     await m.press(ENTER);
-    expect(rows().some((l) => l.includes('No key matches.'))).toBe(true);
+    expect(rows().filter((l) => l.includes('No key matches')).length).toBe(1);
     expect(rows().find((l) => l.includes('/ zzz'))).not.toContain('No key matches');
     m.unmount();
   });
@@ -1902,7 +1927,7 @@ describe('review round 1', () => {
     await loaded(m);
     await m.press('2');
     // Only the main panel, which starts after the 38-column sidebar.
-    const flat = () => m.screen().split('\n').map((l) => l.slice(38)).join('').replace(/[\s│┃]/g, '');
+    const flat = () => m.screen().split('\n').map((l) => l.slice(42)).join('').replace(/[\s│┃]/g, '');
     expect(flat()).toContain(`${base}-a`);
     await m.press('j');
     expect(flat()).toContain(`${base}-b`);
@@ -1910,7 +1935,9 @@ describe('review round 1', () => {
   });
 
   it('stops offering J/K when a filter leaves no key to show', async () => {
-    const m = mount(fakeClient(), SMALL);
+    const client = fakeClient();
+    for (const k of client.keys) k.policy = { allowed_models: Array.from({ length: 40 }, (_, i) => `model-number-${i}`) };
+    const m = mount(client, SMALL);
     await loaded(m);
     await m.press('2');
     expect(m.screen()).toContain('J/K scroll');
@@ -1960,7 +1987,7 @@ describe('review round 1', () => {
       const m = mount(client, { columns: 100, rows: 24 });
       await loaded(m);
       await m.press('2');
-      const flat = () => m.screen().split('\n').map((l) => l.slice(38)).join('').replace(/[\s│┃]/g, '');
+      const flat = () => m.screen().split('\n').map((l) => l.slice(42)).join('').replace(/[\s│┃]/g, '');
       expect(flat()).toContain(`Key:${base}a`.length > 0 ? `${base}a` : '');
       // Either the title carries the whole name, or the body does.
       const title = m.screen().split('\n')[0]!.slice(38);
@@ -1994,6 +2021,7 @@ describe('review round 1', () => {
     client.keys = client.keys.map((k) => ({ ...k, spend: { ...k.spend! } }));
     client.keys.forEach((k) => (k.spend!.today = { ...k.spend!.today, cap_micro: 1_000_000_000 }));
     client.keys.forEach((k) => (k.spend!.month = { ...k.spend!.month, cap_micro: 1_000_000_000 }));
+    longUpstream(client);
     const m = mount(client, SMALL);
     await loaded(m);
     await m.press('3');
@@ -2068,13 +2096,142 @@ describe('review round 1', () => {
   });
 
   it('scrolls only when there is something to scroll, and starts again from the top for the next item', async () => {
-    const m = mount(fakeClient(), SMALL);
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, SMALL);
     await loaded(m);
     await m.press('3');
-    await m.press('J');
+    for (let i = 0; i < 5; i++) await m.press('J');
     expect(m.screen()).toContain('↑ K back');
     await m.press('4');
     expect(m.screen()).not.toContain('↑ K back');
+    m.unmount();
+  });
+});
+
+describe('review round 2', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+  const ESCAPE = '\u001b';
+  const withBadUpstream = (client: ReturnType<typeof fakeClient>) =>
+    client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
+
+  it('counts an upstream with no credential in Status, lists it, and opens it on Enter', async () => {
+    const client = fakeClient();
+    withBadUpstream(client);
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(m.screen()).not.toContain('every key is capped and current');
+    expect(m.screen()).toMatch(/Status ▲2/);
+    const row = lines(m).find((l) => l.includes('✖ ollama'))!;
+    expect(row).toContain('no credential');
+    // The worst comes first, so the upstream with no credential is the selected row.
+    await m.press(ENTER);
+    expect(lines(m).find((l) => l.includes('Upstreams ('))).toContain('Upstreams (2)');
+    expect(m.screen()).toContain('Upstream: ollama');
+    m.unmount();
+  });
+
+  it('says there is nothing to look at only when keys and upstreams are all fine', async () => {
+    const client = fakeClient();
+    client.keys = client.keys.map((k) => ({ ...k, status: 'disabled' as const }));
+    const m = mount(client, { columns: 100, rows: 30 });
+    await loaded(m);
+    expect(m.screen()).toContain('no active keys');
+    m.unmount();
+  });
+
+  it('puts the install address in the top border of Status, and in the line when stacked short', async () => {
+    const wide = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(wide);
+    expect(lines(wide)[0]).toContain('owner @ 127.0.0.1:8081');
+    wide.unmount();
+    const small = mount(fakeClient(), { columns: 80, rows: 24 });
+    await loaded(small);
+    expect(lines(small)[0]).toContain('owner @ 127.0.0.1:8081');
+    small.unmount();
+  });
+
+  it('shrinks the inactive panels to one line each at 80x24, so the detail has room', async () => {
+    const m = mount(fakeClient(), { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    for (const title of ['[1] Status', '[3] Upstreams', '[4] Audit']) {
+      const row = lines(m).find((l) => l.includes(title))!;
+      expect(row).not.toMatch(/[╭│╰]/);
+    }
+    expect(lines(m).find((l) => l.includes('[3] Upstreams'))).toContain('openai');
+    expect(lines(m).find((l) => l.includes('[4] Audit'))).toContain('key.create');
+    expect(lines(m).length).toBeLessThanOrEqual(24);
+    m.unmount();
+  });
+
+  it('keeps the borders of the inactive panels when there are rows for them', async () => {
+    const m = mount(fakeClient(), { columns: 80, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    expect(lines(m).find((l) => l.includes('[4] Audit'))).toMatch(/^╭/);
+    m.unmount();
+  });
+
+  it('names an audit row by its target, not by its kind twice', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('4');
+    const row = lines(m).find((l) => l.includes('11-17') && l.includes('key.create'))!;
+    expect(row).toContain('k_web');
+    expect(row).not.toMatch(/key\.create +key /);
+    m.unmount();
+  });
+
+  it('lets Enter hand the keyboard to the detail panel, scroll it, and Esc take it back', async () => {
+    const client = fakeClient();
+    longUpstream(client);
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('3');
+    expect(lines(m).at(-1)).toContain('Enter details');
+    await m.press(ENTER);
+    expect(lines(m).at(-1)).toContain('Esc back to list');
+    expect(m.screen()).toContain('↓ more');
+    for (let i = 0; i < 12; i++) await m.press('j');
+    expect(m.screen()).toContain('/v1/route/39');
+    await m.press(ESCAPE);
+    expect(lines(m).at(-1)).not.toContain('Esc back to list');
+    expect(lines(m).at(-1)).toContain('Enter details');
+    m.unmount();
+  });
+
+  it('puts a gap between every key and its meaning in help, and fits 80x24', async () => {
+    const m = mount(fakeClient(), { columns: 80, rows: 24 });
+    await loaded(m);
+    for (const panel of ['1', '2', '3', '4']) {
+      await m.press(panel);
+      await m.press('?');
+      expect(m.screen()).toMatch(/⇧Tab +next panel/);
+      expect(lines(m).find((l) => l.includes('Keybindings'))).toMatch(/╭─ Keybindings/);
+      expect(lines(m).length).toBeLessThanOrEqual(24);
+      await m.press(ESCAPE);
+    }
+    m.unmount();
+  });
+
+  it('does not offer selecting when a filter matches nothing', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('/');
+    await m.press('zzz');
+    expect(lines(m).at(-1)).not.toContain('select');
+    expect(lines(m).at(-1)).toContain('Esc clear');
+    m.unmount();
+  });
+
+  it('shows the dialogs with their title in the border, as the panels have it', async () => {
+    const m = mount(fakeClient(), { columns: 100, rows: 30 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('n');
+    expect(lines(m).find((l) => l.includes('New virtual key'))).toMatch(/^\s*╭─ New virtual key/);
     m.unmount();
   });
 });

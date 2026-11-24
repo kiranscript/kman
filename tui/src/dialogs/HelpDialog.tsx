@@ -4,47 +4,54 @@ import { Panel, SectionTitle } from '../ui/parts.js';
 import { color } from '../ui/theme.js';
 
 // Grouped as lazygit's keybindings menu is: what works everywhere, then per panel.
-const groups: { title: string; rows: [string, string][] }[] = [
+const KEY_W = 24;
+const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
   {
     title: 'GLOBAL',
     rows: [
-      ['1-4  ← →  h l  Tab  ⇧Tab', 'jump to, or cycle, the panels'],
+      ['1-4  h l  ← →', 'jump to a panel; step to the next or last'],
+      ['Tab  ⇧Tab', 'next panel, previous panel'],
       ['↑ ↓  j k  PgUp PgDn', 'move in the focused panel'],
       ['g  G  Home  End', 'first, last'],
-      ['J  K', 'scroll the detail panel'],
-      ['Enter', 'on Status: open the selected key'],
+      ['Enter', 'on a list: scroll its detail; Esc returns'],
+      ['J  K', 'scroll the detail panel without leaving the list'],
       ['n  r', 'new key; refresh now'],
       ['q  Ctrl+C', 'quit (this help: Esc or ? closes)'],
     ],
   },
+  { title: 'STATUS', panel: 'status', rows: [['Enter', 'open the selected key, or upstream, in its panel']] },
   {
     title: 'KEYS',
+    panel: 'keys',
     rows: [
       ['/   Esc', 'filter by name, id, tag or upstream; clear it'],
       ['d  e', 'disable, enable the key (y confirms, n cancels)'],
       ['c', 'the addresses a key was used from'],
       ['x', 'revoke the key (type its name to confirm)'],
-      ['Ctrl+S', 'in the new-key form: create now'],
-      ['c  Enter', 'on the new key screen: copy it, then done'],
     ],
   },
+  { title: 'UPSTREAMS', panel: 'upstreams', rows: [['Enter', 'read the whole upstream; they are added with kman upstream add']] },
+  { title: 'AUDIT', panel: 'audit', rows: [['Enter', 'read the whole entry; the log is read-only']] },
 ];
 
 /** `focus` is the focused panel: its keys come first, as in lazygit's menu. */
 export function HelpDialog({ onClose, focus }: { onClose: () => void; focus?: Tab }) {
-  const ordered = focus === 'keys' ? [groups[1]!, groups[0]!] : groups;
+  // The focused panel's keys first, then what works everywhere: other panels' keys
+  // are on their own screens, which this dialog has no room for.
+  const mine = groups.find((g) => g.panel === focus);
+  const ordered = [...(mine ? [mine] : []), groups[0]!];
   useInput((_i, key) => {
     if (key.escape || key.return || _i === '?') onClose();
   });
   return (
-    <Panel title="Keybindings" width={76} tone={color.accent}>
+    <Panel title="Keybindings" width={78} tone={color.accent}>
       {ordered.map((g, i) => (
         <Box key={g.title} flexDirection="column" marginTop={i === 0 ? 0 : 1}>
-          <SectionTitle>{focus === 'keys' && g.title === 'KEYS' ? 'KEYS (this panel)' : g.title}</SectionTitle>
+          <SectionTitle>{g === mine ? `${g.title} (this panel)` : g.title}</SectionTitle>
           {g.rows.map(([k, what]) => (
-            <Text key={k}>
+            <Text key={k + what}>
               <Text bold color={color.key}>
-                {k.padEnd(22)}
+                {k.padEnd(KEY_W)}
               </Text>
               {what}
             </Text>
@@ -53,7 +60,8 @@ export function HelpDialog({ onClose, focus }: { onClose: () => void; focus?: Ta
       ))}
       <Box marginTop={1} flexDirection="column">
         <SectionTitle>MARKS</SectionTitle>
-        <Text dimColor>● active  ◐ disabled  ✖ revoked or danger  ▲ warning  ○ note  ◆ new entry  ◌ no link</Text>
+        <Text dimColor>● active   ◐ disabled   ✖ revoked or danger   ▲ warning</Text>
+        <Text dimColor>○ note   ◆ new entry   ◌ no link</Text>
       </Box>
     </Panel>
   );

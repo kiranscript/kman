@@ -11,7 +11,7 @@ import { Frame, titleFits } from '../ui/frame.js';
 import { Field, Meter, RiskLine, SectionTitle, StatusBadge } from '../ui/parts.js';
 import { color, severityColor, severityGlyph } from '../ui/theme.js';
 import { AUDIT_LIMIT } from '../useAdmin.js';
-import { actionColor, targetName, targetText } from './audit.js';
+import { actionColor, rowTarget, targetName, targetText } from './audit.js';
 import type { Names } from './audit.js';
 
 interface Size {
@@ -59,7 +59,7 @@ export function StatusMain({
           <Text dimColor> {padEnd(clock(e.time, now), 12)}</Text>
           <Text color={actionColor(e.action)}>{padEnd(e.action, 18)}</Text>
           {/* "key.create" already says it is a key, so only the name follows. */}
-          <Text> {fit(e.action.startsWith(`${e.target_kind}.`) ? targetName(e, names) : targetText(e, names), targetW)}</Text>
+          <Text> {fit(rowTarget(e, names), targetW)}</Text>
         </Text>
       ))}
     </Frame>
@@ -73,6 +73,10 @@ export interface Scroll {
   offset: number;
   /** Told how far the content can scroll, so the keys know where to stop. */
   onMax: (max: number) => void;
+  /** The panel has the keyboard (after Enter): its border is the bright one. */
+  focused?: boolean;
+  /** How many lines one page of the content is, so PgUp and PgDn know. Told by the panel. */
+  onView?: (rows: number) => void;
 }
 
 /**
@@ -89,8 +93,9 @@ function ScrollFrame({
   const ref = useRef<DOMElement>(null);
   const [content, setContent] = useState(0);
   const view = Math.max(1, height - 2);
-  const { onMax } = scroll;
+  const { onMax, onView } = scroll;
   useEffect(() => {
+    onView?.(view);
     if (!ref.current) return;
     const h = measureElement(ref.current).height;
     setContent((c) => (c === h ? c : h));
@@ -98,9 +103,12 @@ function ScrollFrame({
   });
   const max = Math.max(0, content - view);
   const off = Math.min(scroll.offset, max);
-  const hint = max === 0 ? undefined : off === 0 ? '↓ J more' : off >= max ? '↑ K back' : '↑↓ J K more';
+  // With the keyboard on the panel the arrow keys scroll; otherwise J and K do.
+  const down = scroll.focused ? '↓ more' : '↓ J more';
+  const up = scroll.focused ? '↑ back' : '↑ K back';
+  const hint = max === 0 ? undefined : off === 0 ? down : off >= max ? up : scroll.focused ? '↑↓ more' : '↑↓ J K more';
   return (
-    <Frame title={title} position={hint} width={width} height={height}>
+    <Frame title={title} position={hint} focused={scroll.focused} width={width} height={height}>
       <Box ref={ref} flexDirection="column" flexShrink={0} marginTop={-off}>
         {children}
       </Box>
@@ -295,15 +303,8 @@ export function UpstreamMain({
           )}
         </Field>
         <Field label="sdk env">{u.sdk_env ?? '—'}</Field>
-        <Field label="keys">
-          {plural(own.length, 'key')} ({live} active)
-        </Field>
-        <Box flexDirection="column" marginTop={1}>
-          <SectionTitle>ROUTES</SectionTitle>
-          <Text dimColor wrap="wrap">
-            {u.path_allowlist.length ? u.path_allowlist.join('   ') : 'none'}
-          </Text>
-        </Box>
+        <Field label="keys">{own.length === 0 ? 'none' : `${own.length} (${live} active)`}</Field>
+        <Field label="routes">{u.path_allowlist.length ? u.path_allowlist.join('   ') : 'none'}</Field>
       </Body>
     </ScrollFrame>
   );
@@ -343,7 +344,7 @@ export function AuditMain({
           <Text color={actionColor(e.action)}>{e.action}</Text>
         </Field>
         <Field label="target">{targetText(e, names)}</Field>
-        <Field label="target id">{e.target_id}</Field>
+        {targetName(e, names) === e.target_id ? null : <Field label="target id">{e.target_id}</Field>}
         {e.client_ip ? <Field label="from">{e.client_ip}</Field> : null}
         {limited ? (
           <Text dimColor wrap="wrap">
