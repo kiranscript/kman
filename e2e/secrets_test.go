@@ -81,6 +81,10 @@ const (
 	plantedCredential = "sk-planted-credential-Zq7Lw3Vx9TnB5RhK2MdF8YcA4SgJ6PeU1XoN0IvC"
 	plantedBasicUser  = "svc-planted-user"
 	plantedBasicPass  = "planted-basic-password-Hy4Rk8Wm2Tq6Nb0Jc9Fd3Ls5Va7Xe1Zo"
+	// plantedUserAgent is what an app put in its User-Agent that it should not
+	// have. kman keeps the header's product and major version and nothing else
+	// (ADR 0012), so this must appear nowhere kman wrote or said.
+	plantedUserAgent = "planted-ua-Bn3Qs8Wd5Yk1Hp7Tf4Rm9Xc2Lv6Ja0Ze"
 )
 
 // secretBody is what a token holds after its prefix and id, up to its checksum.
@@ -168,6 +172,18 @@ func TestPlantedSecretsAppearOnlyWhereTheyAreMeantTo(t *testing.T) {
 		resp, body := sendThrough(t, s, c.method, c.path, rd, http.Header{"Authorization": {"Bearer " + c.key}})
 		said.add("proxy response to "+c.method+" "+c.path+" ("+resp.Status+")", resp.Header.Get("X-Kman-Error")+"\n"+headerText(resp.Header)+body)
 	}
+	// What an app puts in its User-Agent. The first, a good request, is forwarded as
+	// the app sent it, as the User-Agent always was; the others carry a key and are
+	// refused before they reach the upstream.
+	for _, c := range []struct{ key, ua string }{
+		{vk1, "planted-app/1.4.2 (" + plantedUserAgent + "; ops@planted.example)"},
+		{badKey, vk1},
+		{badKey, "x/1 " + vk1 + " " + plantedUserAgent},
+		{badKey, plantedUserAgent},
+	} {
+		resp, body := sendThrough(t, s, "GET", "/v1/things", nil, http.Header{"Authorization": {"Bearer " + c.key}, "User-Agent": {c.ua}})
+		said.add("proxy response to a request with a User-Agent ("+resp.Status+")", headerText(resp.Header)+body)
+	}
 	// The key in every other place an SDK might put it.
 	for name, v := range map[string]string{"X-Api-Key": vk1, "Api-Key": vk1, "X-Goog-Api-Key": vk1, "X-Postmark-Server-Token": vk1} {
 		resp, body := sendThrough(t, s, "GET", "/v1/other", nil, http.Header{name: {v}})
@@ -179,7 +195,7 @@ func TestPlantedSecretsAppearOnlyWhereTheyAreMeantTo(t *testing.T) {
 		{"upstream", "list"}, {"upstream", "list", "--json"}, {"upstream", "show", "mock", "--json"}, {"upstream", "show", "basic"},
 		{"key", "list"}, {"key", "list", "--json"}, {"key", "show", "app-one"}, {"key", "show", "app-one", "--json"},
 		{"admin-token", "list"}, {"admin-token", "list", "--json"}, {"settings", "get", "--json"},
-		{"price", "list", "--json"}, {"audit", "--json"}, {"audit", "export"}, {"audit", "--latest"}, {},
+		{"price", "list", "--json"}, {"events", "--json", "--limit", "100"}, {"events", "--limit", "100"}, {"key", "places", "app-one", "--json"}, {"key", "places", "app-one"}, {"audit", "--json"}, {"audit", "export"}, {"audit", "--latest"}, {},
 	} {
 		run(args...)
 	}
@@ -262,6 +278,7 @@ func TestPlantedSecretsAppearOnlyWhereTheyAreMeantTo(t *testing.T) {
 
 	secrets := []planted{
 		{name: "credential", secret: plantedCredential},
+		{name: "User-Agent", secret: plantedUserAgent, fragments: []string{"ops@planted.example", "planted-app/1.4"}},
 		{name: "basic credential", secret: plantedBasicUser + ":" + plantedBasicPass, fragments: []string{plantedBasicPass}},
 		{name: "virtual key app-one", secret: vk1, fragments: []string{secretBody(vk1)}},
 		{name: "virtual key app-two", secret: vk2, fragments: []string{secretBody(vk2)}},

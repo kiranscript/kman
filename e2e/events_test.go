@@ -18,6 +18,7 @@ type feedEvent struct {
 	KeyID           string `json:"key_id"`
 	KeyName         string `json:"key_name"`
 	UnidentifiedKey bool   `json:"unidentified_key"`
+	Client          string `json:"client"`
 	ClientAddress   string `json:"client_address"`
 	Withheld        bool   `json:"client_address_withheld"`
 	Country         string `json:"country"`
@@ -101,6 +102,11 @@ func TestEventsFollowShowsRequestsAsTheyHappenThroughTheRealBinary(t *testing.T)
 	if e.Kind != "forwarded" || e.KeyName != "my-app" || e.KeyID == "" || e.Status != 201 || e.Country != "US" || e.ASN != 64500 || e.ASNLabel != "Test Network" {
 		t.Errorf("a forwarded request = %+v", e)
 	}
+	// What called, which the Go client of the test says it is: shown with client
+	// addresses off, for it is a program and not a person.
+	if e.Client != "go-http-client/1" {
+		t.Errorf("the client of a forwarded request = %q, want go-http-client/1", e.Client)
+	}
 	if e.ClientAddress != "" || !e.Withheld {
 		t.Errorf("the address of a forwarded request is out with client addresses off: %+v", e)
 	}
@@ -108,9 +114,17 @@ func TestEventsFollowShowsRequestsAsTheyHappenThroughTheRealBinary(t *testing.T)
 	// A key that does not exist: probing, which shows with no key. The gateway does
 	// not place a request that proved no key, so it has no country or AS.
 	bad := "kmn_zzzzzzzz_" + strings.Repeat("z", 49)
-	probe := next(t, lines, func() { p.thingWith(bad) }, func(e feedEvent) bool { return e.RefusalCode == "invalid_key" })
+	const probingUA = "python-requests/2.31.0 (scanner; probe@example.com)"
+	probe := next(t, lines, func() {
+		sendThrough(t, p.s, "POST", "/v1/things", strings.NewReader("{}"), http.Header{"Authorization": {"Bearer " + bad}, "User-Agent": {probingUA}})
+	}, func(e feedEvent) bool { return e.RefusalCode == "invalid_key" })
 	if probe.Kind != "refused" || !probe.UnidentifiedKey || probe.KeyID != "" || probe.Status != http.StatusUnauthorized {
 		t.Errorf("a request with an invalid key = %+v, want it refused and marked", probe)
+	}
+	// Its client is recorded too, reduced to a product and a major version: probing
+	// is told apart by what it comes from.
+	if probe.Client != "python-requests/2" {
+		t.Errorf("the client of a request with an invalid key = %q, want python-requests/2", probe.Client)
 	}
 
 	// The list reads the store, which the writer fills every 5 seconds.
@@ -132,16 +146,16 @@ func TestEventsFollowShowsRequestsAsTheyHappenThroughTheRealBinary(t *testing.T)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	if r := listed.Events[0]; r.RefusalCode != "invalid_key" || !r.UnidentifiedKey || r.ClientAddress != "" {
+	if r := listed.Events[0]; r.RefusalCode != "invalid_key" || !r.UnidentifiedKey || r.ClientAddress != "" || r.Client != "python-requests/2" {
 		t.Errorf("kman events --refused = %+v", r)
 	}
 	out, _ := h.mustRun(t, "events")
-	for _, want := range []string{"my-app", "(no key)", "AS64500 Test Network", "invalid_key", "POST /v1/things", "expose_client_addresses"} {
+	for _, want := range []string{"my-app", "(no key)", "python-requests/2", "go-http-client/1", "AS64500 Test Network", "invalid_key", "POST /v1/things", "expose_client_addresses"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("kman events lacks %q:\n%s", want, out)
 		}
 	}
-	for _, leak := range []string{"api_key", "sk-leaked", "127.0.0.1", "::1", p.secret, bad} {
+	for _, leak := range []string{"api_key", "sk-leaked", "127.0.0.1", "::1", p.secret, bad, "scanner", "probe@example.com", "2.31"} {
 		if strings.Contains(out, leak) {
 			t.Errorf("kman events printed %q:\n%s", leak, out)
 		}
