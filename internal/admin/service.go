@@ -50,9 +50,9 @@ type API interface {
 	GetKey(ctx context.Context, req KeyRef) (Key, error)
 	Places(ctx context.Context, req PlaceQuery) (KeyPlaces, error)
 	UpdateKey(ctx context.Context, req KeyUpdate) (Key, error)
-	DisableKey(ctx context.Context, req KeyRef) (Key, error)
+	DisableKey(ctx context.Context, req ContainKeyRequest) (Key, error)
 	EnableKey(ctx context.Context, req KeyRef) (Key, error)
-	RevokeKey(ctx context.Context, req KeyRef) (Key, error)
+	RevokeKey(ctx context.Context, req ContainKeyRequest) (Key, error)
 	RotateKey(ctx context.Context, req RotateKeyRequest) (RotatedKey, error)
 	KeyClients(ctx context.Context, req KeyRef) (KeyClients, error)
 
@@ -61,6 +61,16 @@ type API interface {
 	GetCanary(ctx context.Context, req CanaryRef) (Canary, error)
 	UpdateCanary(ctx context.Context, req CanaryUpdate) (Canary, error)
 	ResetCanary(ctx context.Context, req CanaryRef) (Canary, error)
+
+	ListIncidents(ctx context.Context, req IncidentQuery) (IncidentList, error)
+	GetIncident(ctx context.Context, req IncidentRef) (IncidentDetail, error)
+	AckIncident(ctx context.Context, req IncidentRef) (Incident, error)
+	ResolveIncident(ctx context.Context, req ResolveIncidentRequest) (Incident, error)
+	ThisWasMe(ctx context.Context, req ThisWasMeRequest) (ThisWasMeResult, error)
+
+	ListKnownSources(ctx context.Context, req KnownSourceQuery) (KnownSourceList, error)
+	AddKnownSource(ctx context.Context, req AddKnownSourceRequest) (KnownSource, error)
+	RemoveKnownSource(ctx context.Context, req KnownSourceRef) (KnownSource, error)
 
 	ListPrices(ctx context.Context, req PriceQuery) (PriceList, error)
 	PriceDataStatus(ctx context.Context) (PriceDataStatus, error)
@@ -188,6 +198,9 @@ type audit struct {
 	action        string
 	kind, id      string
 	before, after any
+	// incident is the incident this change was made for, 0 for none: it goes
+	// on the audit entry, so the incident's timeline shows it.
+	incident int64
 }
 
 // effects is what a command does to memory once it has committed. A command
@@ -245,7 +258,7 @@ func (s *Service) commandWith(ctx context.Context, fx *effects, fn func(tx *stor
 				return err
 			}
 			entry := store.AuditEntry{TS: now, Actor: c.Actor, Action: e.action,
-				TargetKind: e.kind, TargetID: e.id, BeforeJSON: before, AfterJSON: after, ClientIP: c.ClientIP}
+				TargetKind: e.kind, TargetID: e.id, IncidentID: e.incident, BeforeJSON: before, AfterJSON: after, ClientIP: c.ClientIP}
 			if entry.ID, err = tx.AppendAudit(entry); err != nil {
 				return err
 			}

@@ -61,6 +61,14 @@ const (
 	ResolutionExpired       = "expired"
 )
 
+// How long an incident may go without a firing before it is quiet, and how long
+// an unacknowledged one that is not critical may be quiet before it expires
+// (SPEC §10). They are fixed, and the admin API and detect both read them here.
+const (
+	IncidentQuietAfter  = time.Hour
+	IncidentExpireAfter = 7 * 24 * time.Hour
+)
+
 // Incident is the open case for one key (#88). A key has at most one
 // unresolved incident; each rule firing is a detection attached to it.
 type Incident struct {

@@ -298,9 +298,9 @@ func lifecycle(ctx context.Context, svc *admin.Service, as context.Context, name
 	if err != nil {
 		return err
 	}
-	ref := admin.KeyRef{ID: created.Key.ID}
+	ref, contain := admin.KeyRef{ID: created.Key.ID}, admin.ContainKeyRequest{ID: created.Key.ID}
 	if disable {
-		if _, err := svc.DisableKey(as, ref); err != nil {
+		if _, err := svc.DisableKey(as, contain); err != nil {
 			return err
 		}
 	}
@@ -310,7 +310,7 @@ func lifecycle(ctx context.Context, svc *admin.Service, as context.Context, name
 		}
 	}
 	if revoke {
-		if _, err := svc.RevokeKey(as, ref); err != nil {
+		if _, err := svc.RevokeKey(as, contain); err != nil {
 			return err
 		}
 	}

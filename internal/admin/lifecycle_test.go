@@ -31,7 +31,7 @@ func TestDisablingAKeyStopsItInTheRegistryAndIsAudited(t *testing.T) {
 	before := in.reg.Generation()
 	in.now = in.now.Add(time.Hour)
 
-	got, err := in.svc.DisableKey(as("owner"), admin.KeyRef{ID: k.ID})
+	got, err := in.svc.DisableKey(as("owner"), admin.ContainKeyRequest{ID: k.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func storedKey(t *testing.T, in *install, id string) store.VirtualKey {
 
 func TestEnablingADisabledKeyLetsItWorkAgain(t *testing.T) {
 	in, k := lifecycleKey(t)
-	if _, err := in.svc.DisableKey(as("owner"), admin.KeyRef{ID: k.ID}); err != nil {
+	if _, err := in.svc.DisableKey(as("owner"), admin.ContainKeyRequest{ID: k.ID}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := in.svc.EnableKey(as("owner"), admin.KeyRef{ID: k.ID})
@@ -99,12 +99,12 @@ func TestRevokingAKeyIsFinalAndKeepsItInTheRegistry(t *testing.T) {
 		t.Run(from, func(t *testing.T) {
 			in, k := lifecycleKey(t)
 			if from == "disabled" {
-				if _, err := in.svc.DisableKey(as("owner"), admin.KeyRef{ID: k.ID}); err != nil {
+				if _, err := in.svc.DisableKey(as("owner"), admin.ContainKeyRequest{ID: k.ID}); err != nil {
 					t.Fatal(err)
 				}
 			}
 			in.now = in.now.Add(time.Hour)
-			got, err := in.svc.RevokeKey(as("owner"), admin.KeyRef{ID: k.ID})
+			got, err := in.svc.RevokeKey(as("owner"), admin.ContainKeyRequest{ID: k.ID})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,7 +127,7 @@ func TestRevokingAKeyIsFinalAndKeepsItInTheRegistry(t *testing.T) {
 
 func TestARevokedKeyCannotBeEnabledOrDisabled(t *testing.T) {
 	in, k := lifecycleKey(t)
-	if _, err := in.svc.RevokeKey(as("owner"), admin.KeyRef{ID: k.ID}); err != nil {
+	if _, err := in.svc.RevokeKey(as("owner"), admin.ContainKeyRequest{ID: k.ID}); err != nil {
 		t.Fatal(err)
 	}
 	logged := len(in.latest(t, 100))
@@ -135,7 +135,7 @@ func TestARevokedKeyCannotBeEnabledOrDisabled(t *testing.T) {
 	if _, err := in.svc.EnableKey(as("owner"), admin.KeyRef{ID: k.ID}); code(err) != admin.CodeConflict || !strings.Contains(err.Error(), "revoked") {
 		t.Errorf("EnableKey = %v, want a conflict saying it is revoked", err)
 	}
-	if _, err := in.svc.DisableKey(as("owner"), admin.KeyRef{ID: k.ID}); code(err) != admin.CodeConflict {
+	if _, err := in.svc.DisableKey(as("owner"), admin.ContainKeyRequest{ID: k.ID}); code(err) != admin.CodeConflict {
 		t.Errorf("DisableKey = %v, want conflict", err)
 	}
 	if s := registryStatus(t, in, k.ID); s != "revoked" {
@@ -154,10 +154,10 @@ func TestACommandThatChangesNothingRecordsNothing(t *testing.T) {
 		want string
 	}{
 		{"enable an active key", func() (admin.Key, error) { return in.svc.EnableKey(as("owner"), admin.KeyRef{ID: k.ID}) }, "active"},
-		{"disable", func() (admin.Key, error) { return in.svc.DisableKey(as("owner"), admin.KeyRef{ID: k.ID}) }, "disabled"},
-		{"disable again", func() (admin.Key, error) { return in.svc.DisableKey(as("owner"), admin.KeyRef{ID: k.ID}) }, "disabled"},
-		{"revoke", func() (admin.Key, error) { return in.svc.RevokeKey(as("owner"), admin.KeyRef{ID: k.ID}) }, "revoked"},
-		{"revoke again", func() (admin.Key, error) { return in.svc.RevokeKey(as("owner"), admin.KeyRef{ID: k.ID}) }, "revoked"},
+		{"disable", func() (admin.Key, error) { return in.svc.DisableKey(as("owner"), admin.ContainKeyRequest{ID: k.ID}) }, "disabled"},
+		{"disable again", func() (admin.Key, error) { return in.svc.DisableKey(as("owner"), admin.ContainKeyRequest{ID: k.ID}) }, "disabled"},
+		{"revoke", func() (admin.Key, error) { return in.svc.RevokeKey(as("owner"), admin.ContainKeyRequest{ID: k.ID}) }, "revoked"},
+		{"revoke again", func() (admin.Key, error) { return in.svc.RevokeKey(as("owner"), admin.ContainKeyRequest{ID: k.ID}) }, "revoked"},
 	}
 	var logged int
 	var gen int64
@@ -180,7 +180,7 @@ func TestACommandThatChangesNothingRecordsNothing(t *testing.T) {
 
 func TestRevokingAKeyFreesItsName(t *testing.T) {
 	in, k := lifecycleKey(t)
-	if _, err := in.svc.RevokeKey(as("owner"), admin.KeyRef{ID: k.ID}); err != nil {
+	if _, err := in.svc.RevokeKey(as("owner"), admin.ContainKeyRequest{ID: k.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if again := in.createKey(t, admin.CreateKeyRequest{Name: "my-app", Upstream: "openai"}).Key; again.ID == k.ID {
@@ -190,7 +190,7 @@ func TestRevokingAKeyFreesItsName(t *testing.T) {
 
 func TestEnablingAnExpiredKeyDoesNotRevive(t *testing.T) {
 	in, k := lifecycleKey(t)
-	if _, err := in.svc.DisableKey(as("owner"), admin.KeyRef{ID: k.ID}); err != nil {
+	if _, err := in.svc.DisableKey(as("owner"), admin.ContainKeyRequest{ID: k.ID}); err != nil {
 		t.Fatal(err)
 	}
 	in.now = k.ExpiresAt.Add(time.Second)
@@ -208,14 +208,21 @@ func TestEnablingAnExpiredKeyDoesNotRevive(t *testing.T) {
 
 func TestLifecycleCommandsNeedACallerAndAKnownKey(t *testing.T) {
 	in, k := lifecycleKey(t)
-	ref := admin.KeyRef{ID: k.ID}
-	for name, run := range map[string]func(context.Context, admin.KeyRef) (admin.Key, error){
-		"disable": in.svc.DisableKey, "enable": in.svc.EnableKey, "revoke": in.svc.RevokeKey,
+	for name, run := range map[string]func(context.Context, string) (admin.Key, error){
+		"disable": func(ctx context.Context, id string) (admin.Key, error) {
+			return in.svc.DisableKey(ctx, admin.ContainKeyRequest{ID: id})
+		},
+		"enable": func(ctx context.Context, id string) (admin.Key, error) {
+			return in.svc.EnableKey(ctx, admin.KeyRef{ID: id})
+		},
+		"revoke": func(ctx context.Context, id string) (admin.Key, error) {
+			return in.svc.RevokeKey(ctx, admin.ContainKeyRequest{ID: id})
+		},
 	} {
-		if _, err := run(context.Background(), ref); code(err) != admin.CodeUnauthorized {
+		if _, err := run(context.Background(), k.ID); code(err) != admin.CodeUnauthorized {
 			t.Errorf("%s with no caller = %v, want unauthorized", name, err)
 		}
-		if _, err := run(as("owner"), admin.KeyRef{ID: "nosuchid"}); code(err) != admin.CodeNotFound {
+		if _, err := run(as("owner"), "nosuchid"); code(err) != admin.CodeNotFound {
 			t.Errorf("%s of an unknown key = %v, want not found", name, err)
 		}
 	}

@@ -21,10 +21,10 @@ const (
 	// DefaultQuietAfter is how long an incident goes without a firing before it
 	// is quiet. Quiet is display only, except that a firing on a quiet incident
 	// is an escalation.
-	DefaultQuietAfter = time.Hour
+	DefaultQuietAfter = store.IncidentQuietAfter
 	// DefaultExpireAfter is how long an unacknowledged incident that is not
 	// critical may be quiet before it expires.
-	DefaultExpireAfter = 7 * 24 * time.Hour
+	DefaultExpireAfter = store.IncidentExpireAfter
 	// DefaultSweepEvery is how often the expiry sweep runs.
 	DefaultSweepEvery = 15 * time.Minute
 )

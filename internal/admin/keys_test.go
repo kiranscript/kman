@@ -533,7 +533,7 @@ func TestAKeyPastALoweredMaximumMayStillBeShortened(t *testing.T) {
 func TestARevokedKeyCannotBeUpdated(t *testing.T) {
 	in, _ := withCredential(t)
 	k := in.createKey(t, admin.CreateKeyRequest{Name: "my-app", Upstream: "openai"}).Key
-	if _, err := in.svc.RevokeKey(as("owner"), admin.KeyRef{ID: k.ID}); err != nil {
+	if _, err := in.svc.RevokeKey(as("owner"), admin.ContainKeyRequest{ID: k.ID}); err != nil {
 		t.Fatal(err)
 	}
 	note := "x"
