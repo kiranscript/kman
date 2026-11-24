@@ -1,0 +1,53 @@
+{
+ "description": "A key used for days with no GeoIP database has no countries or ASNs. When a database is installed its first country and ASN are the baseline, not detections; the next new country is raised.",
+ "start": "2026-11-01T09:00:00Z",
+ "keys": [
+  {
+   "name": "app"
+  }
+ ],
+ "steps": [
+  {
+   "at": "0h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "48h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "8d",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "9d",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  }
+ ]
+}

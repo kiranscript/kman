@@ -134,15 +134,41 @@ func TestUsualPlacesAreTheKeysBusiestForwardedOnesWithoutTheNewOnes(t *testing.T
 	add(3, "NL", "request")
 	do(t, s, func(tx *store.Tx) error { return tx.AddEvents(batch) })
 	var got []store.PlaceRow
+	var total int
 	do(t, s, func(tx *store.Tx) (err error) {
-		got, err = tx.UsualPlaces("kkkk1111", store.PlaceCountry, []string{"NL"}, 3)
+		got, total, err = tx.UsualPlaces("kkkk1111", store.PlaceCountry, []string{"NL"}, time.Time{}, 3)
 		return
 	})
+	if total != 3 {
+		t.Errorf("total usual places = %d, want the 3 forwarded ones outside the exceptions", total)
+	}
 	var values []string
 	for _, p := range got {
 		values = append(values, fmt.Sprintf("%s:%d", p.Value, p.Count))
 	}
 	if fmt.Sprint(values) != "[DE:9 US:5 FR:2]" {
 		t.Errorf("usual countries = %v, want [DE:9 US:5 FR:2]", values)
+	}
+}
+
+func TestUsualPlacesCanBeLimitedToThoseTheKeyHadWhenItFinishedLearning(t *testing.T) {
+	s := open(t)
+	t0 := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	var batch []store.EventRow
+	for i, c := range []string{"US", "US", "DE"} { // learned
+		batch = append(batch, store.EventRow{Time: t0.Add(time.Duration(i) * time.Hour), Kind: "request", KeyID: "kkkk1111", Country: c, Status: 200})
+	}
+	for i := range 20 { // a place that turned up after, and has been busy since
+		batch = append(batch, store.EventRow{Time: t0.Add(48*time.Hour + time.Duration(i)*time.Minute), Kind: "request", KeyID: "kkkk1111", Country: "CN", Status: 200})
+	}
+	do(t, s, func(tx *store.Tx) error { return tx.AddEvents(batch) })
+	var got []store.PlaceRow
+	var total int
+	do(t, s, func(tx *store.Tx) (err error) {
+		got, total, err = tx.UsualPlaces("kkkk1111", store.PlaceCountry, nil, t0.Add(24*time.Hour), 5)
+		return
+	})
+	if len(got) != 2 || total != 2 || got[0].Value != "US" || got[1].Value != "DE" {
+		t.Errorf("usual by the end of learning = %+v (%d), want US then DE and not CN", got, total)
 	}
 }

@@ -1,0 +1,83 @@
+{
+ "description": "A new client (medium) opens the incident; a new country (high) escalates it and alerts; another new client is a repeat; a new ASN, an hour and more later, escalates again because the incident went quiet.",
+ "start": "2026-11-01T09:00:00Z",
+ "keys": [
+  {
+   "name": "app"
+  }
+ ],
+ "steps": [
+  {
+   "at": "0h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "48h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "8d",
+   "key": "app",
+   "client": "curl/8",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net"
+  },
+  {
+   "at": "8d10m",
+   "key": "app",
+   "client": "curl/8",
+   "ip": "198.51.100.7",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net"
+  },
+  {
+   "at": "8d20m",
+   "key": "app",
+   "client": "wget/1",
+   "ip": "198.51.100.7",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net"
+  },
+  {
+   "at": "8d2h",
+   "key": "app",
+   "client": "wget/1",
+   "ip": "198.51.100.7",
+   "country": "DE",
+   "asn": 3320,
+   "as_org": "Deutsche Telekom AG"
+  }
+ ]
+}

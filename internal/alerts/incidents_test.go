@@ -296,3 +296,33 @@ func TestIncidentAuditEntriesAreAlertedByWhatTheyDo(t *testing.T) {
 		})
 	}
 }
+
+// #89: a location detection's alert names the key, the new place with its label,
+// the places the key normally uses, and the commands that contain it.
+func TestALocationAlertNamesTheKeyThePlaceItsLabelTheUsualPlacesAndHowToContainIt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		in := newInstall(t)
+		in.channel("ch_1", "slack", "hooks.test", "low", true, "")
+		in.withKey("abcd1234", "ci-bot")
+		stop := in.run()
+		defer stop()
+		in.raise(in.engine(), "abcd1234", "new_asn", store.SeverityMedium, store.Evidence{
+			Address: "203.0.113.9", Network: "203.0.113.0/24", Country: "DE", ASN: 3320, ASOrg: "Deutsche Telekom AG", Client: "curl/8",
+			Observed: "new ASN AS3320 (Deutsche Telekom AG)", Baseline: "AS64500 Example Net (412 requests)", Usual: "198.51.100.0/24 (412 requests), 203.0.113.0/24 (30 requests), 192.0.2.0/24 (9 requests), and 4 more",
+			Detail: "the request was refused (address_not_allowed)"})
+		synctest.Wait()
+		got := in.net.received("hooks.test")
+		if len(got) != 1 {
+			t.Fatalf("%d alerts, want 1", len(got))
+		}
+		for _, want := range []string{"ci-bot", "abcd1234", "new_asn",
+			"New place", "new ASN AS3320 (Deutsche Telekom AG)",
+			"Usually used from", "AS64500 Example Net (412 requests)", "198.51.100.0/24 (412 requests), 203.0.113.0/24 (30 requests), 192.0.2.0/24 (9 requests), and 4 more",
+			"203.0.113.9", "refused",
+			"kman key disable abcd1234 --incident 1", "kman key rotate abcd1234 --incident 1", "kman incident this-was-me 1"} {
+			if !strings.Contains(got[0].Body, want) {
+				t.Errorf("the alert lacks %q:\n%s", want, got[0].Body)
+			}
+		}
+	})
+}

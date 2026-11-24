@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"net/netip"
 	"slices"
 	"strconv"
@@ -248,14 +249,20 @@ func (tx *Tx) Places(keyID, kind string) ([]PlaceRow, error) {
 // UsualPlaces returns the places of one kind that a key is used from most: the
 // ones it has had forwarded requests from, busiest first, then most recently
 // seen, without the overflow row and without the values in except (the places a
-// batch has just added, which are what is being compared). It returns at most
-// limit.
-func (tx *Tx) UsualPlaces(keyID, kind string, except []string, limit int) ([]PlaceRow, error) {
+// batch has just added, which are what is being compared). When by is not zero,
+// only places first seen at or before it count: those the key had when it
+// finished learning, and not those a detection since has added. It returns at
+// most limit, and how many there are in all.
+func (tx *Tx) UsualPlaces(keyID, kind string, except []string, by time.Time, limit int) ([]PlaceRow, int, error) {
+	seenBy := int64(math.MaxInt64)
+	if !by.IsZero() {
+		seenBy = toMilli(by)
+	}
 	rows, err := tx.tx.QueryContext(tx.ctx, `SELECT key_id, kind, value, COALESCE(label, ''), first_seen, last_seen, count, blocked
-		FROM baseline_places WHERE key_id = ?1 AND kind = ?2 AND value <> '' AND count > 0
-		ORDER BY count DESC, last_seen DESC, value LIMIT ?3`, keyID, kind, limit+len(except))
+		FROM baseline_places WHERE key_id = ?1 AND kind = ?2 AND value <> '' AND count > 0 AND first_seen <= ?4
+		ORDER BY count DESC, last_seen DESC, value LIMIT ?3`, keyID, kind, limit+len(except), seenBy)
 	if err != nil {
-		return nil, typed(err, "read places")
+		return nil, 0, typed(err, "read places")
 	}
 	defer rows.Close()
 	out := []PlaceRow{}
@@ -263,7 +270,7 @@ func (tx *Tx) UsualPlaces(keyID, kind string, except []string, limit int) ([]Pla
 		var p PlaceRow
 		var first, last int64
 		if err := rows.Scan(&p.KeyID, &p.Kind, &p.Value, &p.Label, &first, &last, &p.Count, &p.Blocked); err != nil {
-			return nil, typed(err, "read places")
+			return nil, 0, typed(err, "read places")
 		}
 		if slices.Contains(except, p.Value) {
 			continue
@@ -272,9 +279,23 @@ func (tx *Tx) UsualPlaces(keyID, kind string, except []string, limit int) ([]Pla
 		out = append(out, p)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, typed(err, "read places")
+		return nil, 0, typed(err, "read places")
 	}
-	return out, nil
+	rows.Close()
+	var total int
+	if err := tx.tx.QueryRowContext(tx.ctx, `SELECT count(*) FROM baseline_places
+		WHERE key_id = ?1 AND kind = ?2 AND value <> '' AND count > 0 AND first_seen <= ?3`, keyID, kind, seenBy).Scan(&total); err != nil {
+		return nil, 0, typed(err, "read places")
+	}
+	for _, v := range except {
+		var n int
+		if err := tx.tx.QueryRowContext(tx.ctx, `SELECT count(*) FROM baseline_places
+			WHERE key_id = ?1 AND kind = ?2 AND value = ?3 AND count > 0 AND first_seen <= ?4`, keyID, kind, v, seenBy).Scan(&n); err != nil {
+			return nil, 0, typed(err, "read places")
+		}
+		total -= n
+	}
+	return out, total, nil
 }
 
 // LearningStart returns when the key's learning period began, which is its first

@@ -1,0 +1,67 @@
+{
+ "description": "The key is refused from Germany first (that is a place, but not a forwarded request, so no learning period starts), forwarded from the US on day 1, and learns until day 8. A new country at 7d23h59m into it is only recorded; one a minute later is raised. Germany, already seen when refused, is not new.",
+ "start": "2026-11-01T09:00:00Z",
+ "keys": [
+  {
+   "name": "app"
+  }
+ ],
+ "steps": [
+  {
+   "at": "0h",
+   "key": "app",
+   "kind": "blocked",
+   "code": "address_not_allowed",
+   "ip": "203.0.113.9",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "curl/8"
+  },
+  {
+   "at": "24h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "FR",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "191h59m",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "NL",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "192h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "BE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "216h",
+   "key": "app",
+   "ip": "203.0.113.9",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  }
+ ]
+}

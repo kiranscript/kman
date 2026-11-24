@@ -61,12 +61,23 @@ type rig struct {
 // canary cafe0001. Its clock is the rig's now, which tests move.
 func newRig(t *testing.T) *rig {
 	t.Helper()
+	st := seedStore(t,
+		store.VirtualKey{ID: "abcd1234", Name: "app", CredentialID: "cr_1"},
+		store.VirtualKey{ID: "beef5678", Name: "batch", CredentialID: "cr_1"},
+		store.VirtualKey{ID: "cafe0001", Name: "decoy", Kind: store.KeyCanary})
+	r := &rig{t: t, store: st, alerts: &alerter{}, now: t0}
+	r.engine = detect.New(detect.Options{Store: st, Now: func() time.Time { return r.now }, Alerts: r.alerts})
+	return r
+}
+
+// seedStore opens a store holding an upstream, a credential cr_1 and the keys.
+func seedStore(t *testing.T, keys ...store.VirtualKey) *store.Store {
+	t.Helper()
 	st, err := store.Open(context.Background(), store.Options{Dir: t.TempDir(), Now: t0})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	r := &rig{t: t, store: st, alerts: &alerter{}, now: t0}
 	err = st.Do(context.Background(), func(tx *store.Tx) error {
 		if err := tx.CreateDataKey(store.DataKey{ID: "dek_1", Wrapped: []byte("w"), Nonce: []byte("n"), KEKFingerprint: "mkf_1", CreatedAt: t0}); err != nil {
 			return err
@@ -80,12 +91,11 @@ func newRig(t *testing.T) *rig {
 			DataKeyID: "dek_1", Last4: "abcd", CreatedAt: t0}); err != nil {
 			return err
 		}
-		for _, k := range []store.VirtualKey{
-			{ID: "abcd1234", Name: "app", CredentialID: "cr_1"},
-			{ID: "beef5678", Name: "batch", CredentialID: "cr_1"},
-			{ID: "cafe0001", Name: "decoy", Kind: store.KeyCanary},
-		} {
-			k.PolicyJSON, k.PolicyVersion, k.TagsJSON, k.CreatedAt = `{}`, 1, `[]`, t0
+		for _, k := range keys {
+			if k.PolicyJSON == "" {
+				k.PolicyJSON = `{}`
+			}
+			k.PolicyVersion, k.TagsJSON, k.CreatedAt = 1, `[]`, t0
 			if _, err := tx.CreateKey(k, []byte("01234567890123456789012345678901")); err != nil {
 				return err
 			}
@@ -95,8 +105,7 @@ func newRig(t *testing.T) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.engine = detect.New(detect.Options{Store: st, Now: func() time.Time { return r.now }, Alerts: r.alerts})
-	return r
+	return st
 }
 
 func (r *rig) raise(d detect.Detection) detect.Outcome {

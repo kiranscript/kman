@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/kirank55/kman/internal/store"
@@ -104,6 +105,9 @@ type Options struct {
 // open, escalation and expiry (SPEC §2).
 type Engine struct {
 	o Options
+	// wakePending says a transaction queued an incident alert that the
+	// dispatcher has not been woken for (AfterCommit).
+	wakePending atomic.Bool
 }
 
 // New returns an Engine.
@@ -168,6 +172,46 @@ func (e *Engine) wake(out Outcome) {
 // through the Alerter, unless the detection is Silent. A repeat writes neither.
 // The caller wakes the dispatcher after the commit (Wake, or RaiseNow).
 func (e *Engine) Raise(tx *store.Tx, d Detection) (Outcome, error) {
+	return e.raise(tx, d, false)
+}
+
+// RaiseGroup records detections that are about one key and one cause, as the
+// location rules raise a request that is new in several ways at once: each moves
+// the incident as Raise does, but the group alerts once, for the highest
+// severity among those that opened or escalated the incident, and its alert
+// names the incident as it stands after all of them. A group with no open or
+// escalation alerts nothing. The caller wakes the dispatcher after the commit
+// (Wake).
+func (e *Engine) RaiseGroup(tx *store.Tx, ds []Detection) ([]Outcome, error) {
+	if len(ds) == 0 {
+		return nil, nil
+	}
+	outs := make([]Outcome, len(ds))
+	best := -1
+	for i, d := range ds {
+		if d.KeyID != ds[0].KeyID {
+			return nil, errors.New("detect: a group of detections is about one key")
+		}
+		out, err := e.raise(tx, d, true)
+		if err != nil {
+			return nil, err
+		}
+		outs[i] = out
+		if out.Change != Repeated && !d.Silent && (best < 0 || d.Severity.Rank() > ds[best].Severity.Rank()) {
+			best = i
+		}
+	}
+	if best >= 0 && e.o.Alerts != nil {
+		if err := e.o.Alerts.AlertIncident(tx, string(outs[best].Change), outs[len(outs)-1].Incident, outs[best].Detection); err != nil {
+			return nil, err
+		}
+	}
+	return outs, nil
+}
+
+// raise is Raise; grouped says the caller queues the alert itself, once for a
+// group (RaiseGroup), so none is queued here.
+func (e *Engine) raise(tx *store.Tx, d Detection, grouped bool) (Outcome, error) {
 	switch {
 	case d.KeyID == "":
 		return Outcome{}, errors.New("detect: a detection needs a key")
@@ -248,7 +292,7 @@ func (e *Engine) Raise(tx *store.Tx, d Detection) (Outcome, error) {
 	if err := e.audit(tx, at, "incident."+map[Change]string{Opened: "open", Escalated: "escalate"}[change], inc, d.Rule); err != nil {
 		return Outcome{}, err
 	}
-	if !d.Silent && e.o.Alerts != nil {
+	if !d.Silent && !grouped && e.o.Alerts != nil {
 		if err := e.o.Alerts.AlertIncident(tx, string(change), inc, row); err != nil {
 			return Outcome{}, err
 		}

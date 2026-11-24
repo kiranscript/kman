@@ -1,0 +1,237 @@
+{
+ "description": "Known sources, for one key and for every key, of each kind (CIDR, country, ASN, client): a request from one never raises the rules. The Oslo office is a source of the key other only, so the same country used on app still raises. A request nothing covers still raises.",
+ "start": "2026-11-01T09:00:00Z",
+ "keys": [
+  {
+   "name": "app"
+  },
+  {
+   "name": "other"
+  }
+ ],
+ "known_sources": [
+  {
+   "key": "app",
+   "kind": "cidr",
+   "value": "203.0.113.0/24",
+   "label": "CI runners"
+  },
+  {
+   "key": "app",
+   "kind": "country",
+   "value": "FR",
+   "label": "Paris office"
+  },
+  {
+   "key": "app",
+   "kind": "asn",
+   "value": "3320",
+   "label": "Telekom"
+  },
+  {
+   "key": "app",
+   "kind": "client",
+   "value": "health-check/1",
+   "label": "our probe"
+  },
+  {
+   "key": "other",
+   "kind": "country",
+   "value": "NO",
+   "label": "Oslo office"
+  },
+  {
+   "kind": "client",
+   "value": "health-check/1",
+   "label": "the load balancer's probe"
+  },
+  {
+   "kind": "country",
+   "value": "FR",
+   "label": "Paris office, for every key"
+  },
+  {
+   "kind": "cidr",
+   "value": "100.64.0.0/16",
+   "label": "the carrier's NAT"
+  },
+  {
+   "kind": "asn",
+   "value": "15169",
+   "label": "Google, for every key"
+  }
+ ],
+ "steps": [
+  {
+   "at": "0h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "48h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "0h",
+   "key": "other",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "other",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "48h",
+   "key": "other",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "other",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "8d",
+   "key": "app",
+   "ip": "203.0.113.77",
+   "country": "DE",
+   "asn": 3320,
+   "as_org": "Deutsche Telekom AG",
+   "client": "curl/8"
+  },
+  {
+   "at": "8d1h",
+   "key": "app",
+   "ip": "192.0.2.5",
+   "country": "FR",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "8d2h",
+   "key": "app",
+   "ip": "192.0.2.5",
+   "country": "NL",
+   "asn": 3320,
+   "as_org": "Deutsche Telekom AG",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "8d3h",
+   "key": "app",
+   "ip": "192.0.2.5",
+   "country": "NL",
+   "asn": 1299,
+   "as_org": "Telia",
+   "client": "health-check/1"
+  },
+  {
+   "at": "8d4h",
+   "key": "app",
+   "ip": "198.18.0.5",
+   "country": "SE",
+   "asn": 1299,
+   "as_org": "Telia",
+   "client": "wget/1"
+  },
+  {
+   "at": "9d",
+   "key": "other",
+   "ip": "192.0.2.5",
+   "country": "FR",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "9d1h",
+   "key": "other",
+   "ip": "192.0.2.6",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "health-check/1"
+  },
+  {
+   "at": "9d2h",
+   "key": "other",
+   "ip": "198.18.0.9",
+   "country": "NO",
+   "asn": 2119,
+   "as_org": "Telenor",
+   "client": "wget/1"
+  },
+  {
+   "at": "9d3h",
+   "key": "other",
+   "ip": "100.64.5.5",
+   "country": "JP",
+   "asn": 2516,
+   "as_org": "KDDI",
+   "client": "x/1"
+  },
+  {
+   "at": "9d4h",
+   "key": "other",
+   "ip": "8.8.8.8",
+   "country": "US",
+   "asn": 15169,
+   "as_org": "Google LLC",
+   "client": "y/1"
+  },
+  {
+   "at": "9d5h",
+   "key": "app",
+   "ip": "198.18.0.5",
+   "country": "NO",
+   "asn": 2119,
+   "as_org": "Telenor",
+   "client": "wget/1"
+  }
+ ]
+}

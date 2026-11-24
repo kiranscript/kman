@@ -3,6 +3,7 @@ package alerts
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 
 	"github.com/kirank55/kman/internal/store"
 )
@@ -36,16 +37,49 @@ func (s *Service) AlertIncident(tx *store.Tx, change string, inc store.Incident,
 	}
 	var ev store.Evidence
 	if err := json.Unmarshal([]byte(det.EvidenceJSON), &ev); err == nil {
-		a.Evidence = evidenceFacts(ev)
+		if strings.HasPrefix(det.Rule, "new_") {
+			a.Evidence = locationFacts(ev)
+		} else {
+			a.Evidence = evidenceFacts(ev)
+		}
 	}
 	a.Evidence = append(a.Evidence, Fact{"Detections", strconv.FormatInt(inc.Detections, 10) + " so far"})
 	a.Commands = []string{
 		"kman incident show " + id,
 		"kman incident ack " + id,
 		"kman key disable " + inc.KeyID + " --incident " + id,
+		"kman key rotate " + inc.KeyID + " --incident " + id,
 		"kman incident this-was-me " + id,
 	}
 	return s.NotifyTx(tx, a)
+}
+
+// locationFacts lays out a location rule's detection (#89): the new place first,
+// with its label, then the places the key normally uses, then where the request
+// came from. The networks the key normally uses are addresses, which this alert
+// may name as it names the address of the request: it goes to the operator's own
+// channel.
+func locationFacts(ev store.Evidence) []Fact {
+	var out []Fact
+	add := func(label, v string) {
+		if v = clean(v); v != "" {
+			out = append(out, Fact{label, v})
+		}
+	}
+	add("New place", ev.Observed)
+	// A list of the usual places is longer than a label.
+	out = appendLong(out, "Usually used from", ev.Baseline)
+	out = appendLong(out, "Usual networks", ev.Usual)
+	rest := ev
+	rest.Observed, rest.Baseline, rest.Usual = "", "", ""
+	return append(out, evidenceFacts(rest)...)
+}
+
+func appendLong(out []Fact, label, v string) []Fact {
+	if v = cleanTo(v, 300); v != "" {
+		out = append(out, Fact{label, v})
+	}
+	return out
 }
 
 // evidenceFacts lays out what a detection saw, cleaned of what a database file

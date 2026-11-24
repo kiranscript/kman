@@ -1,0 +1,69 @@
+{
+ "description": "An address lock refuses a request from a new country; the refusal is a place and a detection, so the operator hears about a leak the lock stopped. The detection says it was refused and why.",
+ "start": "2026-11-01T09:00:00Z",
+ "keys": [
+  {
+   "name": "app"
+  }
+ ],
+ "steps": [
+  {
+   "at": "0h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "48h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "8d",
+   "key": "app",
+   "kind": "blocked",
+   "code": "address_not_allowed",
+   "ip": "203.0.113.9",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "8d1m",
+   "key": "app",
+   "kind": "blocked",
+   "code": "address_not_allowed",
+   "ip": "203.0.113.9",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  }
+ ]
+}

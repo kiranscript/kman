@@ -11,6 +11,7 @@ import (
 
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/alerts"
+	"github.com/kirank55/kman/internal/detect"
 	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/pricing"
 	"github.com/kirank55/kman/internal/store"
@@ -18,7 +19,8 @@ import (
 
 // eventPipeline is the event bus and what listens to it: the store writer
 // (events and usage_hourly), the Prometheus metrics, and the alerts' priority
-// lane. detect joins as one more subscriber.
+// lane. detect observes the writer's batches: the location rules run in the
+// transaction that records a new place (#89).
 type eventPipeline struct {
 	bus     *events.Bus
 	metrics *events.Metrics
@@ -28,11 +30,11 @@ type eventPipeline struct {
 }
 
 // startEvents runs the bus and its subscribers until stop.
-func startEvents(ctx context.Context, st *store.Store, log *slog.Logger, alert *alerts.Service) *eventPipeline {
+func startEvents(ctx context.Context, st *store.Store, log *slog.Logger, alert *alerts.Service, incidents *detect.Engine) *eventPipeline {
 	p := &eventPipeline{
 		bus:     events.New(events.Options{}),
 		metrics: events.NewMetrics(),
-		writer:  events.NewWriter(events.WriterOptions{Sink: events.SQLite(st), Log: log}),
+		writer:  events.NewWriter(events.WriterOptions{Sink: events.SQLite(st, incidents), Log: log}),
 	}
 	// A writer behind by a whole queue's worth means the store is slow; the bus
 	// counts what it then drops, and metrics show it.

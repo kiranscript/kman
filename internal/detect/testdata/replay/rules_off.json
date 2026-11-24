@@ -1,0 +1,105 @@
+{
+ "description": "A key turns off new_country and new_client in its policy, so a request new in every way raises only new_asn and new_network (one alert). Another key, with nothing turned off, gets all four.",
+ "start": "2026-11-01T09:00:00Z",
+ "keys": [
+  {
+   "name": "app",
+   "policy": "{\"detect\":{\"new_country\":false,\"new_client\":false}}"
+  },
+  {
+   "name": "other"
+  }
+ ],
+ "steps": [
+  {
+   "at": "0h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "48h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "0h",
+   "key": "other",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "other",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "48h",
+   "key": "other",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "other",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "8d",
+   "key": "app",
+   "ip": "203.0.113.9",
+   "country": "DE",
+   "asn": 3320,
+   "as_org": "Deutsche Telekom AG",
+   "client": "curl/8"
+  },
+  {
+   "at": "8d",
+   "key": "other",
+   "ip": "203.0.113.9",
+   "country": "DE",
+   "asn": 3320,
+   "as_org": "Deutsche Telekom AG",
+   "client": "curl/8"
+  }
+ ]
+}

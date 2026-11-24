@@ -1,0 +1,31 @@
+scenario: first_place_of_a_kind
+A key used for days with no GeoIP database has no countries or ASNs. When a database is installed its first country and ASN are the baseline, not detections; the next new country is raised.
+
+step 1  0h       app     request  198.51.100.7 openai-python/3
+  nothing raised
+
+step 2  24h      app     request  198.51.100.7 openai-python/3
+  nothing raised
+
+step 3  48h      app     request  198.51.100.7 openai-python/3
+  nothing raised
+
+step 4  72h      app     request  198.51.100.7 openai-python/3
+  nothing raised
+
+step 5  8d       app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 6  9d       app     request  198.51.100.7 DE AS64500 openai-python/3
+  detection #1 incident 1: new_country high
+      observed new country DE
+      baseline US (1 request)
+      from     198.51.100.7
+      network  198.51.100.0/24
+      country  DE
+      as       AS64500 Example Net
+      client   openai-python/3
+  alert: incident 1 opened, high, rules [new_country], about new_country
+
+incidents at the end:
+  #1 app open high rules [new_country], 1 detections, opened 216h0m0s, last fired 216h0m0s

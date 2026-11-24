@@ -1,0 +1,44 @@
+scenario: new_network
+The same country, AS and client, from another /24: new_network, low. An IPv6 address is counted in its /64.
+
+step 1  0h       app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 2  24h      app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 3  48h      app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 4  72h      app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 5  96h      app     request  2001:db8:1:2::7 US AS64500 openai-python/3
+  nothing raised
+
+step 6  8d       app     request  203.0.113.9 US AS64500 openai-python/3
+  detection #1 incident 1: new_network low
+      observed new network
+      baseline 2 usual networks
+      usual    198.51.100.0/24 (4 requests), 2001:db8:1:2::/64 (1 request)
+      from     203.0.113.9
+      network  203.0.113.0/24
+      country  US
+      as       AS64500 Example Net
+      client   openai-python/3
+  alert: incident 1 opened, low, rules [new_network], about new_network
+
+step 7  9d       app     request  2001:db8:9:9::1 US AS64500 openai-python/3
+  detection #2 incident 1: new_network low
+      observed new network
+      baseline 2 usual networks
+      usual    198.51.100.0/24 (4 requests), 2001:db8:1:2::/64 (1 request)
+      from     2001:db8:9:9::1
+      network  2001:db8:9:9::/64
+      country  US
+      as       AS64500 Example Net
+      client   openai-python/3
+  alert: incident 1 escalated, low, rules [new_network], about new_network
+
+incidents at the end:
+  #1 app open low rules [new_network], 2 detections, opened 192h0m0s, last fired 216h0m0s

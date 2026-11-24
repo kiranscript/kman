@@ -1,0 +1,132 @@
+{
+ "description": "The install-wide setting is 2 days; one key keeps it, one has a policy of 5 minutes and one has none at all. The same new country on day 1 is raised for the key whose period is 5 minutes and the one with none, and only recorded for the other two until their periods are over; on day 3 the install-wide one is over.",
+ "start": "2026-11-01T09:00:00Z",
+ "keys": [
+  {
+   "name": "setting"
+  },
+  {
+   "name": "short",
+   "policy": "{\"learning_period\":\"5m\"}"
+  },
+  {
+   "name": "none",
+   "policy": "{\"learning_period\":\"0s\"}"
+  },
+  {
+   "name": "long",
+   "policy": "{\"learning_period\":\"30d\"}"
+  }
+ ],
+ "learning_period": "2d",
+ "steps": [
+  {
+   "at": "0h",
+   "key": "setting",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "0h",
+   "key": "short",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "0h",
+   "key": "none",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "0h",
+   "key": "long",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "setting",
+   "ip": "198.51.100.7",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "short",
+   "ip": "198.51.100.7",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "none",
+   "ip": "198.51.100.7",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "long",
+   "ip": "198.51.100.7",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "setting",
+   "ip": "198.51.100.7",
+   "country": "FR",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "short",
+   "ip": "198.51.100.7",
+   "country": "FR",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "none",
+   "ip": "198.51.100.7",
+   "country": "FR",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "long",
+   "ip": "198.51.100.7",
+   "country": "FR",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  }
+ ]
+}

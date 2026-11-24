@@ -1024,6 +1024,7 @@ Response 200: [Whoami](#whoami).
 | `detail` | string | no |  |
 | `network` | string | no | The network (IPv4 /24, IPv6 /64). Left out unless expose_client_addresses is on. |
 | `observed` | string | no | What the rule saw, for a rule that compares: a rate, a spend, a place. |
+| `usual` | string | no | For a new network, the networks the key normally uses, busiest first. Left out unless expose_client_addresses is on. |
 
 ### `IncidentList`
 
@@ -1304,6 +1305,7 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `default_key_ttl_seconds` | integer | yes | How long a new virtual key stays valid unless told otherwise. At most the maximum key lifetime. Default 90 days. |
 | `expose_client_addresses` | boolean | yes | Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients), the networks a key was used from (GET /keys/{id}/places), and the client address of each event (GET /events and its stream). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited. |
+| `learning_period_seconds` | integer | yes | How long, from its first forwarded request, a key's location rules (a new country, ASN, network or client) only record where it is used from, before they raise detections. A key's policy may set its own (learning_period). 0 is no learning period. Default 7 days, at most 90. A change applies to keys still learning at once. |
 | `max_key_lifetime_seconds` | integer | yes | The longest any virtual key may stay valid. No key is created or extended past it. Default 365 days. |
 | `soft_budget_defaults` | list of integer | yes | The percentages of each spend cap or soft budget that raise a warning when crossed, rising, for keys whose policy sets none (soft_budget_percents). Each warns once per day or month. Default 50, 80, 100; an empty list warns for no key that sets none. A change takes effect at the next check, within a minute. |
 | `spend_timezone` | string | yes | The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC. A change takes effect when kman restarts. |
@@ -1314,6 +1316,7 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `default_key_ttl_seconds` | integer | no |  |
 | `expose_client_addresses` | boolean | no |  |
+| `learning_period_seconds` | integer | no |  |
 | `max_key_lifetime_seconds` | integer | no |  |
 | `soft_budget_defaults` | list of integer | no |  |
 | `spend_timezone` | string | no |  |
