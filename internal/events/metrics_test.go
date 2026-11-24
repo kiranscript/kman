@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 
 	"github.com/kirank55/kman/internal/events"
 )
@@ -119,4 +120,25 @@ func TestBusAndWriterMetricsShowDrops(t *testing.T) {
 	wantLine(t, body, "kman_event_write_failures_total 0")
 	wantLine(t, body, "kman_events_lost_total 0")
 	wantLine(t, body, `kman_event_subscriber_dropped_total{subscriber="store"} 0`)
+}
+
+func TestSubscriberDropsAreCountedByNameAcrossSubscriptionsThatCameAndWent(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		b := events.New(events.Options{Capacity: 16})
+		first := b.Subscribe("event-stream", events.SubOptions{Buffer: 1})
+		b.Subscribe("event-stream", events.SubOptions{Buffer: 1})
+		ctx, cancel := context.WithCancel(context.Background())
+		var wg sync.WaitGroup
+		wg.Go(func() { b.Run(ctx) })
+		for range 3 {
+			b.Emit(events.Event{KeyID: "k"})
+		}
+		synctest.Wait()
+		b.Unsubscribe(first)
+		rec := httptest.NewRecorder()
+		events.NewMetrics().Handler(events.BusMetrics(b)...).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+		wantLine(t, rec.Body.String(), `kman_event_subscriber_dropped_total{subscriber="event-stream"} 4`)
+		cancel()
+		wg.Wait()
+	})
 }

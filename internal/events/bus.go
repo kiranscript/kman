@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -40,6 +41,9 @@ type Bus struct {
 	mu     sync.Mutex
 	subs   []*Subscription
 	closed bool
+	// released is what subscriptions that have since left dropped, by name, so
+	// a counter that sums by name never goes down when a subscriber leaves.
+	released map[string]int64
 }
 
 // New returns a Bus. Its events are fanned out once Run is going.
@@ -118,6 +122,40 @@ func (b *Bus) Subscribe(name string, o SubOptions) *Subscription {
 	}
 	b.subs = append(b.subs, s)
 	return s
+}
+
+// Unsubscribe removes s and closes its channel, so a subscriber that is done
+// (a closed live stream) holds nothing. What s dropped stays in SubscriberDrops.
+// It does nothing for a subscription that has already left, or that the Bus
+// closed when it stopped.
+func (b *Bus) Unsubscribe(s *Subscription) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	i := slices.Index(b.subs, s)
+	if i < 0 {
+		return
+	}
+	b.subs = slices.Delete(b.subs, i, i+1)
+	if b.released == nil {
+		b.released = map[string]int64{}
+	}
+	b.released[s.Name] += s.Dropped()
+	close(s.c)
+}
+
+// SubscriberDrops is how many events subscribers did not take because they were
+// behind, summed by subscription name, counting those that have left.
+func (b *Bus) SubscriberDrops() map[string]int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := maps.Clone(b.released)
+	if out == nil {
+		out = map[string]int64{}
+	}
+	for _, s := range b.subs {
+		out[s.Name] += s.Dropped()
+	}
+	return out
 }
 
 // Run fans events out until ctx ends, taking the priority lane first. Then it

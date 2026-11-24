@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+	"time"
 )
 
 // bind builds a request of type t from r: path and query tags from the URL,
@@ -64,7 +65,7 @@ func hasBody(t reflect.Type) bool {
 	return false
 }
 
-// setParam parses a URL parameter into a string, integer or boolean field.
+// setParam parses a URL parameter into a string, integer, boolean or time field.
 func setParam(f reflect.Value, raw string) error {
 	switch f.Kind() {
 	case reflect.String:
@@ -81,6 +82,15 @@ func setParam(f reflect.Value, raw string) error {
 			return fmt.Errorf("%q is not true or false", raw)
 		}
 		f.SetBool(b)
+	case reflect.Struct:
+		if f.Type() != timeType {
+			return fmt.Errorf("adminapi: cannot bind a %s", f.Type())
+		}
+		t, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return fmt.Errorf("%q is not a time in RFC 3339 form, such as 2026-11-24T09:30:00Z", raw)
+		}
+		f.Set(reflect.ValueOf(t))
 	default:
 		return fmt.Errorf("adminapi: cannot bind a %s", f.Kind())
 	}

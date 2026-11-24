@@ -36,7 +36,7 @@ func TestFlagsMayFollowArguments(t *testing.T) {
 
 func TestCommandsListsTheOnlineCommands(t *testing.T) {
 	got := strings.Join(cli.Commands(), " ")
-	if got != "tui login logout admin-token settings audit price upstream credential key backup prune exposure channel" {
+	if got != "tui login logout admin-token settings audit events price upstream credential key backup prune exposure channel" {
 		t.Errorf("Commands = %q", got)
 	}
 }

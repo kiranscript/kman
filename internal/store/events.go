@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -18,7 +19,8 @@ type EventRow struct {
 	Country  string
 	ASN      int64
 	// ASOrg is the organisation the ASN belongs to. It is not kept in the events
-	// table: it labels the key's place for the ASN, and reads back empty.
+	// table: it labels the key's place for the ASN, so it reads back empty from
+	// EventsSince and is the place's label from ListEvents.
 	ASOrg string
 
 	UpstreamID, Model, Operation string
@@ -290,4 +292,95 @@ func (tx *Tx) KeyClients(keyID string, limit int) (rows []ClientRow, total int, 
 		return nil, 0, typed(err, "read clients")
 	}
 	return rows, total, nil
+}
+
+// EventFilter picks events for ListEvents. A field left at its zero value
+// filters nothing.
+type EventFilter struct {
+	KeyID string
+	// Kinds limits the events to these kinds: request, blocked or session.
+	Kinds []string
+	// BlockedCode limits the events to those that carry this refusal code.
+	BlockedCode string
+	// Since is inclusive and Until is exclusive.
+	Since, Until time.Time
+	// BeforeID limits the events to those stored before the event with this id:
+	// the cursor for the next, older page.
+	BeforeID int64
+}
+
+// StoredEvent is an event as the events table holds it, with the id it is
+// paged by and what is read from other tables to name it. It holds no request
+// or response content.
+type StoredEvent struct {
+	ID int64
+	EventRow
+	// KeyName is the name of KeyID's key, empty for an event with no key or a
+	// key with no name. EventRow.ASOrg is the label of the key's place for the
+	// event's ASN, when it has one.
+	KeyName string
+}
+
+// ListEvents returns at most limit events matching f, the newest first, which
+// is the order they were stored in. A caller that wants to know whether there
+// are more asks for one past its page.
+func (tx *Tx) ListEvents(f EventFilter, limit int) ([]StoredEvent, error) {
+	var where []string
+	var args []any
+	add := func(cond string, arg ...any) {
+		where = append(where, cond)
+		args = append(args, arg...)
+	}
+	if f.KeyID != "" {
+		add("e.key_id = ?", f.KeyID)
+	}
+	if len(f.Kinds) > 0 {
+		marks := strings.TrimSuffix(strings.Repeat("?, ", len(f.Kinds)), ", ")
+		kinds := make([]any, len(f.Kinds))
+		for i, k := range f.Kinds {
+			kinds[i] = k
+		}
+		add("e.kind IN ("+marks+")", kinds...)
+	}
+	if f.BlockedCode != "" {
+		add("e.blocked_code = ?", f.BlockedCode)
+	}
+	if !f.Since.IsZero() {
+		add("e.ts >= ?", toMilli(f.Since))
+	}
+	if !f.Until.IsZero() {
+		add("e.ts < ?", toMilli(f.Until))
+	}
+	if f.BeforeID > 0 {
+		add("e.id < ?", f.BeforeID)
+	}
+	query := `SELECT e.id, e.ts, COALESCE(e.key_id, ''), COALESCE(k.name, ''), e.kind, COALESCE(e.client_ip, ''), COALESCE(e.country, ''),
+			COALESCE(e.asn, 0), COALESCE(p.label, ''), COALESCE(e.upstream_id, ''), COALESCE(e.model, ''), COALESCE(e.operation, ''),
+			COALESCE(e.status, 0), COALESCE(e.blocked_code, '')
+		FROM events e
+		LEFT JOIN virtual_keys k ON k.key_id = e.key_id
+		LEFT JOIN baseline_places p ON p.key_id = e.key_id AND p.kind = 'asn' AND p.value = CAST(e.asn AS TEXT)`
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	rows, err := tx.tx.QueryContext(tx.ctx, query+" ORDER BY e.id DESC LIMIT ?", append(args, limit)...)
+	if err != nil {
+		return nil, typed(err, "read events")
+	}
+	defer rows.Close()
+	var out []StoredEvent
+	for rows.Next() {
+		var e StoredEvent
+		var ts int64
+		if err := rows.Scan(&e.ID, &ts, &e.KeyID, &e.KeyName, &e.Kind, &e.ClientIP, &e.Country, &e.ASN, &e.ASOrg,
+			&e.UpstreamID, &e.Model, &e.Operation, &e.Status, &e.BlockedCode); err != nil {
+			return nil, typed(err, "read events")
+		}
+		e.Time = fromMilli(ts)
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, typed(err, "read events")
+	}
+	return out, nil
 }

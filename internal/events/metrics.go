@@ -149,8 +149,8 @@ func BusMetrics(b *Bus) []Metric {
 		}},
 		{"kman_event_subscriber_dropped_total", "Events a subscriber did not take because it was behind.", Counter, func() []Sample {
 			var out []Sample
-			for _, s := range b.Subscriptions() {
-				out = append(out, Sample{map[string]string{"subscriber": s.Name}, float64(s.Dropped())})
+			for name, n := range b.SubscriberDrops() {
+				out = append(out, Sample{map[string]string{"subscriber": name}, float64(n)})
 			}
 			return out
 		}},

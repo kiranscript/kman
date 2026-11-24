@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kirank55/kman/internal/admin"
+	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/policy"
 	"github.com/kirank55/kman/internal/profiles"
 	"github.com/kirank55/kman/internal/registry"
@@ -44,6 +45,12 @@ type install struct {
 	clock func() time.Time
 	// alerts stands for the alert service, when a test shows channels.
 	alerts admin.Alerter
+	// events is the bus the live event stream subscribes to; nil is a process
+	// that serves no requests.
+	events *events.Bus
+	// streamBuffer is how many events a live stream holds for a client that is
+	// behind; 0 is the default.
+	streamBuffer int
 }
 
 func newInstall(t *testing.T) *install {
@@ -86,6 +93,8 @@ func (in *install) service(presets []registry.Preset) *admin.Service {
 		NormalizePolicy: func(raw []byte) (int, []byte, error) { return in.normalize(raw) },
 		Spend:           in.spend,
 		Alerts:          in.alerts,
+		Events:          in.events,
+		StreamBuffer:    in.streamBuffer,
 		Apply: func(c registry.Change) {
 			in.applied = append(in.applied, c)
 			in.reg.Apply(c)

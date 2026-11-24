@@ -30,6 +30,9 @@ type route struct {
 	// download, instead of call, is set for a route that answers with a file
 	// rather than JSON: a backup.
 	download func(ctx context.Context, svc Service) (admin.Download, error)
+	// stream, instead of call, is set for a route that answers with a stream of
+	// server-sent events that lasts until the client leaves.
+	stream func(ctx context.Context, svc Service, req any) (admin.EventStream, error)
 }
 
 // op is a route whose command takes a request.
@@ -47,6 +50,18 @@ func op0[Resp any](method, path, id, summary string, fn func(Service, context.Co
 		method: method, path: path, id: id, summary: summary, status: http.StatusOK,
 		resp: reflect.TypeFor[Resp](),
 		call: func(ctx context.Context, svc Service, _ any) (any, error) { return fn(svc, ctx) },
+	}
+}
+
+// opStream is a route whose command takes a request and opens a live stream of
+// events, sent as server-sent events.
+func opStream[Req any](method, path, id, summary string, fn func(Service, context.Context, Req) (admin.EventStream, error)) route {
+	return route{
+		method: method, path: path, id: id, summary: summary, status: http.StatusOK,
+		req: reflect.TypeFor[Req](), resp: reflect.TypeFor[admin.Event](),
+		stream: func(ctx context.Context, svc Service, req any) (admin.EventStream, error) {
+			return fn(svc, ctx, *req.(*Req))
+		},
 	}
 }
 
@@ -110,6 +125,9 @@ var routes = []route{
 	op("GET", "/keys/{id}/places", "listKeyPlaces", "List where a virtual key has been used from: each country, AS and network, with when it was first and last seen and how many requests were forwarded and refused", http.StatusOK, Service.Places),
 	op("GET", "/keys/{id}/clients", "getKeyClients", "List the client addresses a virtual key was used from, grouped, from the events kept; refused unless the expose_client_addresses setting is on", http.StatusOK, Service.KeyClients),
 	op("POST", "/keys/{id}/rotate", "rotateKey", "Replace a virtual key's secret and keep the key; the new secret is returned only this once", http.StatusOK, Service.RotateKey),
+
+	op("GET", "/events", "listEvents", "List stored events, newest first: which key, from where, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on", http.StatusOK, Service.Events),
+	opStream("GET", "/events/stream", "streamEvents", "Follow new events as they happen, as server-sent events, with the filters of the list. A client that cannot keep up loses events and is told how many", Service.StreamEvents),
 
 	op0("GET", "/exposure", "getExposure", "List the keys that work now and would be easy to abuse: open to every address, never expiring, or unused for 30 days, each with the command that fixes it", Service.Exposure),
 }

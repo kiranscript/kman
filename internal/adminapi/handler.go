@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kirank55/kman/internal/admin"
 )
@@ -76,6 +78,10 @@ func authenticated(svc Service, log *slog.Logger, rt route) http.Handler {
 			serveDownload(w, log, rt, svc, ctx)
 			return
 		}
+		if rt.stream != nil {
+			serveStream(w, r, log, rt, svc, ctx, req)
+			return
+		}
 		resp, err := rt.call(ctx, svc, req)
 		if err != nil {
 			var ae *admin.Error
@@ -110,6 +116,76 @@ func serveDownload(w http.ResponseWriter, log *slog.Logger, rt route, svc Servic
 	w.WriteHeader(rt.status)
 	if _, err := io.Copy(w, d.Body); err != nil {
 		log.Warn("admin API: a download was cut short", "route", rt.id, "err", err)
+	}
+}
+
+// keepAliveEvery is how often a stream with nothing to say says so, so that a
+// proxy or a client does not take it for dead.
+var keepAliveEvery = 15 * time.Second
+
+// serveStream answers with server-sent events until the client leaves, the
+// stream ends, or kman stops. A stream that cannot be opened is an ordinary
+// error response: the status is not sent until it is. Each event is one message
+// with the event as its JSON data; a client that fell behind is told how many it
+// missed, in an event: dropped message.
+func serveStream(w http.ResponseWriter, r *http.Request, log *slog.Logger, rt route, svc Service, ctx context.Context, req any) {
+	st, err := rt.stream(ctx, svc, req)
+	if err != nil {
+		var ae *admin.Error
+		if !errors.As(err, &ae) {
+			internalError(w, log, err)
+			return
+		}
+		writeError(w, statusOf(ae.Code), ae)
+		return
+	}
+	defer st.Close()
+	rc := http.NewResponseController(w)
+	h := w.Header()
+	h.Set("Content-Type", "text/event-stream")
+	h.Set("X-Accel-Buffering", "no") // a reverse proxy must not hold the events back
+	w.WriteHeader(rt.status)
+	send := func(format string, args ...any) bool {
+		if _, err := fmt.Fprintf(w, format, args...); err != nil {
+			return false
+		}
+		return rc.Flush() == nil
+	}
+	if !send(": kman event stream\n\n") {
+		return
+	}
+	tick := time.NewTicker(keepAliveEvery)
+	defer tick.Stop()
+	var told int64
+	missed := func() bool {
+		n := st.Missed()
+		if n == told {
+			return true
+		}
+		told = n
+		return send("event: dropped\ndata: {\"missed\":%d}\n\n", n)
+	}
+	for {
+		select {
+		case e, ok := <-st.Events():
+			if !ok {
+				return
+			}
+			b, err := json.Marshal(e)
+			if err != nil {
+				log.Error("admin API: an event could not be encoded", "err", err)
+				return
+			}
+			if !send("data: %s\n\n", b) || !missed() {
+				return
+			}
+		case <-tick.C:
+			if !missed() || !send(": keepalive\n\n") {
+				return
+			}
+		case <-r.Context().Done():
+			return
+		}
 	}
 }
 

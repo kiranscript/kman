@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/registry"
 	"github.com/kirank55/kman/internal/store"
 	"github.com/kirank55/kman/internal/vault"
@@ -62,6 +63,9 @@ type API interface {
 	ImportPriceOverrides(ctx context.Context, req PriceOverrideImport) (PriceOverrideImportResult, error)
 
 	Exposure(ctx context.Context) (Exposure, error)
+
+	Events(ctx context.Context, req EventQuery) (EventPage, error)
+	StreamEvents(ctx context.Context, req EventStreamQuery) (EventStream, error)
 
 	Backup(ctx context.Context) (Download, error)
 	Prune(ctx context.Context, req PruneRequest) (PruneResult, error)
@@ -119,6 +123,12 @@ type Options struct {
 	// Update reports what the opt-in update check has learned. The composition
 	// root passes it only when update_check is on; nil says the check is off.
 	Update func() UpdateStatus
+	// Events is the bus the live event stream subscribes to. Nil, for init and
+	// tools that run no request path, has no live events to stream.
+	Events *events.Bus
+	// StreamBuffer is how many events a live stream holds for a client that is
+	// behind, before it starts losing them. Zero is the default, 256.
+	StreamBuffer int
 }
 
 // Service runs the admin commands.
@@ -136,6 +146,11 @@ type Service struct {
 	alerts  Alerter
 	update  func() UpdateStatus
 
+	// bus is where live event streams subscribe, and streams are the ones open.
+	bus          *events.Bus
+	streamBuffer int
+	streams      *streams
+
 	// publishing holds a command from its transaction to its publish, so
 	// memory sees commands in the order they committed. The request path
 	// never takes it.
@@ -147,7 +162,7 @@ type Service struct {
 
 // New returns the admin service over opts.Store.
 func New(opts Options) *Service {
-	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices, spend: opts.Spend, alerts: opts.Alerts, update: opts.Update}
+	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices, spend: opts.Spend, alerts: opts.Alerts, update: opts.Update, bus: opts.Events, streamBuffer: opts.StreamBuffer, streams: newStreams()}
 	s.settle = make(chan struct{}, 1)
 	if s.rand == nil {
 		s.rand = rand.Reader

@@ -32,6 +32,9 @@ func OpenAPI() ([]byte, error) {
 		if rt.download != nil {
 			success = func() map[string]any { return fileResponse(http.StatusText(rt.status)) }
 		}
+		if rt.stream != nil {
+			success = func() map[string]any { return streamResponse(g, rt.resp) }
+		}
 		op := map[string]any{
 			"operationId": rt.id,
 			"summary":     rt.summary,
@@ -102,6 +105,20 @@ func fileResponse(desc string) map[string]any {
 	return map[string]any{
 		"description": desc,
 		"content":     map[string]any{"application/octet-stream": map[string]any{"schema": map[string]any{"type": "string", "format": "binary"}}},
+	}
+}
+
+// streamResponse is a response that is a stream of server-sent events, each
+// message's data one JSON value of the event type.
+func streamResponse(g *schemas, event reflect.Type) map[string]any {
+	return map[string]any{
+		"description": "A stream of server-sent events that lasts until the client leaves. " +
+			"Each message's data is one Event as JSON; an event: dropped message says how many events this client has missed, " +
+			"as {\"missed\": n}; lines that start with a colon are keep-alives.",
+		"content": map[string]any{"text/event-stream": map[string]any{
+			"schema":           map[string]any{"type": "string"},
+			"x-message-schema": g.of(event),
+		}},
 	}
 }
 

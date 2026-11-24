@@ -122,10 +122,13 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	var svc *admin.Service // made below, after alerts, which it calls; the warnings read its settings
 	alert := alerts.New(alerts.Options{Store: st, Secret: v.Credential, Now: s.now, DashboardURL: cfg.Dashboard.URL, Log: log,
 		Limits: alertLimits, Settings: alertSettings(func() *admin.Service { return svc })})
+	// The event bus is made before the admin service, which streams from it.
+	pipe := startEvents(ctx, st, log, alert)
+	defer pipe.stop() // a second time is harmless: the first stop is below
 	// The update check is the one thing kman asks the network by itself, and only
 	// when the operator turned it on (ADR 0008).
 	var updates *updateChecker
-	adminOpts := admin.Options{Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices, Alerts: alert,
+	adminOpts := admin.Options{Events: pipe.bus, Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices, Alerts: alert,
 		ApplyPrices: publishOverrides(prices), NormalizePolicy: normalizePolicy(geo),
 		Spend: func(keyID, policyJSON string) admin.KeySpend { return keySpend(spend, s.now(), keyID, policyJSON) }}
 	if cfg.UpdateCheck {
@@ -170,8 +173,6 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	defer stopMeter()
 	meterDone := make(chan struct{})
 	go func() { spend.Run(meterCtx); close(meterDone) }()
-	pipe := startEvents(ctx, st, log, alert)
-	defer pipe.stop() // a second time is harmless: the first stop is below
 	alertCtx, stopAlerts := context.WithCancel(context.WithoutCancel(ctx))
 	alertsDone := make(chan struct{})
 	go func() { alert.Run(alertCtx); close(alertsDone) }()
@@ -223,6 +224,9 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	if s.stopSignals != nil {
 		s.stopSignals() // a second signal ends the process at once
 	}
+	// A client that follows the live feed would hold a listener open until the
+	// grace ran out.
+	svc.StopEventStreams()
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
 	for _, l := range ls {
