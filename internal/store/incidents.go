@@ -287,3 +287,20 @@ func (tx *Tx) Detections(incidentID int64, limit int) ([]Detection, error) {
 func (tx *Tx) AuditEntriesForIncident(incidentID int64) ([]AuditEntry, error) {
 	return tx.auditEntries(`SELECT `+auditColumns+` FROM audit_log WHERE incident_id = ? ORDER BY id`, incidentID)
 }
+
+// Evidence is what a detection saw, as detections.evidence_json holds it. An
+// address is personal data (ADR 0010): Address and Network are the only fields
+// that may hold one, so the admin API withholds exactly those unless
+// expose_client_addresses is on. Observed, Baseline and Detail say numbers and
+// names, and a rule never puts an address in them.
+type Evidence struct {
+	Address  string `json:"address,omitempty"`
+	Network  string `json:"network,omitempty"`
+	Country  string `json:"country,omitempty"`
+	ASN      int64  `json:"asn,omitempty"`
+	ASOrg    string `json:"as_org,omitempty"`
+	Client   string `json:"client,omitempty"`
+	Observed string `json:"observed,omitempty"`
+	Baseline string `json:"baseline,omitempty"`
+	Detail   string `json:"detail,omitempty"`
+}
