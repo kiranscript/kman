@@ -588,6 +588,105 @@
         ],
         "type": "object"
       },
+      "Event": {
+        "additionalProperties": false,
+        "properties": {
+          "asn": {
+            "description": "The autonomous system number, from the ASN database, when there is one that knows the address.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "asn_label": {
+            "description": "The autonomous system's organisation, when the ASN database names one.",
+            "type": "string"
+          },
+          "client_address": {
+            "description": "The client address: the connection's, or X-Forwarded-For only through trusted_proxies. Left out unless the expose_client_addresses setting is on.",
+            "type": "string"
+          },
+          "client_address_withheld": {
+            "description": "The event has a client address, which is left out because expose_client_addresses is off.",
+            "type": "boolean"
+          },
+          "country": {
+            "description": "ISO 3166-1 code, from the country database, when there is one that knows the address.",
+            "type": "string"
+          },
+          "id": {
+            "description": "The stored event's id, which pages by. Not set on an event from the live stream, which is not stored yet.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "key_id": {
+            "description": "The virtual key's id. Empty when the request presented no key that kman could identify.",
+            "type": "string"
+          },
+          "key_name": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "forwarded: kman sent the request to an upstream, or it was a realtime session. refused: kman answered it itself, with a refusal code.",
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "operation": {
+            "description": "The request's method and path, such as POST /v1/chat/completions. Never a query string.",
+            "type": "string"
+          },
+          "refusal_code": {
+            "description": "The error code of a refusal, such as key_disabled or invalid_key.",
+            "type": "string"
+          },
+          "status": {
+            "description": "The status the app was sent.",
+            "type": "integer"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "unidentified_key": {
+            "description": "The request presented no key that kman could identify: a key that does not exist, or none. Many of these from one place is probing.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "time",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "EventPage": {
+        "additionalProperties": false,
+        "properties": {
+          "client_addresses_withheld": {
+            "description": "Client addresses were left out because expose_client_addresses is off.",
+            "type": "boolean"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "type": "array"
+          },
+          "more": {
+            "description": "Whether there are older events that match.",
+            "type": "boolean"
+          },
+          "next_before": {
+            "description": "The id to send as before for the next, older page. Set when more is true.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "events",
+          "more"
+        ],
+        "type": "object"
+      },
       "Exposure": {
         "additionalProperties": false,
         "properties": {
@@ -1445,7 +1544,7 @@
             "type": "integer"
           },
           "expose_client_addresses": {
-            "description": "Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients), and the networks a key was used from (GET /keys/{id}/places). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited.",
+            "description": "Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients), the networks a key was used from (GET /keys/{id}/places), and the client address of each event (GET /events and its stream). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited.",
             "type": "boolean"
           },
           "max_key_lifetime_seconds": {
@@ -2417,6 +2516,162 @@
           }
         },
         "summary": "Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once"
+      }
+    },
+    "/admin/v1/events": {
+      "get": {
+        "operationId": "listEvents",
+        "parameters": [
+          {
+            "description": "Only events of this key id.",
+            "in": "query",
+            "name": "key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only events of this kind: forwarded or refused.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only events with this refusal code, such as invalid_key.",
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only events at or after this time (RFC 3339).",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only events before this time (RFC 3339).",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Return the events older than the one with this id: the previous page's next_before. From the newest when 0.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The most events to return, 1 to 1000. Default 100.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "List stored events, newest first: which key, from where, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on"
+      }
+    },
+    "/admin/v1/events/stream": {
+      "get": {
+        "operationId": "streamEvents",
+        "parameters": [
+          {
+            "description": "Only events of this key id.",
+            "in": "query",
+            "name": "key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only events of this kind: forwarded or refused.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only events with this refusal code, such as invalid_key.",
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-message-schema": {
+                  "$ref": "#/components/schemas/Event"
+                }
+              }
+            },
+            "description": "A stream of server-sent events that lasts until the client leaves. Each message's data is one Event as JSON; an event: dropped message says how many events this client has missed, as {\"missed\": n}; lines that start with a colon are keep-alives."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Follow new events as they happen, as server-sent events, with the filters of the list. A client that cannot keep up loses events and is told how many"
       }
     },
     "/admin/v1/exposure": {

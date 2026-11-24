@@ -30,6 +30,8 @@ The one way to change a running kman (ADR 0004). Every change is one store trans
 | `DELETE /admin/v1/credentials/{ref}` | Delete a credential and wipe its secret; refused while a virtual key that is not revoked depends on it |
 | `PATCH /admin/v1/credentials/{ref}` | Rename a credential or replace its secret |
 | `POST /admin/v1/credentials/{ref}/compromise` | Replace a leaked credential's secret and rotate every virtual key on it, with no grace, in one step; the new key secrets are returned only this once |
+| `GET /admin/v1/events` | List stored events, newest first: which key, from where, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on |
+| `GET /admin/v1/events/stream` | Follow new events as they happen, as server-sent events, with the filters of the list. A client that cannot keep up loses events and is told how many |
 | `GET /admin/v1/exposure` | List the keys that work now and would be easy to abuse: open to every address, never expiring, or unused for 30 days, each with the command that fixes it |
 | `GET /admin/v1/keys` | List every virtual key, or the one with a name, never their secrets |
 | `POST /admin/v1/keys` | Create a virtual key on an upstream; its secret is returned only this once |
@@ -187,6 +189,34 @@ Replace a leaked credential's secret and rotate every virtual key on it, with no
 Request body: [CompromiseCredentialRequest](#compromisecredentialrequest).
 
 Response 200: [CompromisedCredential](#compromisedcredential).
+
+### `GET /admin/v1/events`
+
+List stored events, newest first: which key, from where, what operation, the status and any refusal code, never content; filtered by key, kind, refusal code and time, and paged. A client address is left out unless the expose_client_addresses setting is on. Operation id `listEvents`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `key` | query | string | no | Only events of this key id. |
+| `kind` | query | string | no | Only events of this kind: forwarded or refused. |
+| `code` | query | string | no | Only events with this refusal code, such as invalid_key. |
+| `since` | query | string | no | Only events at or after this time (RFC 3339). |
+| `until` | query | string | no | Only events before this time (RFC 3339). |
+| `before` | query | integer | no | Return the events older than the one with this id: the previous page's next_before. From the newest when 0. |
+| `limit` | query | integer | no | The most events to return, 1 to 1000. Default 100. |
+
+Response 200: [EventPage](#eventpage).
+
+### `GET /admin/v1/events/stream`
+
+Follow new events as they happen, as server-sent events, with the filters of the list. A client that cannot keep up loses events and is told how many. Operation id `streamEvents`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `key` | query | string | no | Only events of this key id. |
+| `kind` | query | string | no | Only events of this kind: forwarded or refused. |
+| `code` | query | string | no | Only events with this refusal code, such as invalid_key. |
+
+Response 200: a stream of server-sent events (text/event-stream), each message's data one [Event](#event).
 
 ### `GET /admin/v1/exposure`
 
@@ -651,6 +681,35 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `error` | [Error](#error) | yes |  |
 
+### `Event`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `asn` | integer | no | The autonomous system number, from the ASN database, when there is one that knows the address. |
+| `asn_label` | string | no | The autonomous system's organisation, when the ASN database names one. |
+| `client_address` | string | no | The client address: the connection's, or X-Forwarded-For only through trusted_proxies. Left out unless the expose_client_addresses setting is on. |
+| `client_address_withheld` | boolean | no | The event has a client address, which is left out because expose_client_addresses is off. |
+| `country` | string | no | ISO 3166-1 code, from the country database, when there is one that knows the address. |
+| `id` | integer | no | The stored event's id, which pages by. Not set on an event from the live stream, which is not stored yet. |
+| `key_id` | string | no | The virtual key's id. Empty when the request presented no key that kman could identify. |
+| `key_name` | string | no |  |
+| `kind` | string | yes | forwarded: kman sent the request to an upstream, or it was a realtime session. refused: kman answered it itself, with a refusal code. |
+| `model` | string | no |  |
+| `operation` | string | no | The request's method and path, such as POST /v1/chat/completions. Never a query string. |
+| `refusal_code` | string | no | The error code of a refusal, such as key_disabled or invalid_key. |
+| `status` | integer | no | The status the app was sent. |
+| `time` | string | yes |  |
+| `unidentified_key` | boolean | no | The request presented no key that kman could identify: a key that does not exist, or none. Many of these from one place is probing. |
+
+### `EventPage`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `client_addresses_withheld` | boolean | no | Client addresses were left out because expose_client_addresses is off. |
+| `events` | list of [Event](#event) | yes |  |
+| `more` | boolean | yes | Whether there are older events that match. |
+| `next_before` | integer | no | The id to send as before for the next, older page. Set when more is true. |
+
 ### `Exposure`
 
 | Field | Type | Required | Description |
@@ -904,7 +963,7 @@ Response 200: [Whoami](#whoami).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `default_key_ttl_seconds` | integer | yes | How long a new virtual key stays valid unless told otherwise. At most the maximum key lifetime. Default 90 days. |
-| `expose_client_addresses` | boolean | yes | Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients), and the networks a key was used from (GET /keys/{id}/places). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited. |
+| `expose_client_addresses` | boolean | yes | Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients), the networks a key was used from (GET /keys/{id}/places), and the client address of each event (GET /events and its stream). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited. |
 | `max_key_lifetime_seconds` | integer | yes | The longest any virtual key may stay valid. No key is created or extended past it. Default 365 days. |
 | `soft_budget_defaults` | list of integer | yes | The percentages of each spend cap or soft budget that raise a warning when crossed, rising, for keys whose policy sets none (soft_budget_percents). Each warns once per day or month. Default 50, 80, 100; an empty list warns for no key that sets none. A change takes effect at the next check, within a minute. |
 | `spend_timezone` | string | yes | The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC. A change takes effect when kman restarts. |

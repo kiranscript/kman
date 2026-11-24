@@ -156,13 +156,19 @@ func TestTheOpenAPIDocumentDescribesTheTypes(t *testing.T) {
 		"get /admin/v1/update":                        "getUpdateStatus",
 		"get /admin/v1/exposure":                      "getExposure",
 		"get /admin/v1/keys/{id}/places":              "listKeyPlaces",
+		"get /admin/v1/events":                        "listEvents",
+		"get /admin/v1/events/stream":                 "streamEvents",
 	} {
 		if ops[want] != id {
 			t.Errorf("%s has operationId %q, want %q", want, ops[want], id)
 		}
 	}
-	if len(ops) != 43 {
-		t.Errorf("the document has %d operations, want 43: %v", len(ops), ops)
+	if len(ops) != 45 {
+		t.Errorf("the document has %d operations, want 45: %v", len(ops), ops)
+	}
+	// The live feed is server-sent events, not JSON.
+	if _, ok := doc.Paths["/admin/v1/events/stream"]["get"].Responses["200"].Content["text/event-stream"]; !ok {
+		t.Errorf("the stream route does not answer text/event-stream: %+v", doc.Paths["/admin/v1/events/stream"]["get"].Responses)
 	}
 
 	// The settings an upstream takes reach the document, embedded as they are.

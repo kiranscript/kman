@@ -16,7 +16,7 @@ type Settings struct {
 	MaxKeyLifetimeSeconds int64  `json:"max_key_lifetime_seconds" doc:"The longest any virtual key may stay valid. No key is created or extended past it. Default 365 days."`
 	DefaultKeyTTLSeconds  int64  `json:"default_key_ttl_seconds" doc:"How long a new virtual key stays valid unless told otherwise. At most the maximum key lifetime. Default 90 days."`
 	SpendTimezone         string `json:"spend_timezone" doc:"The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC. A change takes effect when kman restarts."`
-	ExposeClientAddresses bool   `json:"expose_client_addresses" doc:"Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients), and the networks a key was used from (GET /keys/{id}/places). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited."`
+	ExposeClientAddresses bool   `json:"expose_client_addresses" doc:"Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients), the networks a key was used from (GET /keys/{id}/places), and the client address of each event (GET /events and its stream). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited."`
 	SoftBudgetPercents    []int  `json:"soft_budget_defaults" doc:"The percentages of each spend cap or soft budget that raise a warning when crossed, rising, for keys whose policy sets none (soft_budget_percents). Each warns once per day or month. Default 50, 80, 100; an empty list warns for no key that sets none. A change takes effect at the next check, within a minute."`
 }
 

@@ -27,16 +27,26 @@ type server struct {
 	url   string
 	owner string // the owner token's secret
 	logs  *bytes.Buffer
+	store *store.Store
+	svc   *admin.Service
 }
 
 func newServer(t *testing.T) *server {
+	t.Helper()
+	return newServerWith(t, func(*admin.Options) {})
+}
+
+// newServerWith is newServer over a service whose options tune sets.
+func newServerWith(t *testing.T, tune func(*admin.Options)) *server {
 	t.Helper()
 	st, err := store.Open(context.Background(), store.Options{Dir: t.TempDir(), Now: t0})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	svc := admin.New(admin.Options{Store: st, Now: func() time.Time { return t0 }, Vault: newVault(t, st), Presets: profiles.Presets(), NormalizePolicy: policy.Normalize})
+	opts := admin.Options{Store: st, Now: func() time.Time { return t0 }, Vault: newVault(t, st), Presets: profiles.Presets(), NormalizePolicy: policy.Normalize}
+	tune(&opts)
+	svc := admin.New(opts)
 	owner, err := svc.CreateAdminToken(admin.WithCaller(context.Background(), admin.Caller{Actor: "system:init"}),
 		admin.CreateAdminTokenRequest{Name: "owner"})
 	if err != nil {
@@ -45,7 +55,7 @@ func newServer(t *testing.T) *server {
 	var logs bytes.Buffer
 	ts := httptest.NewServer(adminapi.Handler(svc, slog.New(slog.NewTextHandler(&logs, nil))))
 	t.Cleanup(ts.Close)
-	return &server{url: ts.URL, owner: owner.Secret, logs: &logs}
+	return &server{url: ts.URL, owner: owner.Secret, logs: &logs, store: st, svc: svc}
 }
 
 // masterKey is a key source holding a fixed master key.
@@ -133,4 +143,12 @@ func (r response) errorCode(t *testing.T) string {
 		t.Fatalf("not an error body (%v): %s", err, r.body)
 	}
 	return e.Error.Code
+}
+
+// newHTTPServer serves svc's API and returns its URL.
+func newHTTPServer(t *testing.T, svc adminapi.Service) string {
+	t.Helper()
+	ts := httptest.NewServer(adminapi.Handler(svc, slog.New(slog.DiscardHandler)))
+	t.Cleanup(ts.Close)
+	return ts.URL
 }
