@@ -65,20 +65,31 @@ const hourMS = int64(time.Hour / time.Millisecond)
 // kept whole or not at all. An event with no key is stored but counts toward no
 // key's usage or places.
 func (tx *Tx) AddEvents(rows []EventRow) error {
+	_, err := tx.AddEventsFresh(rows)
+	return err
+}
+
+// AddEventsFresh is AddEvents, and says which places the batch gave their keys
+// for the first time, so the transaction that stored them can act on them (the
+// location rules, #89). It also starts the learning period of each key the
+// batch shows a first forwarded request for.
+func (tx *Tx) AddEventsFresh(rows []EventRow) ([]NewPlace, error) {
 	insert, err := tx.tx.PrepareContext(tx.ctx, `INSERT INTO events (ts, key_id, kind, client_ip, country, asn, upstream_id, model, operation,
 		status, blocked_code, latency_ms, req_bytes, resp_bytes, tokens_in, tokens_out, tokens_cached, tokens_cache_write,
 		tokens_audio_in, tokens_audio_out, cost_micro, cost_estimated, client)
 		VALUES (?1, NULLIF(?2, ''), ?3, NULLIF(?4, ''), NULLIF(?5, ''), NULLIF(?6, 0), NULLIF(?7, ''), NULLIF(?8, ''), NULLIF(?9, ''),
 		NULLIF(?10, 0), NULLIF(?11, ''), ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, NULLIF(?23, ''))`)
 	if err != nil {
-		return typed(err, "add events")
+		return nil, typed(err, "add events")
 	}
 	defer insert.Close()
 	usage := map[usageKey]*UsageRow{}
 	var order []usageKey
 	places := newPlaceTally()
-	for _, r := range rows {
-		places.add(r)
+	learning := map[string]time.Time{} // the earliest forwarded request of each key in the batch
+	var learners []string
+	for i, r := range rows {
+		places.add(i, r)
 		var cost any // NULL when the cost is unknown
 		if r.CostKnown {
 			cost = r.CostMicro
@@ -86,7 +97,7 @@ func (tx *Tx) AddEvents(rows []EventRow) error {
 		if _, err := insert.ExecContext(tx.ctx, toMilli(r.Time), r.KeyID, r.Kind, r.ClientIP, r.Country, r.ASN, r.UpstreamID, r.Model, r.Operation,
 			r.Status, r.BlockedCode, r.LatencyMS, r.ReqBytes, r.RespBytes, r.TokensIn, r.TokensOut, r.TokensCached, r.TokensCacheWrite,
 			r.TokensAudioIn, r.TokensAudioOut, cost, boolInt(r.CostEstimated), r.Client); err != nil {
-			return typed(err, "add events")
+			return nil, typed(err, "add events")
 		}
 		if r.KeyID == "" {
 			continue
@@ -101,6 +112,12 @@ func (tx *Tx) AddEvents(rows []EventRow) error {
 		if r.Kind == "blocked" {
 			u.Blocked++
 			continue
+		}
+		if at, ok := learning[r.KeyID]; !ok {
+			learning[r.KeyID] = r.Time
+			learners = append(learners, r.KeyID)
+		} else if r.Time.Before(at) {
+			learning[r.KeyID] = r.Time
 		}
 		u.Requests++
 		switch {
@@ -131,7 +148,13 @@ func (tx *Tx) AddEvents(rows []EventRow) error {
 				cost_micro = cost_micro + excluded.cost_micro,
 				unmetered = unmetered + excluded.unmetered`,
 			k.key, k.hour, u.Requests, u.Blocked, u.Errors4xx, u.Errors5xx, u.TokensIn, u.TokensOut, u.CostMicro, u.Unmetered); err != nil {
-			return typed(err, "add usage of key "+k.key)
+			return nil, typed(err, "add usage of key "+k.key)
+		}
+	}
+	for _, key := range learners {
+		if _, err := tx.tx.ExecContext(tx.ctx, `INSERT INTO key_learning (key_id, started_at) VALUES (?1, ?2)
+			ON CONFLICT (key_id) DO UPDATE SET started_at = MIN(started_at, excluded.started_at)`, key, toMilli(learning[key])); err != nil {
+			return nil, typed(err, "start the learning period of key "+key)
 		}
 	}
 	return places.write(tx.ctx, tx.tx)

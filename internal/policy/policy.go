@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Version is the version of the policy format this kman writes. The store
@@ -45,6 +48,70 @@ type Policy struct {
 	// crossed, rising: this key's own in place of the install's
 	// soft_budget_defaults setting. Empty uses the setting.
 	SoftBudgetPercents []int `json:"soft_budget_percents,omitempty"`
+	// LearningPeriod is how long this key's baseline rules only record, from its
+	// first forwarded request: in place of the install's learning_period setting.
+	// It is written as 3d, 36h or 1h30m, kept in the shortest of those, and "0s"
+	// is a key with no learning period. Empty uses the setting.
+	LearningPeriod string `json:"learning_period,omitempty"`
+	// Detect turns a detection rule off for this key by name, with false (a rule
+	// is on unless the key says otherwise, so only the rules turned off are kept).
+	// No rule that watches for a canary's use can be turned off.
+	Detect map[string]bool `json:"detect,omitempty"`
+}
+
+// LocationRules are the detection rules that watch where a key is used from
+// (#89), by the names a policy's detect uses. Each is on until a key turns it
+// off.
+var LocationRules = []string{"new_country", "new_asn", "new_network", "new_client"}
+
+// RuleEnabled reports whether the detection rule is on for this key: it is, unless
+// the policy turns it off.
+func (p Policy) RuleEnabled(rule string) bool {
+	on, set := p.Detect[rule]
+	return !set || on
+}
+
+// LearningPeriodOverride is this key's own learning period, and false when its
+// policy sets none and the install's applies.
+func (p Policy) LearningPeriodOverride() (time.Duration, bool) {
+	if p.LearningPeriod == "" {
+		return 0, false
+	}
+	d, err := ParsePeriod(p.LearningPeriod)
+	return d, err == nil
+}
+
+// MaxLearningPeriod is the longest a learning period may be, in a policy or as
+// the install's setting.
+const MaxLearningPeriod = 90 * 24 * time.Hour
+
+// ParsePeriod reads a period of days (3d) or the hours, minutes and seconds
+// Go's durations take (36h, 1h30m), or 0. It does not check the range.
+func ParsePeriod(s string) (time.Duration, error) {
+	if s == "0" {
+		return 0, nil
+	}
+	if n, ok := strings.CutSuffix(s, "d"); ok {
+		days, err := strconv.ParseInt(n, 10, 64)
+		if err != nil || days > 100_000 || days < -100_000 {
+			return 0, fmt.Errorf("%q is not a number of days such as 3d", s)
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a period such as 3d, 36h or 1h30m", s)
+	}
+	return d, nil
+}
+
+// FormatPeriod writes a period in the shortest form ParsePeriod reads: whole
+// days as 3d, anything else as a Go duration, and none as 0s.
+func FormatPeriod(d time.Duration) string {
+	if d > 0 && d%(24*time.Hour) == 0 {
+		return strconv.FormatInt(int64(d/(24*time.Hour)), 10) + "d"
+	}
+	return d.String()
 }
 
 // RequiresMetering reports whether a key under this policy may send only
@@ -97,7 +164,32 @@ func (p Policy) check() error {
 	if p.RPMLimit < 0 || p.RPMLimit > maxRPM {
 		return fmt.Errorf("rpm_limit: use 1 to %d, or 0 for no limit", maxRPM)
 	}
+	if err := p.checkDetection(); err != nil {
+		return err
+	}
 	return p.checkSoftBudgets()
+}
+
+// checkDetection checks the learning period and the rules a policy turns off.
+func (p Policy) checkDetection() error {
+	if p.LearningPeriod != "" {
+		d, err := ParsePeriod(p.LearningPeriod)
+		if err != nil {
+			return fmt.Errorf("learning_period: %w", err)
+		}
+		if d < 0 || d > MaxLearningPeriod {
+			return fmt.Errorf("learning_period: use 0s to 90d, such as 3d or 36h")
+		}
+	}
+	for rule := range p.Detect {
+		if rule == "canary" {
+			return errors.New("detect: the canary rule cannot be turned off")
+		}
+		if !slices.Contains(LocationRules, rule) {
+			return fmt.Errorf("detect: no rule %q; the rules a key can turn off are %s", rule, strings.Join(LocationRules, ", "))
+		}
+	}
+	return nil
 }
 
 func (p Policy) checkSoftBudgets() error {
@@ -160,6 +252,9 @@ type wire struct {
 	DailyBudgetMicro   *int64 `json:"daily_budget_micro"`
 	MonthlyBudgetMicro *int64 `json:"monthly_budget_micro"`
 	SoftBudgetPercents []int  `json:"soft_budget_percents"`
+
+	LearningPeriod json.RawMessage  `json:"learning_period"` // raw, so that null is told from absent
+	Detect         map[string]*bool `json:"detect"`
 }
 
 // decode reads a policy, refusing a field kman does not know, since a mistyped
@@ -179,6 +274,33 @@ func decode(raw []byte) (Policy, error) {
 	}
 	p := Policy{AllowedPaths: w.AllowedPaths, AllowedModels: w.AllowedModels, RPMLimit: w.RPMLimit, SoftBudgetPercents: w.SoftBudgetPercents}
 	var err error
+	if w.LearningPeriod != nil {
+		var text string
+		if err := json.Unmarshal(w.LearningPeriod, &text); err != nil {
+			return Policy{}, errors.New(`the policy: learning_period is a text such as "3d", "36h" or "0s"`)
+		}
+		d, err := ParsePeriod(text)
+		if err != nil {
+			return Policy{}, fmt.Errorf("the policy: learning_period: %w", err)
+		}
+		if d < 0 || d > MaxLearningPeriod {
+			return Policy{}, errors.New("the policy: learning_period: use 0s to 90d, such as 3d or 36h")
+		}
+		p.LearningPeriod = FormatPeriod(d)
+	}
+	for rule, on := range w.Detect {
+		if on == nil {
+			return Policy{}, fmt.Errorf("the policy: detect %q is true or false", rule)
+		}
+		if !*on {
+			if p.Detect == nil {
+				p.Detect = map[string]bool{}
+			}
+			p.Detect[rule] = false
+		} else if err := (Policy{Detect: map[string]bool{rule: true}}).checkDetection(); err != nil {
+			return Policy{}, fmt.Errorf("the policy: %w", err)
+		}
+	}
 	if p.AllowedCIDRs, p.AllowedCountries, err = normalizeLocks(w.AllowedCIDRs, w.AllowedCountries); err != nil {
 		return Policy{}, fmt.Errorf("the policy: %w", err)
 	}

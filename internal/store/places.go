@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/netip"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -37,6 +39,26 @@ type PlaceRow struct {
 	Blocked             int64 // requests kman refused
 }
 
+// NewPlace is a place that a batch of events gave a key for the first time (a
+// row added to baseline_places, not one only updated), found by AddEventsFresh
+// in the transaction that stored the batch. The location rules read these
+// (#89): a place is new exactly once, and the transaction that recorded it can
+// raise what it means.
+type NewPlace struct {
+	KeyID, Kind, Value string
+	// Label names the value, when the event had a name for it: an ASN's
+	// organisation.
+	Label string
+	// At is when the first event of the batch that showed the place happened, and
+	// Event its index in the rows given to AddEventsFresh.
+	At    time.Time
+	Event int
+	// Prior is how many places of this kind the key had before the batch, not
+	// counting the overflow row. With none, this is the key's first place of the
+	// kind and there is nothing to compare it with.
+	Prior int
+}
+
 // placeKey is one key's place.
 type placeKey struct{ key, kind, value string }
 
@@ -45,38 +67,42 @@ type placeKey struct{ key, kind, value string }
 type placeTally struct {
 	order []placeKey
 	m     map[placeKey]*PlaceRow
+	first map[placeKey]int // the index of the event that first showed a place
 }
 
-func newPlaceTally() *placeTally { return &placeTally{m: map[placeKey]*PlaceRow{}} }
+func newPlaceTally() *placeTally {
+	return &placeTally{m: map[placeKey]*PlaceRow{}, first: map[placeKey]int{}}
+}
 
 // add counts the places of one event. An event with no key belongs to no key,
 // an event with no address (a Unix socket) has no network, and an event with no
 // client (stored before clients were recorded) has none.
-func (t *placeTally) add(r EventRow) {
+func (t *placeTally) add(i int, r EventRow) {
 	if r.KeyID == "" {
 		return
 	}
 	if r.Country != "" {
-		t.count(r, PlaceCountry, r.Country, "")
+		t.count(i, r, PlaceCountry, r.Country, "")
 	}
 	if r.ASN != 0 {
-		t.count(r, PlaceASN, strconv.FormatInt(r.ASN, 10), r.ASOrg)
+		t.count(i, r, PlaceASN, strconv.FormatInt(r.ASN, 10), r.ASOrg)
 	}
 	if n := networkOf(r.ClientIP); n != "" {
-		t.count(r, PlaceNetwork, n, "")
+		t.count(i, r, PlaceNetwork, n, "")
 	}
 	if r.Client != "" {
-		t.count(r, PlaceClient, r.Client, "")
+		t.count(i, r, PlaceClient, r.Client, "")
 	}
 }
 
-func (t *placeTally) count(r EventRow, kind, value, label string) {
+func (t *placeTally) count(i int, r EventRow, kind, value, label string) {
 	k := placeKey{r.KeyID, kind, value}
 	p := t.m[k]
 	if p == nil {
 		p = &PlaceRow{KeyID: r.KeyID, Kind: kind, Value: value, FirstSeen: r.Time, LastSeen: r.Time}
 		t.m[k] = p
 		t.order = append(t.order, k)
+		t.first[k] = i
 	}
 	if label != "" {
 		p.Label = label
@@ -91,10 +117,12 @@ func (t *placeTally) count(r EventRow, kind, value, label string) {
 
 // write adds the tally to baseline_places. A place the key already has is
 // updated; a new one is added while the key has fewer than MaxPlacesPerKind of
-// its kind, and is counted as PlaceOther after that.
-func (t *placeTally) write(ctx context.Context, tx *sql.Tx) error {
+// its kind, and is counted as PlaceOther after that. It returns the places it
+// added, in the order they were first seen: not the overflow row, which is not
+// a place.
+func (t *placeTally) write(ctx context.Context, tx *sql.Tx) ([]NewPlace, error) {
 	if len(t.order) == 0 {
-		return nil
+		return nil, nil
 	}
 	update, err := tx.PrepareContext(ctx, `UPDATE baseline_places SET
 			label = COALESCE(NULLIF(?4, ''), label),
@@ -102,7 +130,7 @@ func (t *placeTally) write(ctx context.Context, tx *sql.Tx) error {
 			count = count + ?7, blocked = blocked + ?8
 		WHERE key_id = ?1 AND kind = ?2 AND value = ?3`)
 	if err != nil {
-		return typed(err, "add places")
+		return nil, typed(err, "add places")
 	}
 	defer update.Close()
 	insert, err := tx.PrepareContext(ctx, `INSERT INTO baseline_places (key_id, kind, value, label, first_seen, last_seen, count, blocked)
@@ -111,19 +139,21 @@ func (t *placeTally) write(ctx context.Context, tx *sql.Tx) error {
 			first_seen = MIN(first_seen, excluded.first_seen), last_seen = MAX(last_seen, excluded.last_seen),
 			count = count + excluded.count, blocked = blocked + excluded.blocked`)
 	if err != nil {
-		return typed(err, "add places")
+		return nil, typed(err, "add places")
 	}
 	defer insert.Close()
 	type keyKind struct{ key, kind string }
-	kept := map[keyKind]int{} // how many places of a kind a key has, once looked up
+	kept := map[keyKind]int{}  // how many places of a kind a key has, once looked up
+	prior := map[keyKind]int{} // ... and how many it had before this batch added any
+	var fresh []NewPlace
 	for _, k := range t.order {
 		p := t.m[k]
 		res, err := update.ExecContext(ctx, p.KeyID, p.Kind, p.Value, p.Label, toMilli(p.FirstSeen), toMilli(p.LastSeen), p.Count, p.Blocked)
 		if err != nil {
-			return typed(err, "add places of key "+p.KeyID)
+			return nil, typed(err, "add places of key "+p.KeyID)
 		}
 		if n, err := res.RowsAffected(); err != nil {
-			return typed(err, "add places of key "+p.KeyID)
+			return nil, typed(err, "add places of key "+p.KeyID)
 		} else if n > 0 {
 			continue
 		}
@@ -132,21 +162,23 @@ func (t *placeTally) write(ctx context.Context, tx *sql.Tx) error {
 		if !ok {
 			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM baseline_places WHERE key_id = ? AND kind = ? AND value <> ''`,
 				p.KeyID, p.Kind).Scan(&n); err != nil {
-				return typed(err, "add places of key "+p.KeyID)
+				return nil, typed(err, "add places of key "+p.KeyID)
 			}
+			prior[kk] = n
 		}
 		value, label := p.Value, p.Label
 		if n >= MaxPlacesPerKind {
 			value, label = PlaceOther, ""
 		} else {
 			n++
+			fresh = append(fresh, NewPlace{KeyID: p.KeyID, Kind: p.Kind, Value: p.Value, Label: p.Label, At: p.FirstSeen, Event: t.first[k], Prior: prior[kk]})
 		}
 		kept[kk] = n
 		if _, err := insert.ExecContext(ctx, p.KeyID, p.Kind, value, label, toMilli(p.FirstSeen), toMilli(p.LastSeen), p.Count, p.Blocked); err != nil {
-			return typed(err, "add places of key "+p.KeyID)
+			return nil, typed(err, "add places of key "+p.KeyID)
 		}
 	}
-	return nil
+	return fresh, nil
 }
 
 // networkOf is the network an address is counted in: its /24 for IPv4, its /64
@@ -211,4 +243,51 @@ func (tx *Tx) Places(keyID, kind string) ([]PlaceRow, error) {
 		return nil, typed(err, "read places")
 	}
 	return out, nil
+}
+
+// UsualPlaces returns the places of one kind that a key is used from most: the
+// ones it has had forwarded requests from, busiest first, then most recently
+// seen, without the overflow row and without the values in except (the places a
+// batch has just added, which are what is being compared). It returns at most
+// limit.
+func (tx *Tx) UsualPlaces(keyID, kind string, except []string, limit int) ([]PlaceRow, error) {
+	rows, err := tx.tx.QueryContext(tx.ctx, `SELECT key_id, kind, value, COALESCE(label, ''), first_seen, last_seen, count, blocked
+		FROM baseline_places WHERE key_id = ?1 AND kind = ?2 AND value <> '' AND count > 0
+		ORDER BY count DESC, last_seen DESC, value LIMIT ?3`, keyID, kind, limit+len(except))
+	if err != nil {
+		return nil, typed(err, "read places")
+	}
+	defer rows.Close()
+	out := []PlaceRow{}
+	for rows.Next() && len(out) < limit {
+		var p PlaceRow
+		var first, last int64
+		if err := rows.Scan(&p.KeyID, &p.Kind, &p.Value, &p.Label, &first, &last, &p.Count, &p.Blocked); err != nil {
+			return nil, typed(err, "read places")
+		}
+		if slices.Contains(except, p.Value) {
+			continue
+		}
+		p.FirstSeen, p.LastSeen = fromMilli(first), fromMilli(last)
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, typed(err, "read places")
+	}
+	return out, nil
+}
+
+// LearningStart returns when the key's learning period began, which is its first
+// forwarded request or realtime session, and false for a key that has had none
+// (one that was only refused has not started to be learned).
+func (tx *Tx) LearningStart(keyID string) (time.Time, bool, error) {
+	var ms int64
+	err := tx.tx.QueryRowContext(tx.ctx, `SELECT started_at FROM key_learning WHERE key_id = ?`, keyID).Scan(&ms)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return time.Time{}, false, nil
+	case err != nil:
+		return time.Time{}, false, typed(err, "read the learning period of key "+keyID)
+	}
+	return fromMilli(ms), true, nil
 }

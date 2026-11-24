@@ -15,6 +15,7 @@ func TestSettingsGetShowsTheDefaults(t *testing.T) {
 		"default_key_ttl          90d",
 		"spend_timezone           UTC",
 		"expose_client_addresses  off",
+		"learning_period          7d",
 		"soft_budget_defaults     50,80,100",
 	} {
 		if !strings.Contains(out, line+"\n") {
@@ -85,5 +86,26 @@ func TestSettingsSetTurnsClientAddressesOnAndOff(t *testing.T) {
 	}
 	if r := in.run(t, nil, "", "settings", "set", "expose_client_addresses", "maybe"); r.code != 1 || !strings.Contains(r.stderr, "on or off") {
 		t.Errorf("a bad value: exit %d, %s", r.code, r.stderr)
+	}
+}
+
+func TestTheLearningPeriodIsASettingThatTakesDaysHoursOrNone(t *testing.T) {
+	in := newInstall(t).loggedIn(t)
+	for set, want := range map[string]string{"3d": "3d\n", "36h": "36h\n", "none": "none\n", "0": "none\n", "90d": "90d\n"} {
+		in.kman(t, "settings", "set", "learning_period", set)
+		if got := in.kman(t, "settings", "get", "learning_period"); got != want {
+			t.Errorf("learning_period set to %s reads back as %q, want %q", set, got, want)
+		}
+	}
+	for _, bad := range []string{"soon", "-1d", "91d", "never"} {
+		if r := in.run(t, nil, "", "settings", "set", "learning_period", bad); r.code != 1 || r.stderr == "" {
+			t.Errorf("learning_period %s = %d %q, want 1 and a reason", bad, r.code, r.stderr)
+		}
+	}
+	var s admin.Settings
+	in.kman(t, "settings", "set", "learning_period", "2d")
+	in.kmanJSON(t, &s, "settings", "get")
+	if s.LearningPeriodSeconds != 2*86400 {
+		t.Errorf("settings get --json = %+v, want learning_period_seconds of 2 days", s)
 	}
 }

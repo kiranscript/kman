@@ -69,6 +69,26 @@ var settings = []setting{
 		},
 	},
 	{
+		name: "learning_period",
+		get: func(s admin.Settings) string {
+			if s.LearningPeriodSeconds == 0 {
+				return "none"
+			}
+			return formatSeconds(s.LearningPeriodSeconds)
+		},
+		parse: func(v string, u *admin.SettingsUpdate) error {
+			var n int64
+			if v != "none" && v != "0" {
+				var err error
+				if n, err = parseSeconds(v); err != nil {
+					return errors.New("want a duration such as 7d, 36h or 1h30m, or none for no learning period")
+				}
+			}
+			u.LearningPeriodSeconds = &n
+			return nil
+		},
+	},
+	{
 		name: "soft_budget_defaults",
 		get: func(s admin.Settings) string {
 			if len(s.SoftBudgetPercents) == 0 {

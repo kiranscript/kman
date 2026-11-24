@@ -20,6 +20,11 @@ import (
 // before kman recorded it. Migration 0001 is a tagged release's and never
 // changes, so the column is added here.
 //
+// key_learning is when each key's learning period began (#89): the time of its
+// first forwarded request or realtime session, which is not the first event, so
+// a key that was only refused has not started to be learned. It is kept forever
+// and holds one row per key.
+//
 // canaries holds what a canary key has beyond its virtual_keys row, whose kind
 // is canary and which has no credential (#87): where it was planted, its ignore
 // list (a JSON array of addresses and CIDR prefixes), when it was armed (made,
@@ -58,6 +63,11 @@ CREATE TABLE baseline_places (
 	count      INTEGER NOT NULL DEFAULT 0,
 	blocked    INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (key_id, kind, value)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE key_learning (
+	key_id     TEXT    PRIMARY KEY,
+	started_at INTEGER NOT NULL
 ) STRICT, WITHOUT ROWID;
 
 CREATE TABLE canaries (
@@ -141,7 +151,9 @@ func migrate0002(ctx context.Context, tx *sql.Tx, _ migrationEnv) error {
 		return err
 	}
 	tally := newPlaceTally()
-	for rows.Next() {
+	learning := map[string]int64{} // each key's first forwarded request, which is when its learning period began
+	var learners []string
+	for i := 0; rows.Next(); i++ {
 		var r EventRow
 		var ts int64
 		if err := rows.Scan(&ts, &r.KeyID, &r.Kind, &r.ClientIP, &r.Country, &r.ASN); err != nil {
@@ -149,7 +161,11 @@ func migrate0002(ctx context.Context, tx *sql.Tx, _ migrationEnv) error {
 			return err
 		}
 		r.Time = fromMilli(ts)
-		tally.add(r)
+		tally.add(i, r)
+		if _, ok := learning[r.KeyID]; !ok && r.Kind != "blocked" {
+			learning[r.KeyID] = ts
+			learners = append(learners, r.KeyID)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -158,5 +174,11 @@ func migrate0002(ctx context.Context, tx *sql.Tx, _ migrationEnv) error {
 	if err := rows.Close(); err != nil {
 		return err
 	}
-	return tally.write(ctx, tx)
+	for _, key := range learners {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO key_learning (key_id, started_at) VALUES (?, ?)`, key, learning[key]); err != nil {
+			return err
+		}
+	}
+	_, err = tally.write(ctx, tx)
+	return err
 }
