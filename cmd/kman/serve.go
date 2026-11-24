@@ -17,6 +17,7 @@ import (
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/adminapi"
 	"github.com/kirank55/kman/internal/alerts"
+	"github.com/kirank55/kman/internal/detect"
 	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/gateway"
 	"github.com/kirank55/kman/internal/meter"
@@ -26,6 +27,9 @@ import (
 	"github.com/kirank55/kman/internal/store"
 	"github.com/kirank55/kman/internal/vault"
 )
+
+// canaryRule is the rule a canary's use raises its incident under.
+const canaryRule = "canary"
 
 // shutdownGrace is how long serve waits for requests in flight once asked
 // to stop.
@@ -119,9 +123,17 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	var spend *meter.Meter // made once the settings are read, which the service reads
 	// Alerts reach the network only through the channels the operator added
 	// (ADR 0008). The vault holds each channel's address once admin has loaded it.
-	var svc *admin.Service // made below, after alerts, which it calls; the warnings read its settings
+	var svc *admin.Service       // made below, after alerts, which it calls; the warnings read its settings
+	var incidents *detect.Engine // made just below, after alerts, which it alerts through and which records a canary's use with it
 	alert := alerts.New(alerts.Options{Store: st, Secret: v.Credential, Now: s.now, DashboardURL: cfg.Dashboard.URL, Log: log,
-		Limits: alertLimits, Settings: alertSettings(func() *admin.Service { return svc })})
+		Limits: alertLimits, Settings: alertSettings(func() *admin.Service { return svc }),
+		CanaryIncident: func(tx *store.Tx, keyID string, at time.Time, ev store.Evidence) (int64, error) {
+			// A canary's use opens or escalates the canary's incident. The canary's
+			// alert is its own, so the engine queues none (ADR 0013, ADR 0014).
+			out, err := incidents.Raise(tx, detect.Detection{KeyID: keyID, Rule: canaryRule, Severity: store.SeverityCritical, At: at, Evidence: ev, Silent: true})
+			return out.Incident.ID, err
+		}})
+	incidents = detect.New(detect.Options{Store: st, Now: s.now, Alerts: alert, Log: log})
 	// The event bus is made before the admin service, which streams from it.
 	pipe := startEvents(ctx, st, log, alert)
 	defer pipe.stop() // a second time is harmless: the first stop is below
@@ -148,6 +160,11 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	settleDone := make(chan struct{})
 	go func() { svc.RunSettling(settleCtx); close(settleDone) }() // a grace that has ended turns its secret into a retired one
 	defer func() { stopSettling(); <-settleDone }()
+	// Incidents that nobody acknowledged expire when they have been quiet for 7 days.
+	sweepCtx, stopSweep := context.WithCancel(ctx)
+	sweepDone := make(chan struct{})
+	go func() { incidents.RunSweep(sweepCtx); close(sweepDone) }()
+	defer func() { stopSweep(); <-sweepDone }()
 	// Retention prunes at startup and then daily, unless the operator keeps everything.
 	retainCtx, stopRetaining := context.WithCancel(ctx)
 	retainDone := make(chan struct{})
