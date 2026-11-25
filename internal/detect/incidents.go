@@ -94,7 +94,10 @@ type Options struct {
 	Alerts Alerter
 	// QuietAfter, ExpireAfter and SweepEvery default to the constants above.
 	QuietAfter, ExpireAfter, SweepEvery time.Duration
-	Log                                 *slog.Logger // defaults to discarding
+	// MaxDetectionGroupsPerBatch bounds the location detection groups one batch
+	// of events raises across all its keys. Default the constant of that name.
+	MaxDetectionGroupsPerBatch int
+	Log                        *slog.Logger // defaults to discarding
 }
 
 // Engine runs the incident state machine: one unresolved incident per key,
@@ -120,6 +123,9 @@ func New(o Options) *Engine {
 	}
 	if o.SweepEvery <= 0 {
 		o.SweepEvery = DefaultSweepEvery
+	}
+	if o.MaxDetectionGroupsPerBatch <= 0 {
+		o.MaxDetectionGroupsPerBatch = MaxDetectionGroupsPerBatch
 	}
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)

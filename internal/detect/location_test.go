@@ -421,8 +421,55 @@ func TestAThousandNewPlacesInOneBatchAreRaisedInBoundedTime(t *testing.T) {
 	if got := strings.Join(inc.Rules(), ","); got != "new_asn,new_client,new_network" {
 		t.Errorf("rules = %s, want every rule that fired, however many requests there were", got)
 	}
+	// A key keeps 1,000 places of a kind, its usual one among them, so 999 of
+	// each kind are new and the last request's are only counted as places.
+	if inc.Detections != 3*999 {
+		t.Errorf("the incident counted %d detections, want every one of the 2,997 new places", inc.Detections)
+	}
 	if n := len(r.alerts.got()); n != 1 {
 		t.Errorf("%d alerts for one batch, want 1", n)
+	}
+}
+
+// Many keys spraying new places at once must not make the writer's transaction
+// slow either: past the batch's bound a key raises only the rules it has not
+// raised yet in the batch, so each incident still opens with every rule, and
+// what is not raised is still counted on it (#113).
+func TestManyKeysSprayingNewPlacesInOneBatchAreBoundedTogetherAndStillCounted(t *testing.T) {
+	r := newRig(t)
+	for _, k := range []string{"abcd1234", "beef5678"} {
+		r.mustWrite(ev(t0, func(e *events.Event) { e.KeyID = k }))
+		r.mustWrite(ev(t0.Add(time.Hour), func(e *events.Event) { e.KeyID = k }))
+	}
+	r.engine = detect.New(detect.Options{Store: r.store, Now: func() time.Time { return r.now }, Alerts: r.alerts, MaxDetectionGroupsPerBatch: 5})
+	var batch []events.Event
+	for i := range 40 {
+		key := "abcd1234"
+		if i >= 20 {
+			key = "beef5678"
+		}
+		batch = append(batch, ev(afterLearning.Add(time.Duration(i)*time.Millisecond), func(e *events.Event) {
+			e.KeyID = key
+			e.ClientIP = netip.AddrFrom4([4]byte{10, 1, byte(i), 1})
+			e.ASN, e.Client = int64(100000+i), "bot-"+strconv.Itoa(i)+"/1"
+		}))
+	}
+	r.mustWrite(batch...)
+	// abcd1234 used up the batch's five groups; beef5678 raised one, for its rules.
+	for id, want := range map[int64]int{1: 5 * 3, 2: 3} {
+		inc := r.incident(id)
+		if n := len(r.detections(id)); n != want {
+			t.Errorf("incident %d (%s): %d detection rows, want %d", id, inc.KeyID, n, want)
+		}
+		if got := strings.Join(inc.Rules(), ","); got != "new_asn,new_client,new_network" {
+			t.Errorf("incident %d rules = %s", id, got)
+		}
+		if inc.Detections != 20*3 {
+			t.Errorf("incident %d counted %d detections, want all 60 new places", id, inc.Detections)
+		}
+		if want := afterLearning.Add(time.Duration(19+20*(id-1)) * time.Millisecond); !inc.LastFiredAt.Equal(want) {
+			t.Errorf("incident %d last fired %v, want its last request's %v", id, inc.LastFiredAt, want)
+		}
 	}
 }
 

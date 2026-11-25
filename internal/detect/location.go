@@ -103,15 +103,16 @@ func (e *Engine) ObservePlaces(tx *store.Tx, rows []store.EventRow, fresh []stor
 	} else {
 		install = d
 	}
+	batchGroups := 0 // the groups raised for every key of the batch so far
 	for _, id := range keys {
-		if err := e.observeKey(tx, id, rows, byKey[id], freshOf[id], install); err != nil {
+		if err := e.observeKey(tx, id, rows, byKey[id], freshOf[id], install, &batchGroups); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (e *Engine) observeKey(tx *store.Tx, id string, rows []store.EventRow, cands, fresh []store.NewPlace, install time.Duration) error {
+func (e *Engine) observeKey(tx *store.Tx, id string, rows []store.EventRow, cands, fresh []store.NewPlace, install time.Duration, batchGroups *int) error {
 	key, err := tx.Key(id)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -162,6 +163,8 @@ func (e *Engine) observeKey(tx *store.Tx, id string, rows []store.EventRow, cand
 	usual := map[string]usualPlaces{}
 	raised := map[string]bool{} // the rules raised for this key in this batch
 	groups, dropped := 0, 0
+	var unraised int64 // the new places past the bounds, which only the counter counts
+	var lastUnraised time.Time
 	for _, i := range order {
 		row := rows[i]
 		addr, _ := netip.ParseAddr(row.ClientIP)
@@ -169,11 +172,16 @@ func (e *Engine) observeKey(tx *store.Tx, id string, rows []store.EventRow, cand
 		var ds []Detection
 		capped := false
 		for _, p := range byEvent[i] {
-			if r, _ := ruleOf(p.Kind); groups >= MaxDetectionGroupsPerKeyPerBatch && raised[r.rule] {
-				capped = true
+			if _, known := MatchKnownPlace(sources, id, false, p.Kind, origin); known {
 				continue
 			}
-			if _, known := MatchKnownPlace(sources, id, false, p.Kind, origin); known {
+			full := groups >= MaxDetectionGroupsPerKeyPerBatch || *batchGroups >= e.o.MaxDetectionGroupsPerBatch
+			if r, _ := ruleOf(p.Kind); full && raised[r.rule] {
+				capped = true
+				unraised++
+				if at := p.At.Truncate(time.Millisecond); at.After(lastUnraised) {
+					lastUnraised = at
+				}
 				continue
 			}
 			d, err := e.locationDetection(tx, row, p, fresh, learned, usual)
@@ -189,6 +197,7 @@ func (e *Engine) observeKey(tx *store.Tx, id string, rows []store.EventRow, cand
 			continue
 		}
 		groups++
+		*batchGroups++
 		// Highest severity first, so that a group's alert names the one that matters.
 		slices.SortStableFunc(ds, func(a, b Detection) int { return b.Severity.Rank() - a.Severity.Rank() })
 		outs, err := e.RaiseGroup(tx, ds)
@@ -202,8 +211,26 @@ func (e *Engine) observeKey(tx *store.Tx, id string, rows []store.EventRow, cand
 			}
 		}
 	}
+	if unraised > 0 {
+		// A rule raised for the key in this batch is why a place was not raised,
+		// so the key has an unresolved incident to count it on.
+		inc, err := tx.UnresolvedIncident(id)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+		case err != nil:
+			return err
+		default:
+			inc.Detections += unraised
+			if lastUnraised.After(inc.LastFiredAt) {
+				inc.LastFiredAt = lastUnraised
+			}
+			if _, err := tx.UpdateIncident(inc); err != nil {
+				return err
+			}
+		}
+	}
 	if dropped > 0 {
-		e.o.Log.Warn("detect: a batch held more new places of one key than detections are raised for; the rest were recorded and not raised", "key", id, "requests", dropped)
+		e.o.Log.Warn("detect: a batch held more new places than detections are raised for; the rest were counted on the key's incident and not raised", "key", id, "requests", dropped)
 	}
 	return nil
 }
@@ -215,12 +242,19 @@ type usualPlaces struct {
 }
 
 // MaxDetectionGroupsPerKeyPerBatch bounds the requests of one key that a single
-// batch of events raises detections for, so that a thief spraying new addresses
-// cannot make the writer's transaction, which every event waits on, slow. Past it
-// a request is raised only for a rule that no earlier one in the batch raised;
-// the incident would only count the rest, since repeats past
-// MaxDetectionsPerIncident are not recorded either.
-const MaxDetectionGroupsPerKeyPerBatch = MaxDetectionsPerIncident
+// batch of events raises detections for, and MaxDetectionGroupsPerBatch those of
+// every key together, so that a thief spraying new addresses, with one key or
+// with many, cannot make the writer's transaction, which every event waits on,
+// slow. Past either bound a request of a key is raised only for a rule that no
+// earlier request of that key in the batch raised, so each key's incident still
+// opens and learns every rule that fired. The rest are added to the incident's
+// counter and not recorded, as repeats past MaxDetectionsPerIncident are not.
+// The groups of a batch are so at most MaxDetectionGroupsPerBatch, plus one per
+// rule for each key in it.
+const (
+	MaxDetectionGroupsPerKeyPerBatch = MaxDetectionsPerIncident
+	MaxDetectionGroupsPerBatch       = 1000
+)
 
 // locationDetection is the detection for one new place of one request: what is
 // new and what the key normally uses.
