@@ -4,8 +4,33 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kirank55/kman/internal/detect"
 	"github.com/kirank55/kman/internal/store"
 )
+
+func TestRecordedFiringsIsDetectsBoundOnDetectionRows(t *testing.T) {
+	if recordedFirings != detect.MaxDetectionsPerIncident {
+		t.Fatalf("recordedFirings = %d, detect.MaxDetectionsPerIncident = %d", recordedFirings, detect.MaxDetectionsPerIncident)
+	}
+}
+
+// Past the first recordedFirings rows every row is an escalation, whatever it
+// looks like: detect records nothing else there.
+func TestShownDetectionsTakeEveryRowPastTheFirstFiringsAsAnEscalation(t *testing.T) {
+	t0 := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	var ds []store.Detection
+	for i := range recordedFirings + 3 {
+		ds = append(ds, store.Detection{ID: int64(i + 1), At: t0.Add(time.Duration(i) * time.Second), Rule: "new_country", Severity: store.SeverityMedium})
+	}
+	got := shownDetections(ds, 10)
+	if len(got) != 10 || got[0].ID != 1 || got[7].ID != recordedFirings+1 || got[9].ID != recordedFirings+3 {
+		var ids []int64
+		for _, d := range got {
+			ids = append(ids, d.ID)
+		}
+		t.Errorf("shown %v, want the first, then the oldest and newest of the rest, and the three rows past the firings", ids)
+	}
+}
 
 func TestShownDetectionsKeepEveryEscalationThenTheOldestAndNewest(t *testing.T) {
 	t0 := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)

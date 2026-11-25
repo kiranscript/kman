@@ -32,7 +32,7 @@ func cmdIncidents(ctx context.Context, c *call) error {
 		"A key has at most one unresolved incident. An incident is open until someone acknowledges it (kman incident ack) and resolved by kman incident resolve, "+
 		"this-was-me, or a containment command given --incident. It is quiet after an hour without a firing, and an unacknowledged one quiet for 7 days expires; "+
 		"acknowledged and critical (canary) incidents never do. "+
-		"With --follow it prints the newest incidents, oldest first, and then a line each time an incident opens, escalates (a higher severity or a new rule), is acknowledged or is resolved, until interrupted. "+
+		"With --follow it prints the newest incidents, oldest first, and then a line each time an incident opens, escalates (a higher severity, a new rule, or a firing after it went quiet), is acknowledged or is resolved, until interrupted. "+
 		"A repeat of a rule the incident already has only counts, and is not a change.", true)
 	open := fs.Bool("open", false, "only incidents that are not resolved")
 	key := fs.String("key", "", "only this key's incidents, by name or key id")
@@ -125,11 +125,11 @@ func incidentSignature(i admin.Incident) string {
 
 // firedAfterQuiet says an unresolved incident fired again after going quiet
 // since it was last seen as old. detect counts that as an escalation and alerts,
-// though it changes no state, severity or rule. It is seen as quiet before, or,
-// if it went quiet and fired between two looks, by how long it had not fired.
+// though it changes no state, severity or rule. Its rule is the one detect
+// applies: the firing's time against the last one before it, which old holds,
+// since --follow keeps the newest copy of each incident it saw.
 func firedAfterQuiet(old, i admin.Incident) bool {
-	return old.State != admin.IncidentResolved && i.LastFiredAt.After(old.LastFiredAt) &&
-		(old.Quiet || i.LastFiredAt.Sub(old.LastFiredAt) >= admin.IncidentQuietAfter)
+	return old.State != admin.IncidentResolved && i.LastFiredAt.Sub(old.LastFiredAt) >= admin.IncidentQuietAfter
 }
 
 // incidentsFollow prints the incidents the query picks, oldest first, and then a
@@ -300,7 +300,7 @@ func incidentShow(ctx context.Context, c *call) error {
 		fmt.Fprintf(c.env.Stdout, "  %s  %s\n", item.at.UTC().Format("2006-01-02T15:04:05Z"), item.text)
 	}
 	if shown := int64(len(d.Detections)); d.DetectionCount > shown {
-		fmt.Fprintf(c.env.Stdout, "  (%d more detections were counted and not listed)\n", d.DetectionCount-shown)
+		fmt.Fprintf(c.env.Stdout, "  (%d more detections are not listed)\n", d.DetectionCount-shown)
 	}
 	if len(d.Candidates) > 0 {
 		fmt.Fprintf(c.env.Stdout, "\nPlaces it saw: %s.\nIf this was you: kman incident this-was-me %d --add-known-sources\n", candidateText(d.Candidates), d.ID)

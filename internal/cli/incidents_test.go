@@ -427,11 +427,18 @@ func TestIncidentsFollowPrintsAQuietIncidentFiringAgainButNotARepeat(t *testing.
 	if out := in.detectAt(t, t0.Add(10*time.Minute), k.ID, "new_country", store.SeverityHigh, ev); out.Change != detect.Repeated {
 		t.Fatalf("a firing 10 minutes on is %s, want a repeat", out.Change)
 	}
+	// Another key's new incident is news: once it is printed, a poll has seen
+	// the repeat, and printed nothing for it.
+	var other admin.CreatedKey
+	in.kmanJSON(t, &other, "key", "create", "other-app", "--upstream", "openai")
+	in.detectAt(t, t0.Add(10*time.Minute), other.Key.ID, "new_country", store.SeverityMedium, ev)
+	if out := wait("#2", 1); strings.Contains(out, "(2 detections)") {
+		t.Errorf("a repeat was printed:\n%s", out)
+	}
 	if out := in.detectAt(t, t0.Add(2*time.Hour), k.ID, "new_country", store.SeverityHigh, ev); out.Change != detect.Escalated {
 		t.Fatalf("a firing after two quiet hours is %s, want an escalation", out.Change)
 	}
-	out := wait("#1", 2)
-	if !strings.Contains(out, "(3 detections)") || strings.Contains(out, "(2 detections)") {
+	if out := wait("#1", 2); !strings.Contains(out, "(3 detections)") {
 		t.Errorf("follow printed:\n%s", out)
 	}
 }

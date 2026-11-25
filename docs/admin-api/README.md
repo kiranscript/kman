@@ -962,7 +962,7 @@ Response 200: [Whoami](#whoami).
 |---|---|---|---|
 | `acknowledged_at` | string | no |  |
 | `acknowledged_by` | string | no |  |
-| `detection_count` | integer | yes | Every detection raised, repeats included. The detail lists the first 100 of them. |
+| `detection_count` | integer | yes | Every detection raised, repeats included. The detail lists at most 100 of them, its escalations first among them. |
 | `id` | integer | yes | A plain integer, as alerts and commands name it. |
 | `key_id` | string | yes |  |
 | `key_name` | string | no |  |
@@ -984,8 +984,8 @@ Response 200: [Whoami](#whoami).
 | `acknowledged_by` | string | no |  |
 | `actions` | list of [AuditEntry](#auditentry) | yes | The audit entries that carry the incident's id: its opening and escalations by system:detect, and what operators did about it. With the detections, the timeline. |
 | `addresses_withheld` | boolean | no | A client address or network was left out of the evidence because expose_client_addresses is off. |
-| `detection_count` | integer | yes | Every detection raised, repeats included. The detail lists the first 100 of them. |
-| `detections` | list of [IncidentDetection](#incidentdetection) | yes | What fired, oldest first, at most 100. |
+| `detection_count` | integer | yes | Every detection raised, repeats included. The detail lists at most 100 of them, its escalations first among them. |
+| `detections` | list of [IncidentDetection](#incidentdetection) | yes | What fired, oldest first, at most 100: the detections that escalated the incident (the first and the newest, if there are more), then the oldest and the newest of the rest. detection_count says how many there were. |
 | `id` | integer | yes | A plain integer, as alerts and commands name it. |
 | `key_id` | string | yes |  |
 | `key_name` | string | no |  |
