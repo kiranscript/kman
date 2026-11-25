@@ -446,3 +446,38 @@ func TestASlowStreamLosesEventsNotTheRequestPathAndTheDropsAreCounted(t *testing
 		done.Wait()
 	})
 }
+
+// A stream filtered to one key loses nothing while another key is busy: the
+// filter applies before the stream's buffer, so Missed counts only events it
+// would have shown (#108).
+func TestAFilteredStreamOnlyMissesEventsItWouldHaveShown(t *testing.T) {
+	in, k := feedFixture(t)
+	in.streamBuffer = 2
+	synctest.Test(t, func(t *testing.T) {
+		bus := events.New(events.Options{Capacity: 64})
+		in.events = bus
+		in.svc = in.service(profiles.Presets())
+		ctx, cancel := context.WithCancel(context.Background())
+		var done sync.WaitGroup
+		done.Go(func() { bus.Run(ctx) })
+		s, err := in.svc.StreamEvents(as("owner"), admin.EventStreamQuery{Key: k.ID, Kind: admin.EventRefused})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range 30 { // another key, and this key's forwarded requests: none of it is shown
+			bus.Emit(newEvent("zzzz9999", events.KindBlocked, "invalid_key"))
+			bus.Emit(newEvent(k.ID, events.KindRequest, ""))
+		}
+		synctest.Wait()
+		if n := s.Missed(); n != 0 {
+			t.Errorf("missed %d while only events it filters out were sent, want 0", n)
+		}
+		bus.Emit(newEvent(k.ID, events.KindBlocked, "invalid_key"))
+		if e := <-s.Events(); e.KeyID != k.ID || e.Kind != admin.EventRefused {
+			t.Errorf("the stream carried %+v, want this key's refusal", e)
+		}
+		s.Close()
+		cancel()
+		done.Wait()
+	})
+}

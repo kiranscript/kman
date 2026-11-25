@@ -158,6 +158,10 @@ func eventStatus(e admin.Event) string {
 	return strconv.Itoa(e.Status)
 }
 
+// missedEvery is how often --follow checks whether the stream lost events, so
+// it says so within that time even when no event follows.
+var missedEvery = time.Second
+
 // eventsFollow prints the stored events the query picks, oldest first, and then
 // every new one as it happens. Interrupting it, which ends ctx, is how it is
 // meant to end; a stream that kman ended is an error.
@@ -189,19 +193,33 @@ func eventsFollow(ctx context.Context, c *call, cl *client, l login, req admin.E
 			return err
 		}
 	}
+	// What was missed is said as soon as it is known, not with the next event:
+	// a feed that goes quiet after a burst may have no next event.
 	var missed int64
-	for e := range st.Events() {
-		if err := print(e); err != nil {
-			return err
-		}
+	tellMissed := func() {
 		if n := st.Missed(); n > missed {
 			missed = n
 			fmt.Fprintf(c.env.Stderr, "kman events: this reader fell behind, so kman dropped events for it: missed %d so far.\n", n)
 		}
 	}
-	if n := st.Missed(); n > missed {
-		fmt.Fprintf(c.env.Stderr, "kman events: this reader fell behind, so kman dropped events for it: missed %d so far.\n", n)
+	tick := time.NewTicker(missedEvery)
+	defer tick.Stop()
+follow:
+	for {
+		select {
+		case e, ok := <-st.Events():
+			if !ok {
+				break follow
+			}
+			if err := print(e); err != nil {
+				return err
+			}
+			tellMissed()
+		case <-tick.C:
+			tellMissed()
+		}
 	}
+	tellMissed()
 	switch {
 	case ctx.Err() != nil:
 		return nil

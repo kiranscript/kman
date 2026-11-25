@@ -29,8 +29,9 @@ const SchemaVersion = 2
 // moves on only by appending a migration.
 var migrations = []migration{migrate0001, migrate0002}
 
-// schemaPart is something a migration creates: a table, or one column of a
-// table that an earlier migration made.
+// schemaPart is something a migration creates: a table, an index (named in
+// table, with no column), or one column of a table that an earlier migration
+// made.
 type schemaPart struct{ table, column string }
 
 // unreleased is what each migration that is not in a tagged release creates,
@@ -41,7 +42,7 @@ type schemaPart struct{ table, column string }
 // touches what is missing. When a release is tagged, take its version off this
 // list: its migration is then fixed, and a later one is appended instead.
 var unreleased = map[int][]schemaPart{
-	2: {{"events", "client"}, {"baseline_places", ""}, {"key_learning", ""}, {"canaries", ""},
+	2: {{"events", "client"}, {"events_by_key", ""}, {"baseline_places", ""}, {"key_learning", ""}, {"canaries", ""},
 		{"incidents", ""}, {"detections", ""}, {"known_sources", ""}},
 }
 
@@ -55,7 +56,7 @@ func (s *Store) checkUnreleased(ctx context.Context, ms []migration) error {
 			var n int
 			var err error
 			if p.column == "" {
-				err = s.db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, p.table).Scan(&n)
+				err = s.db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type IN ('table', 'index') AND name = ?`, p.table).Scan(&n)
 			} else {
 				err = s.db.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info(?) WHERE name = ?`, p.table, p.column).Scan(&n)
 			}

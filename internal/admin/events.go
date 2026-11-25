@@ -290,13 +290,15 @@ func (s *Service) StreamEvents(ctx context.Context, q EventStreamQuery) (EventSt
 		buffer = defaultStreamBuffer
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	st := &serviceStream{out: make(chan Event), sub: s.bus.Subscribe(streamName, events.SubOptions{Buffer: buffer}), cancel: cancel}
+	// The bus applies the filter before it queues, so the buffer holds only what
+	// this stream shows and Missed counts only what it would have shown.
+	st := &serviceStream{out: make(chan Event), sub: s.bus.Subscribe(streamName, events.SubOptions{Buffer: buffer, Match: f.matches}), cancel: cancel}
 	go func() {
 		// Closing out comes last: a reader that sees it close can open a new stream.
 		defer close(st.out)
 		defer s.streams.release()
 		defer s.bus.Unsubscribe(st.sub)
-		s.pump(ctx, st, f)
+		s.pump(ctx, st)
 	}()
 	return st, nil
 }
@@ -316,7 +318,7 @@ func (st *serviceStream) Close()               { st.cancel() }
 // pump turns what the subscription delivers into the stream's events, until the
 // stream is closed or the bus stops. Only it ever waits for the reader, and
 // what the bus has for a reader that waits too long it drops.
-func (s *Service) pump(ctx context.Context, st *serviceStream, f streamFilter) {
+func (s *Service) pump(ctx context.Context, st *serviceStream) {
 	for {
 		var batch []events.Event
 		select {
@@ -324,9 +326,7 @@ func (s *Service) pump(ctx context.Context, st *serviceStream, f streamFilter) {
 			if !ok {
 				return
 			}
-			if f.matches(e) {
-				batch = append(batch, e)
-			}
+			batch = append(batch, e)
 		case <-ctx.Done():
 			return
 		case <-s.streams.ctx.Done():
@@ -341,15 +341,10 @@ func (s *Service) pump(ctx context.Context, st *serviceStream, f streamFilter) {
 				if !ok {
 					break drain
 				}
-				if f.matches(e) {
-					batch = append(batch, e)
-				}
+				batch = append(batch, e)
 			default:
 				break drain
 			}
-		}
-		if len(batch) == 0 {
-			continue
 		}
 		for _, e := range s.streamEvents(ctx, batch) {
 			select {

@@ -352,6 +352,33 @@ type StoredEvent struct {
 // is the order they were stored in. A caller that wants to know whether there
 // are more asks for one past its page.
 func (tx *Tx) ListEvents(f EventFilter, limit int) ([]StoredEvent, error) {
+	query, args := listEventsQuery(f, limit)
+	rows, err := tx.tx.QueryContext(tx.ctx, query, args...)
+	if err != nil {
+		return nil, typed(err, "read events")
+	}
+	defer rows.Close()
+	var out []StoredEvent
+	for rows.Next() {
+		var e StoredEvent
+		var ts int64
+		if err := rows.Scan(&e.ID, &ts, &e.KeyID, &e.KeyName, &e.Kind, &e.ClientIP, &e.Country, &e.ASN, &e.ASOrg,
+			&e.UpstreamID, &e.Model, &e.Operation, &e.Status, &e.BlockedCode, &e.Client); err != nil {
+			return nil, typed(err, "read events")
+		}
+		e.Time = fromMilli(ts)
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, typed(err, "read events")
+	}
+	return out, nil
+}
+
+// listEventsQuery is ListEvents' query and its arguments. Filtered by key, it
+// is served by events_by_key in id order, so a busy key's newest page is read
+// without sorting all of the key's events.
+func listEventsQuery(f EventFilter, limit int) (string, []any) {
 	var where []string
 	var args []any
 	add := func(cond string, arg ...any) {
@@ -372,11 +399,18 @@ func (tx *Tx) ListEvents(f EventFilter, limit int) ([]StoredEvent, error) {
 	if f.BlockedCode != "" {
 		add("e.blocked_code = ?", f.BlockedCode)
 	}
+	// With a key, the unary plus keeps SQLite off events_key_ts for the time
+	// bounds: it walks events_by_key newest first and checks the time as it
+	// goes, where events_key_ts would read the whole window and sort it.
+	ts := "e.ts"
+	if f.KeyID != "" {
+		ts = "+e.ts"
+	}
 	if !f.Since.IsZero() {
-		add("e.ts >= ?", toMilli(f.Since))
+		add(ts+" >= ?", toMilli(f.Since))
 	}
 	if !f.Until.IsZero() {
-		add("e.ts < ?", toMilli(f.Until))
+		add(ts+" < ?", toMilli(f.Until))
 	}
 	if f.BeforeID > 0 {
 		add("e.id < ?", f.BeforeID)
@@ -390,24 +424,5 @@ func (tx *Tx) ListEvents(f EventFilter, limit int) ([]StoredEvent, error) {
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	rows, err := tx.tx.QueryContext(tx.ctx, query+" ORDER BY e.id DESC LIMIT ?", append(args, limit)...)
-	if err != nil {
-		return nil, typed(err, "read events")
-	}
-	defer rows.Close()
-	var out []StoredEvent
-	for rows.Next() {
-		var e StoredEvent
-		var ts int64
-		if err := rows.Scan(&e.ID, &ts, &e.KeyID, &e.KeyName, &e.Kind, &e.ClientIP, &e.Country, &e.ASN, &e.ASOrg,
-			&e.UpstreamID, &e.Model, &e.Operation, &e.Status, &e.BlockedCode, &e.Client); err != nil {
-			return nil, typed(err, "read events")
-		}
-		e.Time = fromMilli(ts)
-		out = append(out, e)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, typed(err, "read events")
-	}
-	return out, nil
+	return query + " ORDER BY e.id DESC LIMIT ?", append(args, limit)
 }

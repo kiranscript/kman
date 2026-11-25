@@ -169,6 +169,7 @@ func serveStream(w http.ResponseWriter, r *http.Request, log *slog.Logger, rt ro
 		select {
 		case e, ok := <-st.Events():
 			if !ok {
+				missed() // what it lost at the very end is still told
 				return
 			}
 			b, err := json.Marshal(e)

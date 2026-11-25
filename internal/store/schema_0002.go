@@ -17,8 +17,9 @@ import (
 // first 1,000. It has no foreign key, like events, and is kept forever.
 //
 // events gains client, the same reduction, which is NULL for an event stored
-// before kman recorded it. Migration 0001 is a tagged release's and never
-// changes, so the column is added here.
+// before kman recorded it, and events_by_key, which serves one key's newest
+// events in id order (kman events --key) without sorting all of them. Migration
+// 0001 is a tagged release's and never changes, so both are added here.
 //
 // key_learning is when each key's learning period began (#89): the time of its
 // first forwarded request or realtime session, which is not the first event, so
@@ -52,6 +53,7 @@ import (
 // silences one (ADR 0013).
 const schema0002 = `
 ALTER TABLE events ADD COLUMN client TEXT;
+CREATE INDEX events_by_key ON events (key_id, id);
 
 CREATE TABLE baseline_places (
 	key_id     TEXT    NOT NULL,
