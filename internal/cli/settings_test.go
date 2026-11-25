@@ -91,7 +91,8 @@ func TestSettingsSetTurnsClientAddressesOnAndOff(t *testing.T) {
 
 func TestTheLearningPeriodIsASettingThatTakesDaysHoursOrNone(t *testing.T) {
 	in := newInstall(t).loggedIn(t)
-	for set, want := range map[string]string{"3d": "3d\n", "36h": "36h\n", "none": "none\n", "0": "none\n", "0s": "none\n", "0d": "none\n", "90d": "90d\n"} {
+	for set, want := range map[string]string{"3d": "3d\n", "36h": "36h\n", "none": "none\n", "0": "none\n", "0s": "none\n", "0d": "none\n", "90d": "90d\n",
+		"1h30m": "1h30m\n", "10m": "10m\n", "30s": "30s\n", "90s": "1m30s\n", "1h10m": "1h10m\n"} {
 		in.kman(t, "settings", "set", "learning_period", set)
 		if got := in.kman(t, "settings", "get", "learning_period"); got != want {
 			t.Errorf("learning_period set to %s reads back as %q, want %q", set, got, want)

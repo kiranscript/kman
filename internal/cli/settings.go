@@ -260,6 +260,12 @@ func formatSeconds(n int64) string {
 		return strconv.FormatInt(int64(d/day), 10) + "d"
 	}
 	s := d.String()
-	s = strings.TrimSuffix(s, "0s")
-	return strings.TrimSuffix(s, "0m")
+	// Drop a zero unit only: the 0 of 1h30m or 10m is a digit of the one before.
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
 }

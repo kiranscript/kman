@@ -41,7 +41,7 @@ Codes are ISO 3166-1 alpha-2, in either case.
 
 ## GeoIP and the location rules
 
-The [location rules](incidents.md#location-rules) raise `new_country` and `new_asn` from the databases here. **Install them before you create keys.** A key learns where it is used from during its first week, and a key that finished learning with no database has no country or ASN to compare with, so adding a database later raises one `new_country` and one `new_asn` incident for each such key at its next request. Nothing is wrong: check the country, and resolve each with `kman incident this-was-me <id>`. This is deliberate. A key used only from private addresses has no country either, and its first country abroad is what a leak looks like.
+The [location rules](incidents.md#location-rules) raise `new_country` and `new_asn` from the databases here. **Install them before you create keys.** A key learns where it is used from during its first week, and a key that finished learning with no database has no country or ASN to compare with, so adding a database later opens one incident for each such key, with the `new_country` and `new_asn` rules, at its next request. Nothing is wrong: check the country, and resolve each with `kman incident this-was-me <id>`. This is deliberate. A key used only from private addresses has no country either, and its first country abroad is what a leak looks like.
 
 ## What is refused, and never allowed
 
