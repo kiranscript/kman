@@ -27,6 +27,12 @@ const (
 	maxMajorDigits = 4
 	// maxWordLength bounds the word of an SDK's "Vendor/Word 1.2.3" form.
 	maxWordLength = 16
+	// maxNameDigitRuns and maxNameDigits bound the digits of a product name of
+	// any length. A product names itself in words, with a digit or a short number
+	// at most (urllib3, aws-sdk-go-v2, k6); a host label (ip-10-0-3-7, node-0042)
+	// or a short token (a1b2c3) has several runs of digits, or a long one.
+	maxNameDigitRuns = 1
+	maxNameDigits    = 3
 )
 
 // ClientOf reduces a User-Agent to the client an event records (SPEC §9): its
@@ -42,7 +48,10 @@ const (
 // first. A first word that is not a clean product name is not cut down to one:
 // an address, a host name, an email, a URL, a key or a token is not a product,
 // so the client is ClientUnknown, and the key of a virtual or child key (anything
-// holding "kmn_") never survives. No User-Agent at all is ClientNone.
+// holding "kmn_") never survives. Nor does a name with more than one run of
+// digits or more than three digits, as a host label or a short token has, or a
+// first word that fills the whole window read. No User-Agent at all is
+// ClientNone.
 //
 // An SDK that names itself "Vendor/Language 1.2.3", as the official OpenAI and
 // Anthropic SDKs do, is read as vendor-language/1.
@@ -62,10 +71,18 @@ func ClientOf(userAgent string) string {
 		return ClientUnknown
 	}
 	start := i
+	hasDigit := false
 	for i < len(ua) && isNameByte(ua[i]) {
+		hasDigit = hasDigit || ua[i]-'0' < 10
 		i++
 	}
 	name := ua[start:i]
+	// A first word that runs to the end of the window cannot be seen to end, so
+	// it cannot be told from the start of an email or a host name: no product is
+	// named in 256 bytes.
+	if i == len(ua) && len(userAgent) > userAgentWindow {
+		return ClientUnknown
+	}
 	// The name has to be the whole of the word: "alice@example.com", "host:80" and
 	// "api.example.com" are not products, and are not cut into one.
 	if i < len(ua) {
@@ -75,12 +92,39 @@ func ClientOf(userAgent string) string {
 			return ClientUnknown
 		}
 	}
-	if (len(name) >= minSecretLength && strings.ContainsAny(name, "0123456789")) || containsFold(name, "kmn_") {
+	if strings.IndexByte(name, '_') >= 0 && containsFold(name, "kmn_") { // no "kmn_" without its '_'
 		return ClientUnknown
+	}
+	if hasDigit {
+		if runs, n := digitRuns(name); runs > maxNameDigitRuns || n > maxNameDigits {
+			return ClientUnknown
+		}
 	}
 	major, word := "", ""
 	if i < len(ua) && ua[i] == '/' {
 		major, word = versionAfterSlash(ua[i+1:])
+		// A version that runs to the end of the window may be the start of a
+		// longer number, which is no version.
+		if major != "" && len(userAgent) > userAgentWindow {
+			end := i + 1 + len(major)
+			if word != "" {
+				end += len(word) + 1
+			}
+			if end == len(ua) {
+				major, word = "", ""
+			}
+		}
+	}
+	// A token is long and holds a digit: the name as it is recorded, with an
+	// SDK's word, is what is judged, so that a recorded client is one again.
+	if hasDigit {
+		product := len(name)
+		if word != "" {
+			product += 1 + len(word)
+		}
+		if product >= minSecretLength {
+			return ClientUnknown
+		}
 	}
 	var out [MaxClientLength]byte
 	n := 0
@@ -88,16 +132,14 @@ func ClientOf(userAgent string) string {
 	if major != "" {
 		room -= 1 + len(major)
 	}
-	put := func(s string) {
-		for j := 0; j < len(s) && n < room; j++ {
-			out[n] = lower(s[j])
-			n++
-		}
+	n += copy(out[:room], name)
+	if word != "" && n < room {
+		out[n] = '-'
+		n++
+		n += copy(out[n:room], word)
 	}
-	put(name)
-	if word != "" {
-		put("-")
-		put(word)
+	for j := range n { // the name and the word, in lower case
+		out[j] = lower(out[j])
 	}
 	if major != "" {
 		out[n] = '/'
@@ -134,6 +176,30 @@ func majorOf(d string) string {
 		return ""
 	}
 	return d
+}
+
+// IsClient reports whether v is a client ClientOf records for some User-Agent,
+// other than ClientNone and ClientUnknown: a product, in lower case, that passes
+// every rule above, and a major version. ClientOf returns such a client
+// unchanged, which is what this checks.
+func IsClient(v string) bool {
+	return v != "" && v != ClientNone && v != ClientUnknown && ClientOf(v) == v
+}
+
+// digitRuns counts the runs of digits in s, and its digits.
+func digitRuns(s string) (runs, n int) {
+	in := false
+	for i := 0; i < len(s); i++ {
+		d := s[i]-'0' < 10
+		if d {
+			n++
+			if !in {
+				runs++
+			}
+		}
+		in = d
+	}
+	return runs, n
 }
 
 // digits is the run of digits s starts with.

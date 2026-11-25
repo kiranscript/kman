@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/store"
 )
 
@@ -59,8 +59,6 @@ type AddKnownSourceRequest struct {
 	Label string `json:"label" doc:"What it is, 1 to 64 characters with no control characters."`
 	Key   string `json:"key,omitempty" doc:"The key id it applies to. Absent: every key. A canary has none."`
 }
-
-var clientValue = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,29}(/[0-9]{1,4})?$`)
 
 func checkSourceLabel(s string) error {
 	switch {
@@ -123,8 +121,7 @@ func normalizeSource(kind, value string) (string, error) {
 		if v == "none" || v == "unknown" {
 			return "", errorf(CodeInvalid, "the client %q is what a request that does not say what it is is given: a known source for it would silence every such request", v)
 		}
-		product, _, _ := strings.Cut(v, "/")
-		if _, err := netip.ParseAddr(product); err == nil || !strings.ContainsFunc(product, unicode.IsLetter) || !clientValue.MatchString(v) {
+		if !events.IsClient(v) {
 			return "", errorf(CodeInvalid, "%q is not a client as kman records one: a product and a major version, such as curl/8", value)
 		}
 		return v, nil
