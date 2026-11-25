@@ -2200,7 +2200,7 @@
             "type": "boolean"
           },
           "learning_period_seconds": {
-            "description": "How long, from its first forwarded request, a key's location rules (a new country, ASN, network or client) only record where it is used from, before they raise detections. A key's policy may set its own (learning_period). 0 is no learning period. Default 7 days, at most 90. A change applies to keys still learning at once.",
+            "description": "How long, from its first forwarded request, a key's location rules (a new country, ASN, network or client) only record where it is used from, before they raise detections. A key's policy may set its own (learning_period). 0 is no learning period. Default 7 days, at most 90. A change applies at once, to keys that have already learned too: lowering it ends learning for the keys that have passed the shorter period, and raising it puts keys that had finished learning back into learning until the longer period, counted from each key's first forwarded request, has passed.",
             "format": "int64",
             "type": "integer"
           },

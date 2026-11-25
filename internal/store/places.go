@@ -6,7 +6,6 @@ import (
 	"errors"
 	"math"
 	"net/netip"
-	"slices"
 	"strconv"
 	"time"
 )
@@ -50,14 +49,11 @@ type NewPlace struct {
 	// Label names the value, when the event had a name for it: an ASN's
 	// organisation.
 	Label string
-	// At is when the first event of the batch that showed the place happened, and
-	// Event its index in the rows given to AddEventsFresh.
+	// At is when the earliest event of the batch that showed the place happened,
+	// and Event its index in the rows given to AddEventsFresh (events are not
+	// listed in time order).
 	At    time.Time
 	Event int
-	// Prior is how many places of this kind the key had before the batch, not
-	// counting the overflow row. With none, this is the key's first place of the
-	// kind and there is nothing to compare it with.
-	Prior int
 }
 
 // placeKey is one key's place.
@@ -108,6 +104,9 @@ func (t *placeTally) count(i int, r EventRow, kind, value, label string) {
 	if label != "" {
 		p.Label = label
 	}
+	if r.Time.Before(p.FirstSeen) {
+		t.first[k] = i // events are not in time order: the earliest one is the place's first
+	}
 	p.FirstSeen, p.LastSeen = minTime(p.FirstSeen, r.Time), maxTime(p.LastSeen, r.Time)
 	if r.Kind == "blocked" {
 		p.Blocked++
@@ -144,8 +143,7 @@ func (t *placeTally) write(ctx context.Context, tx *sql.Tx) ([]NewPlace, error) 
 	}
 	defer insert.Close()
 	type keyKind struct{ key, kind string }
-	kept := map[keyKind]int{}  // how many places of a kind a key has, once looked up
-	prior := map[keyKind]int{} // ... and how many it had before this batch added any
+	kept := map[keyKind]int{} // how many places of a kind a key has, once looked up
 	var fresh []NewPlace
 	for _, k := range t.order {
 		p := t.m[k]
@@ -165,14 +163,13 @@ func (t *placeTally) write(ctx context.Context, tx *sql.Tx) ([]NewPlace, error) 
 				p.KeyID, p.Kind).Scan(&n); err != nil {
 				return nil, typed(err, "add places of key "+p.KeyID)
 			}
-			prior[kk] = n
 		}
 		value, label := p.Value, p.Label
 		if n >= MaxPlacesPerKind {
 			value, label = PlaceOther, ""
 		} else {
 			n++
-			fresh = append(fresh, NewPlace{KeyID: p.KeyID, Kind: p.Kind, Value: p.Value, Label: p.Label, At: p.FirstSeen, Event: t.first[k], Prior: prior[kk]})
+			fresh = append(fresh, NewPlace{KeyID: p.KeyID, Kind: p.Kind, Value: p.Value, Label: p.Label, At: p.FirstSeen, Event: t.first[k]})
 		}
 		kept[kk] = n
 		if _, err := insert.ExecContext(ctx, p.KeyID, p.Kind, value, label, toMilli(p.FirstSeen), toMilli(p.LastSeen), p.Count, p.Blocked); err != nil {
@@ -258,42 +255,38 @@ func (tx *Tx) UsualPlaces(keyID, kind string, except []string, by time.Time, lim
 	if !by.IsZero() {
 		seenBy = toMilli(by)
 	}
+	// A key keeps at most MaxPlacesPerKind places of a kind, so reading them all
+	// is bounded, and it is one query however many places the caller excludes.
 	rows, err := tx.tx.QueryContext(tx.ctx, `SELECT key_id, kind, value, COALESCE(label, ''), first_seen, last_seen, count, blocked
-		FROM baseline_places WHERE key_id = ?1 AND kind = ?2 AND value <> '' AND count > 0 AND first_seen <= ?4
-		ORDER BY count DESC, last_seen DESC, value LIMIT ?3`, keyID, kind, limit+len(except), seenBy)
+		FROM baseline_places WHERE key_id = ?1 AND kind = ?2 AND value <> '' AND count > 0 AND first_seen <= ?3
+		ORDER BY count DESC, last_seen DESC, value`, keyID, kind, seenBy)
 	if err != nil {
 		return nil, 0, typed(err, "read places")
 	}
 	defer rows.Close()
+	skip := make(map[string]bool, len(except))
+	for _, v := range except {
+		skip[v] = true
+	}
 	out := []PlaceRow{}
-	for rows.Next() && len(out) < limit {
+	total := 0
+	for rows.Next() {
 		var p PlaceRow
 		var first, last int64
 		if err := rows.Scan(&p.KeyID, &p.Kind, &p.Value, &p.Label, &first, &last, &p.Count, &p.Blocked); err != nil {
 			return nil, 0, typed(err, "read places")
 		}
-		if slices.Contains(except, p.Value) {
+		if skip[p.Value] {
 			continue
 		}
-		p.FirstSeen, p.LastSeen = fromMilli(first), fromMilli(last)
-		out = append(out, p)
+		total++
+		if len(out) < limit {
+			p.FirstSeen, p.LastSeen = fromMilli(first), fromMilli(last)
+			out = append(out, p)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, typed(err, "read places")
-	}
-	rows.Close()
-	var total int
-	if err := tx.tx.QueryRowContext(tx.ctx, `SELECT count(*) FROM baseline_places
-		WHERE key_id = ?1 AND kind = ?2 AND value <> '' AND count > 0 AND first_seen <= ?3`, keyID, kind, seenBy).Scan(&total); err != nil {
-		return nil, 0, typed(err, "read places")
-	}
-	for _, v := range except {
-		var n int
-		if err := tx.tx.QueryRowContext(tx.ctx, `SELECT count(*) FROM baseline_places
-			WHERE key_id = ?1 AND kind = ?2 AND value = ?3 AND count > 0 AND first_seen <= ?4`, keyID, kind, v, seenBy).Scan(&n); err != nil {
-			return nil, 0, typed(err, "read places")
-		}
-		total -= n
 	}
 	return out, total, nil
 }

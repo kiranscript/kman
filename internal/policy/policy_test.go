@@ -134,8 +134,11 @@ func TestALearningPeriodIsKeptInItsShortestFormAndReadBack(t *testing.T) {
 	for raw, want := range map[string]string{
 		`{"learning_period":"3d"}`:     `{"learning_period":"3d"}`,
 		`{"learning_period":"72h"}`:    `{"learning_period":"3d"}`,
-		`{"learning_period":"36h"}`:    `{"learning_period":"36h0m0s"}`,
-		`{"learning_period":"1h30m"}`:  `{"learning_period":"1h30m0s"}`,
+		`{"learning_period":"36h"}`:    `{"learning_period":"36h"}`,
+		`{"learning_period":"1h30m"}`:  `{"learning_period":"1h30m"}`,
+		`{"learning_period":"90m"}`:    `{"learning_period":"1h30m"}`,
+		`{"learning_period":"90s"}`:    `{"learning_period":"1m30s"}`,
+		`{"learning_period":"5m"}`:     `{"learning_period":"5m"}`,
 		`{"learning_period":"0s"}`:     `{"learning_period":"0s"}`,
 		`{"learning_period":"0"}`:      `{"learning_period":"0s"}`,
 		`{"learning_period":"90d"}`:    `{"learning_period":"90d"}`,
@@ -210,6 +213,7 @@ func TestNormalizeRefusesARuleThatDoesNotExistAndTheCanaryRule(t *testing.T) {
 	for raw, mention := range map[string]string{
 		`{"detect":{"new_planet":false}}`: "new_country",
 		`{"detect":{"canary":false}}`:     "canary",
+		`{"detect":{"new_planet":true}}`:  "new_country",
 		`{"detect":{"new_country":"no"}}`: "",
 		`{"detect":{"new_country":null}}`: "",
 		`{"detect":[]}`:                   "",
@@ -237,5 +241,13 @@ func TestAPolicyThatSaysNothingKeepsEveryRuleOn(t *testing.T) {
 		if !p.RuleEnabled(rule) {
 			t.Errorf("%s is off by default", rule)
 		}
+	}
+}
+
+// Only turning the canary rule off is refused: saying it is on is true.
+func TestSayingTheCanaryRuleIsOnIsAccepted(t *testing.T) {
+	_, got, err := policy.Normalize([]byte(`{"detect":{"canary":true}}`))
+	if err != nil || string(got) != `{}` {
+		t.Errorf("Normalize = %s, %v, want {} and no error", got, err)
 	}
 }

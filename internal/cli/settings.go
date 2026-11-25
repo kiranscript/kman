@@ -77,12 +77,9 @@ var settings = []setting{
 			return formatSeconds(s.LearningPeriodSeconds)
 		},
 		parse: func(v string, u *admin.SettingsUpdate) error {
-			var n int64
-			if v != "none" && v != "0" {
-				var err error
-				if n, err = parseSeconds(v); err != nil {
-					return errors.New("want a duration such as 7d, 36h or 1h30m, or none for no learning period")
-				}
+			n, err := parseLearningPeriod(v)
+			if err != nil {
+				return err
 			}
 			u.LearningPeriodSeconds = &n
 			return nil
@@ -228,6 +225,31 @@ func parseSeconds(v string) (int64, error) {
 		return int64(d / time.Second), nil
 	}
 	return 0, errors.New("want a duration such as 90d, 36h or 1h30m (never is not allowed)")
+}
+
+// parseLearningPeriod parses a learning period: a duration as parseSeconds takes
+// it, or none, 0, 0s or 0d for no learning period. A period under a second would
+// be stored as none, so it is refused rather than read as that.
+func parseLearningPeriod(v string) (int64, error) {
+	if v == "none" {
+		return 0, nil
+	}
+	bad := errors.New("want a duration such as 7d, 36h or 1h30m, at least 1s, or none for no learning period")
+	if n, ok := strings.CutSuffix(v, "d"); ok {
+		days, err := strconv.ParseInt(n, 10, 64)
+		if err != nil || days < 0 || days > 100000 {
+			return 0, bad
+		}
+		return days * int64(day/time.Second), nil
+	}
+	if v == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 || (d > 0 && d < time.Second) {
+		return 0, bad
+	}
+	return int64(d / time.Second), nil
 }
 
 // formatSeconds prints whole days as 90d and anything else as a Go

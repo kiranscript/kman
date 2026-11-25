@@ -61,25 +61,32 @@ const maxText = 64
 // detection commits with the place or neither does.
 //
 // A place is raised only when all of these hold:
-//   - the key already had a place of that kind, so there was something to compare
-//     it with (a key first seen with a GeoIP database has no countries to differ
-//     from, and a client was not recorded before kman learned to);
 //   - it is a standard key: a canary's use is its own critical rule, and a canary's
 //     place is never new;
 //   - the key's learning period, which starts at its first forwarded request and
-//     is the policy's learning_period, or the install's setting, is over at the
-//     time of the request: a key that was only refused has not started one;
+//     is the policy's learning_period, or the install's setting, was over at the
+//     time of the request: a key that was only refused has not started one, and the
+//     places of the request that started it are the baseline. After learning the
+//     first place of any kind is raised too: a key used only from private
+//     addresses has no country or ASN, and a thief abroad is exactly that;
 //   - the key's policy has not turned the rule off;
-//   - no known source covers the request: its address, country, ASN or client.
+//   - no known source covers the place (MatchKnownPlace): a CIDR containing the
+//     request's address covers all of it, and a country, ASN or client only a new
+//     place of its own kind.
 //
 // A refused request counts, so an address lock that stops a leak still says that
 // the key turned up. The places of one request that are new in several ways are
-// raised together and alert once (RaiseGroup).
+// raised together and alert once (RaiseGroup). The work is bounded: the usual
+// places are read once per kind for the batch, and past
+// MaxDetectionGroupsPerKeyPerBatch requests of one key in a batch only a rule that
+// none of them raised is raised again.
 func (e *Engine) ObservePlaces(tx *store.Tx, rows []store.EventRow, fresh []store.NewPlace) error {
 	var keys []string
 	byKey := map[string][]store.NewPlace{}
+	freshOf := map[string][]store.NewPlace{} // every new place of a key, watched or not
 	for _, p := range fresh {
-		if _, ok := ruleOf(p.Kind); !ok || p.Prior == 0 {
+		freshOf[p.KeyID] = append(freshOf[p.KeyID], p)
+		if _, ok := ruleOf(p.Kind); !ok {
 			continue
 		}
 		if _, ok := byKey[p.KeyID]; !ok {
@@ -97,7 +104,7 @@ func (e *Engine) ObservePlaces(tx *store.Tx, rows []store.EventRow, fresh []stor
 		install = d
 	}
 	for _, id := range keys {
-		if err := e.observeKey(tx, id, rows, byKey[id], fresh, install); err != nil {
+		if err := e.observeKey(tx, id, rows, byKey[id], freshOf[id], install); err != nil {
 			return err
 		}
 	}
@@ -127,12 +134,17 @@ func (e *Engine) observeKey(tx *store.Tx, id string, rows []store.EventRow, cand
 	if d, ok := pol.LearningPeriodOverride(); ok {
 		period = d
 	}
-	// The places that are new, in the order of their events, by event.
+	// The places that are new, in the order of their events, by event. The time of
+	// a place is its earliest event's, and the baseline is the key's first
+	// forwarded request and what came before it. The store keeps times in
+	// milliseconds, so an event's time is compared at that precision.
+	learned := start.Add(period)
 	var order []int
 	byEvent := map[int][]store.NewPlace{}
 	for _, p := range cands {
 		r, _ := ruleOf(p.Kind)
-		if !pol.RuleEnabled(r.rule) || p.At.Before(start.Add(period)) {
+		at := p.At.Truncate(time.Millisecond)
+		if !pol.RuleEnabled(r.rule) || !at.After(start) || at.Before(learned) {
 			continue
 		}
 		if _, ok := byEvent[p.Event]; !ok {
@@ -147,20 +159,36 @@ func (e *Engine) observeKey(tx *store.Tx, id string, rows []store.EventRow, cand
 	if err != nil {
 		return err
 	}
+	usual := map[string]usualPlaces{}
+	raised := map[string]bool{} // the rules raised for this key in this batch
+	groups, dropped := 0, 0
 	for _, i := range order {
 		row := rows[i]
 		addr, _ := netip.ParseAddr(row.ClientIP)
-		if _, known := MatchKnownSource(sources, id, false, Origin{Addr: addr, Country: row.Country, ASN: row.ASN, Client: row.Client}); known {
-			continue
-		}
+		origin := Origin{Addr: addr, Country: row.Country, ASN: row.ASN, Client: row.Client}
 		var ds []Detection
+		capped := false
 		for _, p := range byEvent[i] {
-			d, err := e.locationDetection(tx, row, p, fresh, start.Add(period))
+			if r, _ := ruleOf(p.Kind); groups >= MaxDetectionGroupsPerKeyPerBatch && raised[r.rule] {
+				capped = true
+				continue
+			}
+			if _, known := MatchKnownPlace(sources, id, false, p.Kind, origin); known {
+				continue
+			}
+			d, err := e.locationDetection(tx, row, p, fresh, learned, usual)
 			if err != nil {
 				return err
 			}
 			ds = append(ds, d)
 		}
+		if len(ds) == 0 {
+			if capped {
+				dropped++
+			}
+			continue
+		}
+		groups++
 		// Highest severity first, so that a group's alert names the one that matters.
 		slices.SortStableFunc(ds, func(a, b Detection) int { return b.Severity.Rank() - a.Severity.Rank() })
 		outs, err := e.RaiseGroup(tx, ds)
@@ -168,17 +196,35 @@ func (e *Engine) observeKey(tx *store.Tx, id string, rows []store.EventRow, cand
 			return err
 		}
 		for j, out := range outs {
+			raised[ds[j].Rule] = true
 			if out.Change != Repeated && !ds[j].Silent && e.o.Alerts != nil {
 				e.wakePending.Store(true)
 			}
 		}
 	}
+	if dropped > 0 {
+		e.o.Log.Warn("detect: a batch held more new places of one key than detections are raised for; the rest were recorded and not raised", "key", id, "requests", dropped)
+	}
 	return nil
 }
 
+// usualPlaces is a key's usual places of one kind, read once for a batch.
+type usualPlaces struct {
+	places []store.PlaceRow
+	total  int
+}
+
+// MaxDetectionGroupsPerKeyPerBatch bounds the requests of one key that a single
+// batch of events raises detections for, so that a thief spraying new addresses
+// cannot make the writer's transaction, which every event waits on, slow. Past it
+// a request is raised only for a rule that no earlier one in the batch raised;
+// the incident would only count the rest, since repeats past
+// MaxDetectionsPerIncident are not recorded either.
+const MaxDetectionGroupsPerKeyPerBatch = MaxDetectionsPerIncident
+
 // locationDetection is the detection for one new place of one request: what is
 // new and what the key normally uses.
-func (e *Engine) locationDetection(tx *store.Tx, row store.EventRow, p store.NewPlace, fresh []store.NewPlace, learned time.Time) (Detection, error) {
+func (e *Engine) locationDetection(tx *store.Tx, row store.EventRow, p store.NewPlace, fresh []store.NewPlace, learned time.Time, cache map[string]usualPlaces) (Detection, error) {
 	r, _ := ruleOf(p.Kind)
 	ev := store.Evidence{
 		Address: cleanText(row.ClientIP), Network: store.NetworkOf(row.ClientIP), Country: cleanText(row.Country),
@@ -190,22 +236,28 @@ func (e *Engine) locationDetection(tx *store.Tx, row store.EventRow, p store.New
 			ev.Detail += " (" + code + ")"
 		}
 	}
-	var except []string // the places this batch added, which are what is being compared
-	for _, f := range fresh {
-		if f.KeyID == p.KeyID && f.Kind == p.Kind {
-			except = append(except, f.Value)
+	up, ok := cache[p.Kind]
+	if !ok {
+		var except []string // the places this batch added, which are what is being compared
+		for _, f := range fresh {
+			if f.KeyID == p.KeyID && f.Kind == p.Kind {
+				except = append(except, f.Value)
+			}
 		}
+		// What a key normally uses is what it had when it finished learning, so that
+		// a place an earlier detection added does not count as usual. A key that had
+		// none then is compared with all it has.
+		var err error
+		up.places, up.total, err = tx.UsualPlaces(p.KeyID, p.Kind, except, learned, usualShown)
+		if err == nil && up.total == 0 {
+			up.places, up.total, err = tx.UsualPlaces(p.KeyID, p.Kind, except, time.Time{}, usualShown)
+		}
+		if err != nil {
+			return Detection{}, err
+		}
+		cache[p.Kind] = up
 	}
-	// What a key normally uses is what it had when it finished learning, so that
-	// a place an earlier detection added does not count as usual. A key that had
-	// none then (a kind that began to be recorded later) is compared with all it has.
-	usual, total, err := tx.UsualPlaces(p.KeyID, p.Kind, except, learned, usualShown)
-	if err == nil && total == 0 {
-		usual, total, err = tx.UsualPlaces(p.KeyID, p.Kind, except, time.Time{}, usualShown)
-	}
-	if err != nil {
-		return Detection{}, err
-	}
+	usual, total := up.places, up.total
 	switch p.Kind {
 	case store.PlaceCountry:
 		ev.Observed = "new country " + cleanText(p.Value)

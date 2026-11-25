@@ -1,0 +1,118 @@
+{
+ "description": "A known country, ASN or client silences only a new place of its own kind, so one false positive cannot blind a key to a thief from the same country or using the same SDK; a known CIDR silences the whole request. The key's known sources are country DE, ASN 3320, client health/1 and CIDR 192.0.2.0/24.",
+ "start": "2026-11-01T09:00:00Z",
+ "keys": [
+  {
+   "name": "app"
+  }
+ ],
+ "known_sources": [
+  {
+   "key": "app",
+   "kind": "country",
+   "value": "DE",
+   "label": "Berlin office"
+  },
+  {
+   "key": "app",
+   "kind": "asn",
+   "value": "3320",
+   "label": "Telekom"
+  },
+  {
+   "key": "app",
+   "kind": "client",
+   "value": "health/1",
+   "label": "our probe"
+  },
+  {
+   "key": "app",
+   "kind": "cidr",
+   "value": "192.0.2.0/24",
+   "label": "CI runners"
+  }
+ ],
+ "steps": [
+  {
+   "at": "0h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "48h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "8d",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "DE",
+   "asn": 4000,
+   "as_org": "Other Net",
+   "client": "sdk/2"
+  },
+  {
+   "at": "8d1h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "FR",
+   "asn": 3320,
+   "as_org": "Deutsche Telekom AG",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "8d2h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "SE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "health/1"
+  },
+  {
+   "at": "8d3h",
+   "key": "app",
+   "ip": "192.0.2.5",
+   "country": "JP",
+   "asn": 5000,
+   "as_org": "KDDI",
+   "client": "z/1"
+  },
+  {
+   "at": "8d4h",
+   "key": "app",
+   "ip": "10.9.9.9",
+   "country": "DE",
+   "asn": 3320,
+   "as_org": "Deutsche Telekom AG",
+   "client": "health/1"
+  }
+ ]
+}

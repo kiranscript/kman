@@ -18,12 +18,12 @@ func addFresh(t *testing.T, s *store.Store, rows []store.EventRow) []store.NewPl
 func freshSummary(f []store.NewPlace) []string {
 	var out []string
 	for _, p := range f {
-		out = append(out, fmt.Sprintf("%s/%s/%s prior=%d event=%d", p.KeyID, p.Kind, p.Value, p.Prior, p.Event))
+		out = append(out, fmt.Sprintf("%s/%s/%s event=%d", p.KeyID, p.Kind, p.Value, p.Event))
 	}
 	return out
 }
 
-func TestAddEventsFreshSaysWhichPlacesWereNewToTheirKeyAndHowManyItHadBefore(t *testing.T) {
+func TestAddEventsFreshSaysWhichPlacesWereNewToTheirKey(t *testing.T) {
 	s := open(t)
 	t0 := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
 	first := addFresh(t, s, []store.EventRow{
@@ -32,11 +32,6 @@ func TestAddEventsFreshSaysWhichPlacesWereNewToTheirKeyAndHowManyItHadBefore(t *
 	if len(first) != 3 {
 		t.Fatalf("a key's first request gave fresh places %v, want its country, ASN and client", freshSummary(first))
 	}
-	for _, p := range first {
-		if p.Prior != 0 {
-			t.Errorf("%+v: a key's first place of a kind has prior %d, want 0", p, p.Prior)
-		}
-	}
 
 	second := addFresh(t, s, []store.EventRow{
 		{Time: t0.Add(time.Hour), Kind: "request", KeyID: "kkkk1111", Country: "DE", ASN: 3320, Client: "curl/8", Status: 200}, // nothing new
@@ -44,9 +39,9 @@ func TestAddEventsFreshSaysWhichPlacesWereNewToTheirKeyAndHowManyItHadBefore(t *
 		{Time: t0.Add(3 * time.Hour), Kind: "request", KeyID: "kkkk1111", Country: "NL", Status: 200},
 	})
 	want := []string{
-		"kkkk1111/country/FR prior=1 event=1",
-		"kkkk1111/asn/3215 prior=1 event=1",
-		"kkkk1111/country/NL prior=1 event=2", // in the same batch as FR: prior is what the key had before the batch
+		"kkkk1111/country/FR event=1",
+		"kkkk1111/asn/3215 event=1",
+		"kkkk1111/country/NL event=2",
 	}
 	got := freshSummary(second)
 	if fmt.Sprint(got) != fmt.Sprint(want) {
@@ -170,5 +165,24 @@ func TestUsualPlacesCanBeLimitedToThoseTheKeyHadWhenItFinishedLearning(t *testin
 	})
 	if len(got) != 2 || total != 2 || got[0].Value != "US" || got[1].Value != "DE" {
 		t.Errorf("usual by the end of learning = %+v (%d), want US then DE and not CN", got, total)
+	}
+}
+
+// Events are emitted when a request ends, so a batch is not in time order: the
+// event that first showed a place is the earliest in time, not the first listed.
+func TestAFreshPlaceIsTheEarliestEventOfThePlaceInTheBatch(t *testing.T) {
+	s := open(t)
+	t0 := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	fresh := addFresh(t, s, []store.EventRow{
+		{Time: t0.Add(time.Hour), Kind: "request", KeyID: "kkkk1111", Country: "DE", ASOrg: "later", ASN: 3320, Status: 200},
+		{Time: t0, Kind: "blocked", KeyID: "kkkk1111", Country: "DE", ASN: 3320, ASOrg: "earlier", Status: 403, BlockedCode: "address_not_allowed"},
+	})
+	if len(fresh) != 2 {
+		t.Fatalf("fresh = %v", freshSummary(fresh))
+	}
+	for _, p := range fresh {
+		if !p.At.Equal(t0) || p.Event != 1 {
+			t.Errorf("%s place %+v: want the earliest event, index 1 at %v", p.Kind, p, t0)
+		}
 	}
 }

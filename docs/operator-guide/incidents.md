@@ -61,6 +61,8 @@ It resolves the incident as a false positive. With `--add-known-sources` it also
 
 Without the flag, at a terminal, kman lists what it saw and asks `[y/N]`; in a script it asks nothing, resolves, and prints the command to add them. You can run it again on an incident already resolved as a false positive to add them later.
 
+What each one silences depends on its kind ([known sources](#known-sources)): the country, ASN and client each only their own rule, and the network (a CIDR) anything new from inside it.
+
 Two limits are deliberate. A **network** is added only with `expose_client_addresses` on (kman says it skipped one), because adding it would show it to anyone who can list known sources. And a **canary's incident takes no known sources**: `this-was-me` still resolves it if you tested your own canary, but `--add-known-sources` is refused.
 
 ## Location rules
@@ -76,12 +78,12 @@ A leaked key turns up somewhere it has never been. kman keeps the **places** eac
 
 Severities are fixed. They compare against the key's places, not against rate or spend.
 
-- **Learning period.** A key's learning period starts at its **first forwarded request** (not when it was created, and not at a refusal) and lasts **7 days**. While it lasts, kman records the places and the rules say nothing. Change it for every key with `kman settings set learning_period 3d` (`none` for no learning period; at most 90 days), and for one key with `"learning_period": "3d"` in its [policy](../policy.md). A key that has only ever been refused has not started learning: nothing is raised for it until a forwarded request has started the period and it has passed.
+- **Learning period.** A key's learning period starts at its **first forwarded request** (not when it was created, and not at a refusal) and lasts **7 days**. While it lasts, kman records the places and the rules say nothing. Change it for every key with `kman settings set learning_period 3d` (`none` for no learning period; at most 90 days), and for one key with `"learning_period": "3d"` in its [policy](../policy.md). A key that has only ever been refused has not started learning: nothing is raised for it until a forwarded request has started the period and it has passed. The period is counted from that first request whenever a rule runs, so **raising it puts keys that had already finished learning back into learning** until the longer period has passed (and lowering it ends learning sooner).
 - **A refused request counts.** A request an address lock refused, from a place the key has never been used from, raises the rule too, and the detection says it was refused and why. A lock that stops a leak still tells you the key turned up.
-- **The first place of a kind is the baseline.** A key that has no country yet (it was used before you installed a GeoIP database) has nothing to differ from, so its first country is learnt, not raised. The same goes for a client, which kman began to record in a later release.
-- **Known sources never trigger them.** A request from a [known source](#known-sources) (its address inside a known CIDR, or its country, ASN or client equal to one) raises nothing, even if it is new in another way. The request's places are still recorded, so they are not new the next time either.
+- **The first place of a kind counts too, once learned.** A key used only on a private network has no country, so a thief abroad is its first, and that is raised. The places of the request that started learning, and anything seen while learning, are the baseline. It follows that **adding a GeoIP database after your keys have finished learning raises one new country and one new ASN incident per key** at its next request, and upgrading from a build that recorded no [clients](../../GLOSSARY.md) raises one new client per key. Resolve each with `kman incident this-was-me <id>`, and [install GeoIP before you create keys](geoip.md#geoip-and-the-location-rules).
+- **Known sources silence what they name.** A [known source](#known-sources) that is a CIDR containing the request's address silences everything new about the request. A country silences only a new country, an ASN only a new ASN, and a client only a new client: a known country does not hide a new ASN or client from the same request, and only a CIDR hides a new network. The request's places are still recorded, so they are not new the next time either.
 - **Turn a rule off for one key** in its policy: `kman key update my-app --policy '{"detect":{"new_client":false}}'` (`new_country`, `new_asn`, `new_network`, `new_client`). A canary has no rules to turn off and is not watched by these: its use is its own critical rule.
-- **One alert for one request.** A request that is new in several ways at once (a thief's first request usually is) is one alert for the highest severity, and its incident lists every rule that fired.
+- **One alert for one request.** A request that is new in several ways at once (a thief's first request usually is) is one alert for the highest severity, and its incident lists every rule that fired. A flood of new places at one key (rotating proxies) is bounded: past 100 requests of a key in one 5-second batch, only a rule not yet raised in the batch is raised again, and every place is still recorded.
 
 The alert says which key, what is new with its label (an AS's organisation), the places the key normally uses (its busiest three of that kind and how many more), where the request came from, and how to contain it:
 
@@ -104,13 +106,13 @@ kman key rotate a1b2c3d4 --incident 7
 kman incident this-was-me 7
 ```
 
-If the place is yours, `kman incident this-was-me 7 --add-known-sources` makes it a known source so it is not raised again. Networks are addresses and so personal data: the alert to your own channel names them, but `kman incident show` and the admin API leave out the address, the network and (for a new network) the networks the key normally uses unless `expose_client_addresses` is on. Everything else, such as the country, the AS and the client, is always shown.
+If the place is yours, `kman incident this-was-me 7` resolves it, and the place is not new again; `--add-known-sources` also records it as legitimate, for other keys too with `--install-wide`. Networks are addresses and so personal data: the alert to your own channel names them, but `kman incident show` and the admin API leave out the address, the network and (for a new network) the networks the key normally uses unless `expose_client_addresses` is on. Everything else, such as the country, the AS and the client, is always shown.
 
 What these rules cannot do: a place that was in the key's places while it was learning is normal to them, so a key that leaked in its first week is not caught by a location rule (a [canary](canaries.md) is the answer to that), and a client is the caller's own claim, which a thief can copy. [ADR 0015](../adr/0015-the-location-rules-run-in-the-transaction-that-records-a-new-place.md) has the reasoning.
 
 ## Known sources
 
-A known source says a place is legitimate: use from it never counts as a new location to the location rules. It matches the whole request, so a CI network's addresses stay quiet even from a new country. It is a labelled **CIDR, country, ASN or client**, for every key or for one.
+A known source says something is legitimate, so the location rules do not raise it. A known **CIDR** covers the whole request from inside it, so a CI network's addresses stay quiet even from a new country; a known **country**, **ASN** or **client** covers only a new place of its own kind. It is a labelled **CIDR, country, ASN or client**, for every key or for one.
 
 ```sh
 kman known-source add cidr 203.0.113.0/24 --label "CI runners"
@@ -122,12 +124,12 @@ kman known-source list --key deploy-bot    # every key's, and this key's
 kman known-source rm 4
 ```
 
-| Kind | What matches | Limits |
-|---|---|---|
-| `cidr` | the address is inside the network (a bare address is a /32 or /128) | no wider than an IPv4 /16 or an IPv6 /32 |
-| `country` | the request's country | two capital letters, such as `DE` |
-| `asn` | the request's AS number | a number, with or without `AS` |
-| `client` | the request's [client](../../GLOSSARY.md), as events record it | a product and major version such as `curl/8`; `none` and `unknown` are refused |
+| Kind | What matches | What it silences | Limits |
+|---|---|---|---|
+| `cidr` | the address is inside the network (a bare address is a /32 or /128) | every location rule, for requests from inside it | no wider than an IPv4 /16 or an IPv6 /32 |
+| `country` | the request's country | `new_country` for that country | two capital letters, such as `DE` |
+| `asn` | the request's AS number | `new_asn` for that AS | a number, with or without `AS` |
+| `client` | the request's [client](../../GLOSSARY.md), as events record it | `new_client` for that client | a product and major version such as `curl/8`; `none` and `unknown` are refused |
 
 These bounds are what keeps a known source from silencing everything: a `/8` of addresses or "every request with no `User-Agent`" would blind the rules. There are at most 200 for each scope (every key, or one key), and each needs a label. Adding and removing one is audited.
 

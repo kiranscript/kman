@@ -1,5 +1,5 @@
 {
- "description": "Known sources, for one key and for every key, of each kind (CIDR, country, ASN, client): a request from one never raises the rules. The Oslo office is a source of the key other only, so the same country used on app still raises. A request nothing covers still raises.",
+ "description": "Known sources, for one key and for every key, of each kind. A known CIDR silences the whole request, even new in every way. A known country, ASN or client silences only a new place of its own kind, so each step below is new in just the one way its source covers and raises nothing, and the last step of each key, which no source covers, raises. The Oslo office is a source of the key other only, so the same country used on app still raises.",
  "start": "2026-11-01T09:00:00Z",
  "keys": [
   {
@@ -146,7 +146,7 @@
   {
    "at": "8d1h",
    "key": "app",
-   "ip": "192.0.2.5",
+   "ip": "198.51.100.7",
    "country": "FR",
    "asn": 64500,
    "as_org": "Example Net",
@@ -155,8 +155,8 @@
   {
    "at": "8d2h",
    "key": "app",
-   "ip": "192.0.2.5",
-   "country": "NL",
+   "ip": "198.51.100.7",
+   "country": "US",
    "asn": 3320,
    "as_org": "Deutsche Telekom AG",
    "client": "openai-python/3"
@@ -164,10 +164,10 @@
   {
    "at": "8d3h",
    "key": "app",
-   "ip": "192.0.2.5",
-   "country": "NL",
-   "asn": 1299,
-   "as_org": "Telia",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
    "client": "health-check/1"
   },
   {
@@ -182,7 +182,7 @@
   {
    "at": "9d",
    "key": "other",
-   "ip": "192.0.2.5",
+   "ip": "198.51.100.7",
    "country": "FR",
    "asn": 64500,
    "as_org": "Example Net",
@@ -191,7 +191,7 @@
   {
    "at": "9d1h",
    "key": "other",
-   "ip": "192.0.2.6",
+   "ip": "198.51.100.7",
    "country": "US",
    "asn": 64500,
    "as_org": "Example Net",
@@ -200,11 +200,11 @@
   {
    "at": "9d2h",
    "key": "other",
-   "ip": "198.18.0.9",
+   "ip": "198.51.100.7",
    "country": "NO",
-   "asn": 2119,
-   "as_org": "Telenor",
-   "client": "wget/1"
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
   },
   {
    "at": "9d3h",
@@ -218,20 +218,29 @@
   {
    "at": "9d4h",
    "key": "other",
-   "ip": "8.8.8.8",
+   "ip": "198.51.100.7",
    "country": "US",
    "asn": 15169,
    "as_org": "Google LLC",
-   "client": "y/1"
+   "client": "openai-python/3"
   },
   {
    "at": "9d5h",
+   "key": "other",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 3320,
+   "as_org": "Deutsche Telekom AG",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "9d6h",
    "key": "app",
-   "ip": "198.18.0.5",
+   "ip": "198.51.100.7",
    "country": "NO",
-   "asn": 2119,
-   "as_org": "Telenor",
-   "client": "wget/1"
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
   }
  ]
 }

@@ -58,8 +58,8 @@ kman key update my-app --policy '{"daily_cap_micro":5000000,"monthly_cap_micro":
 | `allowed_cidrs` | Networks the key may be used from, such as `203.0.113.0/24`; a bare address is a network of one. |
 | `allowed_countries` | Countries the key may be used from, as ISO 3166-1 codes (`US`). Needs a GeoIP database. |
 | `rpm_limit` | The most requests per minute. |
-| `learning_period` | How long this key's [location rules](operator-guide/incidents.md#location-rules) only record, from its first forwarded request: `3d`, `36h`, `1h30m`, or `0s` for none, at most `90d`. Leave it out to use the install's `learning_period` setting (7 days). |
-| `detect` | Turns a detection rule off for this key, by name: `{"new_country": false}`. The rules are `new_country`, `new_asn`, `new_network` and `new_client`, each on unless you turn it off, and a canary's rule cannot be turned off. |
+| `learning_period` | How long this key's [location rules](operator-guide/incidents.md#location-rules) only record, from its first forwarded request: `3d`, `36h`, `1h30m`, or `0s` for none, at most `90d`, kept in its shortest form (`72h` reads back as `3d`). Leave it out to use the install's `learning_period` setting (7 days). Raising it puts a key that had finished learning back into learning. |
+| `detect` | Turns a detection rule off for this key, by name: `{"new_country": false}`. The rules are `new_country`, `new_asn`, `new_network` and `new_client`, each on unless you turn it off. A canary's rule cannot be turned off (`{"canary": true}` is accepted and means nothing). |
 
 A cap or budget of `0` or less is refused, never read as "no cap".
 

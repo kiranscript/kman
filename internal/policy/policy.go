@@ -106,12 +106,20 @@ func ParsePeriod(s string) (time.Duration, error) {
 }
 
 // FormatPeriod writes a period in the shortest form ParsePeriod reads: whole
-// days as 3d, anything else as a Go duration, and none as 0s.
+// days as 3d, anything else as a Go duration without its zero parts (36h,
+// 1h30m, 5m), and none as 0s.
 func FormatPeriod(d time.Duration) string {
 	if d > 0 && d%(24*time.Hour) == 0 {
 		return strconv.FormatInt(int64(d/(24*time.Hour)), 10) + "d"
 	}
-	return d.String()
+	s := d.String()
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
 }
 
 // RequiresMetering reports whether a key under this policy may send only
@@ -297,8 +305,10 @@ func decode(raw []byte) (Policy, error) {
 				p.Detect = map[string]bool{}
 			}
 			p.Detect[rule] = false
-		} else if err := (Policy{Detect: map[string]bool{rule: true}}).checkDetection(); err != nil {
-			return Policy{}, fmt.Errorf("the policy: %w", err)
+		} else if rule != "canary" && !slices.Contains(LocationRules, rule) {
+			// A rule that is on is the default and is not kept, but it must exist
+			// (the canary rule is on, and always is).
+			return Policy{}, fmt.Errorf("the policy: detect: no rule %q; the rules a key can turn off are %s", rule, strings.Join(LocationRules, ", "))
 		}
 	}
 	if p.AllowedCIDRs, p.AllowedCountries, err = normalizeLocks(w.AllowedCIDRs, w.AllowedCountries); err != nil {

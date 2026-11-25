@@ -51,9 +51,13 @@ type scenario struct {
 	Steps []step `json:"steps"`
 }
 
-// step is one event. Repeat writes it n times, a second apart, with {i} in the
-// client replaced by the count.
+// step is one event, written as a batch of its own. Repeat writes it n times, a
+// second apart, with {i} in the client replaced by the count. A step with a batch
+// writes those events together, in the order listed, as one batch of the event
+// writer (events are emitted when a request ends, so a batch is not in time
+// order): each takes the step's At unless it has its own.
 type step struct {
+	Batch   []step `json:"batch,omitempty"`
 	At      string `json:"at"`
 	Key     string `json:"key"`
 	Kind    string `json:"kind,omitempty"` // request (the default), blocked or session
@@ -67,6 +71,16 @@ type step struct {
 }
 
 func (s step) describe() string {
+	if len(s.Batch) > 0 {
+		out := fmt.Sprintf("%-8s one batch of %d events", s.At, len(s.Batch))
+		for _, b := range s.Batch {
+			if b.At == "" {
+				b.At = s.At
+			}
+			out += "\n        " + b.describe()
+		}
+		return out
+	}
 	kind := s.Kind
 	if kind == "" {
 		kind = "request"
@@ -181,26 +195,55 @@ func replay(t *testing.T, name string, sc scenario) string {
 		if err != nil {
 			t.Fatalf("step %d: at %q: %v", i+1, s.At, err)
 		}
-		id, ok := keyID[s.Key]
-		if !ok {
-			t.Fatalf("step %d: no key %q", i+1, s.Key)
-		}
-		n := max(s.Repeat, 1)
-		for j := range n {
-			e := events.Event{Time: sc.Start.Add(offset + time.Duration(j)*time.Second), Kind: events.Kind(s.Kind), KeyID: id, Country: s.Country, ASN: s.ASN, ASOrg: s.ASOrg,
-				Client: strings.ReplaceAll(s.Client, "{i}", fmt.Sprint(j)), BlockedCode: s.Code, Status: 200}
-			if e.Kind == "" {
-				e.Kind = events.KindRequest
+		write := func(batch ...step) {
+			var evs []events.Event
+			for _, b := range batch {
+				at := offset
+				if b.At != "" {
+					if at, err = parseOffset(b.At); err != nil {
+						t.Fatalf("step %d: at %q: %v", i+1, b.At, err)
+					}
+				}
+				id, ok := keyID[b.Key]
+				if !ok {
+					t.Fatalf("step %d: no key %q", i+1, b.Key)
+				}
+				e := events.Event{Time: sc.Start.Add(at), Kind: events.Kind(b.Kind), KeyID: id, Country: b.Country, ASN: b.ASN, ASOrg: b.ASOrg,
+					Client: b.Client, BlockedCode: b.Code, Status: 200}
+				if e.Kind == "" {
+					e.Kind = events.KindRequest
+				}
+				if e.Kind == events.KindBlocked {
+					e.Status = 403
+				}
+				if b.IP != "" {
+					e.ClientIP = netip.MustParseAddr(b.IP)
+				}
+				evs = append(evs, e)
 			}
-			if e.Kind == events.KindBlocked {
-				e.Status = 403
+			// The clock is the latest event's, as the writer's would be.
+			for _, e := range evs {
+				if e.Time.After(now) {
+					now = e.Time
+				}
 			}
-			if s.IP != "" {
-				e.ClientIP = netip.MustParseAddr(s.IP)
-			}
-			now = e.Time
-			if err := sink.AddEvents(ctx, []events.Event{e}); err != nil {
+			if err := sink.AddEvents(ctx, evs); err != nil {
 				t.Fatalf("step %d: %v", i+1, err)
+			}
+		}
+		switch {
+		case len(s.Batch) > 0:
+			write(s.Batch...)
+		default:
+			if _, ok := keyID[s.Key]; !ok {
+				t.Fatalf("step %d: no key %q", i+1, s.Key)
+			}
+			for j := range max(s.Repeat, 1) {
+				one := s
+				one.Client = strings.ReplaceAll(s.Client, "{i}", fmt.Sprint(j))
+				// a second apart, from the step's offset
+				one.At = fmt.Sprintf("%ds", int64(offset/time.Second)+int64(j))
+				write(one)
 			}
 		}
 		fmt.Fprintf(&out, "\nstep %d  %s\n", i+1, s.describe())

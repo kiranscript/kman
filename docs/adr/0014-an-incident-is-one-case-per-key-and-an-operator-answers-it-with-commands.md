@@ -29,7 +29,7 @@ A canary's use is a detection of the rule `canary` at severity `critical`, raise
 
 **The canary's alert stays the canary's alert** (ADR 0013), because its policy differs from an incident's: the first use after a reset alerts even though the incident is the same one, and later uses alert once per window with a held-back count, where an incident's repeats never alert. So the engine is told the detection is `Silent`: it opens the incident and audits it but queues no alert, and the canary's alert names the incident (`incident_id` in a webhook, `kman incident show N` first among its commands). One use is one alert, not two. A canary's incident is critical, so it never expires; it is ended by `kman incident resolve`, or by `kman key revoke <canary> --incident N`.
 
-**A known source never applies to a canary.** `detect.MatchKnownSource` is the one function that matches a request's origin against known sources, and it takes whether the key is a canary and answers "no" for one. The canary path does not call it at all, and `AddKnownSource` refuses a source scoped to a canary, and `this-was-me` refuses `--add-known-sources` for a canary's incident. The canary's ignore list (ADR 0013) remains the only thing that silences one.
+**A known source never applies to a canary.** `detect.MatchKnownPlace` is the one function that matches a request's origin against known sources, and it takes whether the key is a canary and answers "no" for one. The canary path does not call it at all, and `AddKnownSource` refuses a source scoped to a canary, and `this-was-me` refuses `--add-known-sources` for a canary's incident. The canary's ignore list (ADR 0013) remains the only thing that silences one.
 
 ## The response
 
@@ -43,7 +43,7 @@ A canary's use is a detection of the rule `canary` at severity `critical`, raise
 
 ## Known sources
 
-A known source is a labelled **CIDR, country, ASN or client**, for every key (scope `''`) or one key (scope is its key id). A request matches it by kind: a CIDR contains the address (an IPv4 address mapped into IPv6 is that IPv4 address), a country or a client is equal, an ASN is the same number. Its events are recorded and shown as always; it only stops the location rules from counting the place as new. Spike rules still apply. They are for the baseline rules; they never apply to a canary.
+A known source is a labelled **CIDR, country, ASN or client**, for every key (scope `''`) or one key (scope is its key id). A request matches it by kind: a CIDR contains the address (an IPv4 address mapped into IPv6 is that IPv4 address), a country or a client is equal, an ASN is the same number. Its events are recorded and shown as always; it only stops the location rules from raising a new place, and which place depends on the source's kind ([ADR 0015](0015-the-location-rules-run-in-the-transaction-that-records-a-new-place.md)): a **CIDR** containing the request's address silences every new place of that request, a new network included; a **country** silences only a new country, an **ASN** only a new ASN, and a **client** only a new client. Nothing but a CIDR silences a new network. Spike rules still apply. They are for the baseline rules; they never apply to a canary.
 
 They are bounded so that they cannot silence everything, as a canary's ignore list is:
 
@@ -80,5 +80,5 @@ A client address is personal data (ADR 0010). **Incident and detection evidence 
 - SPEC §9, §10, §12 and §14, the glossary, the changelog, the operator guide and the threat model describe incidents and known sources as built. `kman incidents`, `kman incident` and `kman known-source`, and the `/admin/v1/incidents` and `/known-sources` routes, are in the generated references.
 - `kman key disable`, `revoke` and `rotate`, and `kman credential compromise`, gain `--incident`; `ContainKeyRequest` (disable and revoke) and the `incident_id` field of the rotate and compromise requests are in the admin API.
 - A canary's incident is created by every use of the canary, not by the first only: a canary used after its incident was resolved opens a new one.
-- The location rules (#89) call `Engine.Raise` with a rule, a severity and evidence, and `MatchKnownSource` before raising; nothing else about incidents changes when they land.
+- The location rules (#89, [ADR 0015](0015-the-location-rules-run-in-the-transaction-that-records-a-new-place.md)) raise through the engine with a rule, a severity and evidence (`RaiseGroup` for one request's several), and ask `MatchKnownPlace` before raising; nothing else about incidents changed when they landed.
 - Auto-disable and dry-run will set `would_disable_at` and `would_block_count` on the incident, whose columns exist and are unused.

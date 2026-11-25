@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/netip"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -176,18 +177,29 @@ func TestAnEscalationInAGroupStillAlertsWhenTheHighestRuleIsOnlyARepeat(t *testi
 	}
 }
 
-func TestAFirstPlaceOfAKindIsNotNewBecauseThereIsNothingToCompareWithIt(t *testing.T) {
+// A key used only from private addresses has a network and no country or ASN:
+// the first it is seen with after learning is a thief abroad, not a baseline.
+func TestAFirstPlaceOfAKindAfterLearningIsRaisedAndDuringLearningIsNot(t *testing.T) {
 	r := newRig(t)
-	// Used for weeks with no GeoIP database, then one is installed.
-	r.mustWrite(ev(t0, func(e *events.Event) { e.Country, e.ASN, e.ASOrg = "", 0, "" }))
-	r.mustWrite(ev(afterLearning, nil))
+	noGeo := func(e *events.Event) { e.Country, e.ASN, e.ASOrg = "", 0, "" }
+	r.mustWrite(ev(t0, noGeo))
+	// During learning the first country and ASN are only recorded.
+	r.mustWrite(ev(t0.Add(24*time.Hour), nil))
 	if got := r.alerts.got(); len(got) != 0 {
-		t.Errorf("the first country and ASN a key is ever seen with raised %+v", got)
+		t.Fatalf("a first country and ASN during learning raised %+v", got)
 	}
-	// Now it has a baseline of those kinds, and a different country is new.
-	r.mustWrite(ev(afterLearning.Add(time.Hour), func(e *events.Event) { e.Country = "DE" }))
-	if got := r.alerts.got(); len(got) != 1 || got[0].det.Rule != "new_country" {
-		t.Errorf("alerts = %+v, want new_country", got)
+	// A key that has had no country or ASN when its learning ends: the first it
+	// ever shows is new.
+	r.mustWrite(ev(t0.Add(time.Hour), func(e *events.Event) { e.KeyID = "beef5678"; noGeo(e) }))
+	r.mustWrite(ev(afterLearning.Add(time.Hour), func(e *events.Event) { e.KeyID = "beef5678" }))
+	got := r.alerts.got()
+	if len(got) != 1 || got[0].det.Rule != "new_country" || got[0].inc.KeyID != "beef5678" || len(got[0].inc.Rules()) != 2 {
+		t.Fatalf("alerts = %+v, want new_country (and new_asn on the incident) for the key that learned none", got)
+	}
+	var ev store.Evidence
+	json.Unmarshal([]byte(got[0].det.EvidenceJSON), &ev)
+	if ev.Baseline != "no usual places recorded" {
+		t.Errorf("baseline = %q, want it to say there were no usual places", ev.Baseline)
 	}
 }
 
@@ -299,7 +311,7 @@ func TestACanaryAndAnUnknownKeyAreLeftToTheirOwnRules(t *testing.T) {
 	}
 }
 
-func TestKnownSourcesSilenceTheRulesForTheRequestsFromThem(t *testing.T) {
+func TestAKnownCIDRSilencesTheRequestAndAKnownCountryOrASNOnlyItsOwnRule(t *testing.T) {
 	r := learned(t)
 	add := func(scope, kind, value string) {
 		t.Helper()
@@ -314,18 +326,103 @@ func TestKnownSourcesSilenceTheRulesForTheRequestsFromThem(t *testing.T) {
 	add("", store.SourceASN, "3320")
 	add("beef5678", store.SourceCountry, "FR") // another key's: does not apply
 	r.mustWrite(
-		ev(afterLearning, func(e *events.Event) { e.Country, e.ClientIP = "DE", netip.MustParseAddr("203.0.113.50") }), // a known network
-		ev(afterLearning.Add(time.Minute), func(e *events.Event) { e.Country, e.ASN = "DE", 3320 }),                    // a known ASN, new country
-		ev(afterLearning.Add(2*time.Minute), func(e *events.Event) { e.Country, e.Client = "FR", "curl/8" }),           // not covered for this key
+		// a known network: everything about the request is silenced
+		ev(afterLearning, func(e *events.Event) {
+			e.Country, e.ASN, e.Client, e.ClientIP = "DE", 4000, "wget/1", netip.MustParseAddr("203.0.113.50")
+		}),
+		// a known ASN, from an unknown country and client: only the ASN is silenced
+		ev(afterLearning.Add(time.Minute), func(e *events.Event) { e.Country, e.ASN, e.Client = "FR", 3320, "curl/8" }),
+	)
+	var rules []string
+	for _, a := range r.alerts.got() {
+		rules = append(rules, a.det.Rule)
+	}
+	got := r.alerts.got()
+	if len(got) != 1 || got[0].det.Rule != "new_country" || strings.Join(got[0].inc.Rules(), ",") != "new_country,new_client" {
+		t.Fatalf("alerts %v, incident rules %v: want the country and client of the second request, and neither the first request nor the known ASN", rules, got[0].inc.Rules())
+	}
+	var e store.Evidence
+	json.Unmarshal([]byte(got[0].det.EvidenceJSON), &e)
+	if e.Country != "FR" {
+		t.Errorf("the detection is about %q, want FR", e.Country)
+	}
+}
+
+// A known source covering the first event of a batch must not shadow a thief
+// later in the same batch.
+func TestAKnownSourceMatchForOneRequestOfABatchDoesNotShadowAnother(t *testing.T) {
+	r := learned(t)
+	if err := r.store.Do(context.Background(), func(tx *store.Tx) error {
+		_, err := tx.CreateKnownSource(store.KnownSource{Kind: store.SourceCIDR, Value: "203.0.113.0/24", Label: "ours", CreatedBy: "owner", CreatedAt: t0})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r.mustWrite(
+		ev(afterLearning, func(e *events.Event) { e.Country, e.ClientIP = "DE", netip.MustParseAddr("203.0.113.50") }),
+		ev(afterLearning.Add(time.Second), func(e *events.Event) { e.Country, e.ClientIP = "FR", netip.MustParseAddr("192.0.2.9") }),
 	)
 	got := r.alerts.got()
-	if len(got) != 1 || got[0].det.Rule != "new_country" {
-		t.Fatalf("alerts = %+v, want only the request nothing covers", got)
+	if len(got) != 1 {
+		t.Fatalf("alerts = %+v, want one, for the request outside the known network", got)
 	}
-	var ev store.Evidence
-	json.Unmarshal([]byte(got[0].det.EvidenceJSON), &ev)
-	if ev.Country != "FR" {
-		t.Errorf("the detection is about %q, want FR", ev.Country)
+	var e store.Evidence
+	json.Unmarshal([]byte(got[0].det.EvidenceJSON), &e)
+	if e.Country != "FR" {
+		t.Errorf("the detection is about %q, want FR", e.Country)
+	}
+}
+
+// With no learning period the key is watched from its first forwarded request,
+// and that request is the baseline, whatever the clock's precision: the store
+// keeps times in milliseconds and events have nanoseconds.
+func TestWithNoLearningPeriodTheFirstForwardedRequestIsStillTheBaseline(t *testing.T) {
+	r := newRig(t)
+	if err := r.store.Do(context.Background(), func(tx *store.Tx) error {
+		_, err := tx.PutSetting(store.Setting{Key: store.SettingLearningPeriod, ValueJSON: "0", UpdatedAt: t0})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first := t0.Add(123456789 * time.Nanosecond)
+	r.mustWrite(ev(first, nil))
+	if got := r.alerts.got(); len(got) != 0 {
+		t.Fatalf("the first request of a key raised %+v", got)
+	}
+	r.mustWrite(ev(first.Add(time.Second), func(e *events.Event) { e.Country = "DE" }))
+	if got := r.alerts.got(); len(got) != 1 || got[0].det.Rule != "new_country" {
+		t.Errorf("alerts = %+v, want new_country for the next request", got)
+	}
+}
+
+// A request that sprays new networks at a key (a thief behind rotating proxies,
+// refused or not) must not make the writer's transaction slow: it holds the write
+// lock that every event waits on.
+func TestAThousandNewPlacesInOneBatchAreRaisedInBoundedTime(t *testing.T) {
+	r := learned(t)
+	var batch []events.Event
+	for i := range 1000 {
+		batch = append(batch, ev(afterLearning.Add(time.Duration(i)*time.Millisecond), func(e *events.Event) {
+			e.Kind, e.Status, e.BlockedCode = events.KindBlocked, 403, "key_disabled"
+			e.ClientIP = netip.AddrFrom4([4]byte{10, byte(i / 256), byte(i % 256), 1})
+			e.ASN, e.ASOrg, e.Client = int64(100000+i), "Proxy "+strconv.Itoa(i), "bot-"+strconv.Itoa(i)+"/1"
+		}))
+	}
+	began := time.Now()
+	r.mustWrite(batch...)
+	if took := time.Since(began); took > 10*time.Second {
+		t.Errorf("1000 requests, each new in network, ASN and client, took %v in the writer's transaction", took)
+	}
+	ds := r.detections(1)
+	if len(ds) > detect.MaxDetectionsPerIncident+8 {
+		t.Errorf("%d detection rows for one batch, want at most the bound", len(ds))
+	}
+	inc := r.incident(1)
+	if got := strings.Join(inc.Rules(), ","); got != "new_asn,new_client,new_network" {
+		t.Errorf("rules = %s, want every rule that fired, however many requests there were", got)
+	}
+	if n := len(r.alerts.got()); n != 1 {
+		t.Errorf("%d alerts for one batch, want 1", n)
 	}
 }
 

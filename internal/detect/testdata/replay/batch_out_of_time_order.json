@@ -1,0 +1,70 @@
+{
+ "description": "Events are emitted when a request ends, so a batch is not in time order. The place is first seen at its earliest event, which is where the detection takes its time and its evidence from: here the earlier request, from 203.0.113.9, though the later one is listed first.",
+ "start": "2026-11-01T09:00:00Z",
+ "keys": [
+  {
+   "name": "app"
+  }
+ ],
+ "steps": [
+  {
+   "at": "0h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "48h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "8d",
+   "batch": [
+    {
+     "key": "app",
+     "ip": "198.51.100.9",
+     "country": "DE",
+     "asn": 64500,
+     "as_org": "Example Net",
+     "client": "openai-python/3",
+     "at": "8d10m"
+    },
+    {
+     "key": "app",
+     "ip": "203.0.113.9",
+     "country": "DE",
+     "asn": 64500,
+     "as_org": "Example Net",
+     "client": "openai-python/3",
+     "at": "8d"
+    }
+   ]
+  }
+ ]
+}

@@ -381,15 +381,19 @@ type Origin struct {
 	Client  string
 }
 
-// MatchKnownSource returns the known source, among sources, that applies to a
-// request from o on a key, and says whether there is one. Sources for another
-// key are skipped; a source matches by its kind: a CIDR contains the address, a
-// country or a client is equal, an ASN is the same number.
+// MatchKnownPlace returns the known source, among sources, that silences a new
+// place of this kind (store.PlaceCountry and the others) for a request from o on
+// a key, and says whether there is one (ADR 0015). Sources for another key are
+// skipped. A CIDR that contains the request's address silences every place of the
+// request, a new network included, since it says where the request came from. A
+// country silences only a new country, an ASN only a new ASN, and a client only a
+// new client: one false positive must not blind the key to a thief from the same
+// country or using the same SDK.
 //
 // A canary is never matched: no known source silences one (ADR 0013). Whatever
 // calls this for a key must say whether it is a canary, so the rule holds
 // however a location rule is written.
-func MatchKnownSource(sources []store.KnownSource, keyID string, canary bool, o Origin) (store.KnownSource, bool) {
+func MatchKnownPlace(sources []store.KnownSource, keyID string, canary bool, kind string, o Origin) (store.KnownSource, bool) {
 	if canary {
 		return store.KnownSource{}, false
 	}
@@ -407,15 +411,15 @@ func MatchKnownSource(sources []store.KnownSource, keyID string, canary bool, o 
 				return s, true
 			}
 		case store.SourceCountry:
-			if o.Country != "" && s.Value == o.Country {
+			if kind == store.PlaceCountry && o.Country != "" && s.Value == o.Country {
 				return s, true
 			}
 		case store.SourceASN:
-			if o.ASN != 0 && s.Value == strconv.FormatInt(o.ASN, 10) {
+			if kind == store.PlaceASN && o.ASN != 0 && s.Value == strconv.FormatInt(o.ASN, 10) {
 				return s, true
 			}
 		case store.SourceClient:
-			if o.Client != "" && s.Value == o.Client {
+			if kind == store.PlaceClient && o.Client != "" && s.Value == o.Client {
 				return s, true
 			}
 		}
