@@ -196,9 +196,20 @@ func (in *install) follow(t *testing.T, args ...string) *following {
 // waitFor returns once what the command printed holds s.
 func (f *following) waitFor(s string) string {
 	f.t.Helper()
+	return f.waitIn(f.stdout, s)
+}
+
+// waitForStderr returns once what the command said on stderr holds s.
+func (f *following) waitForStderr(s string) string {
+	f.t.Helper()
+	return f.waitIn(f.stderr, s)
+}
+
+func (f *following) waitIn(buf *syncBuffer, s string) string {
+	f.t.Helper()
 	start := time.Now()
 	for {
-		if out := f.stdout.String(); strings.Contains(out, s) {
+		if out := buf.String(); strings.Contains(out, s) {
 			return out
 		}
 		select {
@@ -351,5 +362,37 @@ func TestEventsFollowSaysWhenKmanEndsTheStreamAndWhenItDroppedEvents(t *testing.
 	r := in.run(t, nil, "", "events", "--follow")
 	if r.code != 1 || !strings.Contains(r.stdout, "GET /v1/models") || !strings.Contains(r.stderr, "missed 7") || !strings.Contains(r.stderr, "ended") {
 		t.Errorf("exit %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+}
+
+// A reader that fell behind hears so even when no event follows the drop: the
+// feed may go quiet right after a burst (#108).
+func TestEventsFollowSaysItDroppedEventsWithoutWaitingForTheNextOne(t *testing.T) {
+	in := newInstall(t).loggedIn(t)
+	release := make(chan struct{})
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/admin/v1/events":
+			fmt.Fprint(w, `{"events":[],"more":false}`)
+		case "/admin/v1/events/stream":
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, ": kman event stream\n\n")
+			fmt.Fprint(w, "event: dropped\ndata: {\"missed\":7}\n\n")
+			w.(http.Flusher).Flush()
+			select { // and then nothing, until the test is done
+			case <-r.Context().Done():
+			case <-release:
+			}
+		}
+	}))
+	t.Cleanup(fake.Close)
+	t.Cleanup(func() { close(release) })
+	if err := cli.SaveCredentials(in.credentials(), fake.URL, in.owner); err != nil {
+		t.Fatal(err)
+	}
+	f := in.follow(t)
+	f.waitForStderr("missed 7")
+	if code := f.stop(); code != 0 {
+		t.Errorf("interrupted: exit %d\n%s", code, f.stderr)
 	}
 }

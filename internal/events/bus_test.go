@@ -140,6 +140,28 @@ func TestASlowSubscriberDoesNotHoldUpTheOthersAndItsDropsAreCounted(t *testing.T
 	}
 }
 
+// A subscription with Match holds and counts only what it asked for: a busy
+// key it filtered out neither fills its buffer nor shows up as dropped.
+func TestASubscriptionsMatchKeepsWhatItRefusesOutOfItsBufferAndItsDrops(t *testing.T) {
+	b := events.New(events.Options{Capacity: 64})
+	sub := b.Subscribe("mine", events.SubOptions{Buffer: 2, Match: func(e events.Event) bool { return e.KeyID == "mine" }})
+	for range 20 {
+		b.Emit(events.Event{KeyID: "other"})
+	}
+	for range 3 {
+		b.Emit(events.Event{KeyID: "mine"})
+	}
+	stop := run(t, b)
+	stop()
+	got := drain(sub)
+	if len(got) != 2 || got[0].KeyID != "mine" || got[1].KeyID != "mine" {
+		t.Errorf("got %v, want two of mine", got)
+	}
+	if sub.Dropped() != 1 {
+		t.Errorf("dropped %d, want 1: only the third of mine, none of other", sub.Dropped())
+	}
+}
+
 func TestSubscribingAfterTheBusStoppedGivesAClosedSubscription(t *testing.T) {
 	b := events.New(events.Options{})
 	stop := run(t, b)

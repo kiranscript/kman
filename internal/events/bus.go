@@ -88,6 +88,12 @@ type SubOptions struct {
 	Buffer int
 	// PriorityOnly limits the subscription to events from the priority lane.
 	PriorityOnly bool
+	// Match, when set, limits the subscription to the events it accepts. An
+	// event it refuses is neither queued nor counted as dropped, so Dropped is
+	// what the subscriber lost of what it asked for, and the buffer holds only
+	// that. It runs while the Bus hands each event on, so it must be quick and
+	// never wait.
+	Match func(Event) bool
 }
 
 // Subscription is one subscriber's share of the event stream.
@@ -99,11 +105,12 @@ type Subscription struct {
 
 	c       chan Event
 	prio    bool
+	match   func(Event) bool
 	dropped atomic.Int64
 }
 
 // Dropped is how many events were not handed to this subscription because its
-// buffer was full.
+// buffer was full. Events its Match refused are not among them.
 func (s *Subscription) Dropped() int64 { return s.dropped.Load() }
 
 // Subscribe adds a subscriber. It sees the events dispatched from now on. After
@@ -113,7 +120,7 @@ func (b *Bus) Subscribe(name string, o SubOptions) *Subscription {
 		o.Buffer = 256
 	}
 	c := make(chan Event, o.Buffer)
-	s := &Subscription{Name: name, C: c, c: c, prio: o.PriorityOnly}
+	s := &Subscription{Name: name, C: c, c: c, prio: o.PriorityOnly, match: o.Match}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closed {
@@ -211,7 +218,7 @@ func (b *Bus) dispatch(e Event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, s := range b.subs {
-		if s.prio && !e.Priority {
+		if (s.prio && !e.Priority) || (s.match != nil && !s.match(e)) {
 			continue
 		}
 		select {
