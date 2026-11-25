@@ -49,8 +49,6 @@ type Mode =
 // The classic terminal size. Every view and dialog fits it.
 export const MIN_COLUMNS = 80;
 export const MIN_ROWS = 24;
-// The notice row (more for a long failure) and the options bar under the panels.
-const CHROME_ROWS = 2;
 
 export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secretGuardMs }: AppProps) {
   const { exit } = useApp();
@@ -118,6 +116,19 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   const shownNotice = link.state === 'denied' ? undefined : notice;
   const bodyRows = rows - 1 - noticeRows(shownNotice, columns);
   const tooSmall = columns < MIN_COLUMNS || rows < MIN_ROWS;
+  // The summary is a line when there are no keys to count, else three.
+  const summaryLines = data.keys.length === 0 ? 1 : 3;
+  // What each list could fill; Status is its summary, and under it the list when focused.
+  const wants = {
+    status: summaryLines + (tab === 'status' ? (items.length > 0 ? 1 : 0) + Math.max(1, items.length) : 1),
+    // While filtering the panel keeps the height of the whole list, so it does not shrink under the cursor.
+    keys:
+      Math.max(1, tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? data.keys.length : visible.length) +
+      (tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? 1 : 0),
+    upstreams: Math.max(1, data.upstreams.length),
+    audit: Math.max(1, data.audit.length),
+  };
+  const lay = layout(columns, bodyRows, tab, wants);
   const loaded = link.state === 'ok' || data.keys.length > 0 || data.upstreams.length > 0 || data.audit.length > 0;
   const usable = loaded && link.state !== 'denied';
 
@@ -129,11 +140,15 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
     if (selectedId) setKeySel((cur) => cur ?? selectedId);
   }, [selectedId]);
 
-  /** Rows of the focused list on screen at once, so a page moves by what was shown. */
+  /**
+   * Rows of the focused list on screen at once, so a page moves by what was shown: the
+   * panel's height in the layout that is drawn, less its border, Status's summary and
+   * the header of its list, and the filter row under Keys.
+   */
   function pageRows(): number {
-    const own = layout(columns, rows - CHROME_ROWS, tab).heights[tab];
-    // Status carries its summary above the list; Keys a filter row under it.
-    return Math.max(1, own - 2 - (tab === 'status' ? 3 : 0) - (tab === 'keys' && filter !== '' ? 1 : 0));
+    const own = lay.heights[tab];
+    const above = tab === 'status' ? summaryLines + (items.length > 0 ? 1 : 0) : 0;
+    return Math.max(1, own - 2 - above - (tab === 'keys' && filter !== '' ? 1 : 0));
   }
 
   function move(to: number | 'first' | 'last') {
@@ -366,19 +381,6 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   }
 
   const width = columns;
-  // The summary is a line when there are no keys to count, else three.
-  const summaryLines = data.keys.length === 0 ? 1 : 3;
-  // What each list could fill; Status is its summary, and under it the list when focused.
-  const wants = {
-    status: summaryLines + (tab === 'status' ? (items.length > 0 ? 1 : 0) + Math.max(1, items.length) : 1),
-    // While filtering the panel keeps the height of the whole list, so it does not shrink under the cursor.
-    keys:
-      Math.max(1, tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? data.keys.length : visible.length) +
-      (tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? 1 : 0),
-    upstreams: Math.max(1, data.upstreams.length),
-    audit: Math.max(1, data.audit.length),
-  };
-  const lay = layout(columns, bodyRows, tab, wants);
 
   const popup = usable && mode.kind !== 'none' && mode.kind !== 'filter';
   const h = lay.heights;
