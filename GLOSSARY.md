@@ -1,6 +1,6 @@
 # kman
 
-kman is a self-hosted proxy that holds real upstream API keys and hands apps virtual keys, and shows where each is used, from where and by what, so a leaked key is caught when it happens and killed in one command; spend caps bound what a leak can cost.
+kman is a self-hosted proxy that holds real upstream API keys and hands apps virtual keys, and shows from where and by what each is used, so a leaked key can be spotted and killed in one command; spend caps bound what a leak can cost.
 
 ## Language
 
