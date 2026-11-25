@@ -602,7 +602,7 @@ func TestAHundredKeysSprayingNewPlacesInOneBatchAreRaisedInBoundedTime(t *testin
 	}
 	began := time.Now()
 	r.mustWrite(batch...)
-	if took := time.Since(began); took > 10*time.Second {
+	if took := time.Since(began); took > 10*time.Second && !raceDetector {
 		t.Errorf("100 keys of 50 requests each, every one new in network, ASN and client, took %v in the writer's transaction", took)
 	}
 	rows := 0
