@@ -127,11 +127,11 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	var incidents *detect.Engine // made just below, after alerts, which it alerts through and which records a canary's use with it
 	alert := alerts.New(alerts.Options{Store: st, Secret: v.Credential, Now: s.now, DashboardURL: cfg.Dashboard.URL, Log: log,
 		Limits: alertLimits, Settings: alertSettings(func() *admin.Service { return svc }),
-		CanaryIncident: func(tx *store.Tx, keyID string, at time.Time, ev store.Evidence) (int64, error) {
+		CanaryIncident: func(tx *store.Tx, keyID string, at time.Time, ev store.Evidence) (int64, bool, error) {
 			// A canary's use opens or escalates the canary's incident. The canary's
 			// alert is its own, so the engine queues none (ADR 0013, ADR 0014).
 			out, err := incidents.Raise(tx, detect.Detection{KeyID: keyID, Rule: canaryRule, Severity: store.SeverityCritical, At: at, Evidence: ev, Silent: true})
-			return out.Incident.ID, err
+			return out.Incident.ID, out.Change != detect.Repeated, err
 		}})
 	incidents = detect.New(detect.Options{Store: st, Now: s.now, Alerts: alert, Log: log})
 	// The event bus is made before the admin service, which streams from it.

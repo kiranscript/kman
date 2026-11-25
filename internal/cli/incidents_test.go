@@ -30,10 +30,18 @@ func withIncident(t *testing.T) (*install, admin.Key) {
 
 func (in *install) detect(t *testing.T, keyID, rule string, sev store.Severity, ev store.Evidence) {
 	t.Helper()
-	e := detect.New(detect.Options{Store: in.store, Now: func() time.Time { return t0 }})
-	if _, err := e.RaiseNow(t.Context(), detect.Detection{KeyID: keyID, Rule: rule, Severity: sev, At: t0, Evidence: ev}); err != nil {
+	in.detectAt(t, t0, keyID, rule, sev, ev)
+}
+
+// detectAt raises a detection at a time of the test's choosing.
+func (in *install) detectAt(t *testing.T, at time.Time, keyID, rule string, sev store.Severity, ev store.Evidence) detect.Outcome {
+	t.Helper()
+	e := detect.New(detect.Options{Store: in.store, Now: func() time.Time { return at }})
+	out, err := e.RaiseNow(t.Context(), detect.Detection{KeyID: keyID, Rule: rule, Severity: sev, At: at, Evidence: ev})
+	if err != nil {
 		t.Fatal(err)
 	}
+	return out
 }
 
 func TestIncidentsListsThemNewestFirstAndOpenOnesOnRequest(t *testing.T) {
@@ -389,6 +397,43 @@ func TestIncidentsFollowPrintsRecentOnesThenEachChange(t *testing.T) {
 	}
 	in.detect(t, k.ID, "new_client", store.SeverityMedium, store.Evidence{})
 	wait("#2")
+}
+
+// A quiet incident that fires again is an escalation, and alerts, though its
+// state, severity and rules stay the same; --follow says so too. A repeat that
+// is not after a quiet hour is not news (#111).
+func TestIncidentsFollowPrintsAQuietIncidentFiringAgainButNotARepeat(t *testing.T) {
+	in, k := withIncident(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	stdout, stderr := &syncBuffer{}, &syncBuffer{}
+	env := in.env(nil, "", stdout, stderr)
+	env.FollowEvery = time.Millisecond
+	done := make(chan int)
+	go func() { done <- cli.Run(ctx, []string{"incidents", "--follow"}, env) }()
+	defer func() { cancel(); <-done }()
+	wait := func(want string, n int) string {
+		t.Helper()
+		start := time.Now()
+		for strings.Count(stdout.String(), want) < n {
+			if time.Since(start) > 10*time.Second {
+				t.Fatalf("did not print %q %d times:\n%s%s", want, n, stdout.String(), stderr.String())
+			}
+			runtime.Gosched()
+		}
+		return stdout.String()
+	}
+	wait("#1", 1)
+	ev := store.Evidence{Country: "DE"}
+	if out := in.detectAt(t, t0.Add(10*time.Minute), k.ID, "new_country", store.SeverityHigh, ev); out.Change != detect.Repeated {
+		t.Fatalf("a firing 10 minutes on is %s, want a repeat", out.Change)
+	}
+	if out := in.detectAt(t, t0.Add(2*time.Hour), k.ID, "new_country", store.SeverityHigh, ev); out.Change != detect.Escalated {
+		t.Fatalf("a firing after two quiet hours is %s, want an escalation", out.Change)
+	}
+	out := wait("#1", 2)
+	if !strings.Contains(out, "(3 detections)") || strings.Contains(out, "(2 detections)") {
+		t.Errorf("follow printed:\n%s", out)
+	}
 }
 
 func TestIncidentsFollowWithOpenStillTellsWhenOneIsResolved(t *testing.T) {

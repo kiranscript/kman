@@ -123,6 +123,15 @@ func incidentSignature(i admin.Incident) string {
 	return strings.Join([]string{i.State, i.Severity, i.Resolution, strings.Join(i.Rules, ",")}, "|")
 }
 
+// firedAfterQuiet says an unresolved incident fired again after going quiet
+// since it was last seen as old. detect counts that as an escalation and alerts,
+// though it changes no state, severity or rule. It is seen as quiet before, or,
+// if it went quiet and fired between two looks, by how long it had not fired.
+func firedAfterQuiet(old, i admin.Incident) bool {
+	return old.State != admin.IncidentResolved && i.LastFiredAt.After(old.LastFiredAt) &&
+		(old.Quiet || i.LastFiredAt.Sub(old.LastFiredAt) >= admin.IncidentQuietAfter)
+}
+
 // incidentsFollow prints the incidents the query picks, oldest first, and then a
 // line for each change as it is found, by asking kman now and then. Interrupting
 // it, which ends ctx, is how it is meant to end; a server that cannot be
@@ -182,10 +191,11 @@ func incidentsFollow(ctx context.Context, c *call, cl *client, l login, req admi
 		current := map[int64]bool{}
 		for _, i := range slices.Backward(list.Incidents) {
 			current[i.ID] = true
-			if old, ok := seen[i.ID]; ok && incidentSignature(old) == incidentSignature(i) {
+			old, ok := seen[i.ID]
+			seen[i.ID] = i // the newest, so the next firing is measured from the last one
+			if ok && incidentSignature(old) == incidentSignature(i) && !firedAfterQuiet(old, i) {
 				continue
 			}
-			seen[i.ID] = i
 			if err := print(i); err != nil {
 				return err
 			}

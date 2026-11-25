@@ -284,6 +284,50 @@ func TestThisWasMeAddsTheIncidentsPlacesAsKnownSourcesForTheKey(t *testing.T) {
 	}
 }
 
+// Past MaxDetectionsPerIncident detect records only escalations, so an
+// escalation late in a busy incident is past the oldest 100 rows. The detail
+// still shows it, and this was me still offers its places (#110).
+func TestALateEscalationInABusyIncidentIsShownAndOfferedAsAKnownSource(t *testing.T) {
+	in, app, _ := withIncident(t)
+	in.exposeClients(t, true)
+	repeat := store.Evidence{Address: "203.0.113.7", Country: "DE", ASN: 3320, Client: "curl/8"}
+	for range detect.MaxDetectionsPerIncident + 20 {
+		in.detect(t, app.Key.ID, "new_country", store.SeverityMedium, repeat)
+	}
+	in.detect(t, app.Key.ID, "new_asn", store.SeverityHigh, store.Evidence{Address: "198.51.100.9", Country: "BR", ASN: 28573, ASOrg: "Claro", Client: "evil/1"})
+	d, err := in.svc.GetIncident(as("owner"), admin.IncidentRef{ID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := len(d.Detections)
+	if n != 100 || d.Detections[0].Rule != "new_country" || d.Detections[n-1].Rule != "new_asn" || d.Detections[n-1].Severity != "high" {
+		t.Fatalf("%d detections shown, first %+v, last %+v: want 100 with the late escalation last", n, d.Detections[0], d.Detections[n-1])
+	}
+	if d.DetectionCount != int64(detect.MaxDetectionsPerIncident)+22 {
+		t.Errorf("detection_count = %d", d.DetectionCount)
+	}
+	var offered []string
+	for _, c := range d.Candidates {
+		offered = append(offered, c.Kind+":"+c.Value)
+	}
+	if !strings.Contains(strings.Join(offered, " "), "country:BR") {
+		t.Errorf("candidates %v lack the escalation's country", offered)
+	}
+	got, err := in.svc.ThisWasMe(as("owner"), admin.ThisWasMeRequest{ID: 1, AddKnownSources: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var added []string
+	for _, k := range got.Added {
+		added = append(added, k.Kind+":"+k.Value)
+	}
+	for _, want := range []string{"country:DE", "country:BR", "asn:28573", "client:evil/1", "cidr:198.51.100.0/24"} {
+		if !strings.Contains(" "+strings.Join(added, " ")+" ", " "+want+" ") {
+			t.Errorf("added %v, lacks %s", added, want)
+		}
+	}
+}
+
 func TestThisWasMeOnlyAddsNetworksWhenAddressesAreExposed(t *testing.T) {
 	in, _, _ := withIncident(t)
 	got, err := in.svc.ThisWasMe(as("owner"), admin.ThisWasMeRequest{ID: 1, AddKnownSources: true})
