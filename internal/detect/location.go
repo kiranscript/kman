@@ -78,8 +78,10 @@ const maxText = 64
 // the key turned up. The places of one request that are new in several ways are
 // raised together and alert once (RaiseGroup). The work is bounded: the usual
 // places are read once per kind for the batch, and past
-// MaxDetectionGroupsPerKeyPerBatch requests of one key in a batch only a rule that
-// none of them raised is raised again.
+// MaxDetectionGroupsPerKeyPerBatch requests of one key, or
+// MaxDetectionGroupsPerBatch of all keys, in a batch a request is raised only for
+// a rule that none of its key's earlier ones raised, or when it fires on an
+// incident gone quiet. The rest are counted on the incident.
 func (e *Engine) ObservePlaces(tx *store.Tx, rows []store.EventRow, fresh []store.NewPlace) error {
 	var keys []string
 	byKey := map[string][]store.NewPlace{}
@@ -165,6 +167,7 @@ func (e *Engine) observeKey(tx *store.Tx, id string, rows []store.EventRow, cand
 	groups, dropped := 0, 0
 	var unraised int64 // the new places past the bounds, which only the counter counts
 	var lastUnraised time.Time
+	var lastFired time.Time // the key's incident's last firing, counted ones included
 	for _, i := range order {
 		row := rows[i]
 		addr, _ := netip.ParseAddr(row.ClientIP)
@@ -175,12 +178,19 @@ func (e *Engine) observeKey(tx *store.Tx, id string, rows []store.EventRow, cand
 			if _, known := MatchKnownPlace(sources, id, false, p.Kind, origin); known {
 				continue
 			}
+			// Past a bound a place is only counted, unless it fires on an incident
+			// gone quiet, which is an escalation (a batch can span an hour when
+			// the writer catches up).
 			full := groups >= MaxDetectionGroupsPerKeyPerBatch || *batchGroups >= e.o.MaxDetectionGroupsPerBatch
-			if r, _ := ruleOf(p.Kind); full && raised[r.rule] {
+			at := p.At.Truncate(time.Millisecond)
+			if r, _ := ruleOf(p.Kind); full && raised[r.rule] && at.Sub(lastFired) < e.o.QuietAfter {
 				capped = true
 				unraised++
-				if at := p.At.Truncate(time.Millisecond); at.After(lastUnraised) {
+				if at.After(lastUnraised) {
 					lastUnraised = at
+				}
+				if at.After(lastFired) {
+					lastFired = at
 				}
 				continue
 			}
@@ -203,6 +213,9 @@ func (e *Engine) observeKey(tx *store.Tx, id string, rows []store.EventRow, cand
 		outs, err := e.RaiseGroup(tx, ds)
 		if err != nil {
 			return err
+		}
+		if inc := outs[len(outs)-1].Incident; inc.LastFiredAt.After(lastFired) {
+			lastFired = inc.LastFiredAt
 		}
 		for j, out := range outs {
 			raised[ds[j].Rule] = true

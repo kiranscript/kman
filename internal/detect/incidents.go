@@ -276,9 +276,17 @@ func (e *Engine) raise(tx *store.Tx, d Detection, grouped bool) (Outcome, error)
 	}
 	out := Outcome{Change: change, silent: d.Silent}
 	if change == Repeated && inc.Detections > MaxDetectionsPerIncident {
-		// Counted, not recorded.
-		out.Incident, err = tx.UpdateIncident(inc)
-		return out, err
+		// Past the bound a repeat is counted, not recorded. The counter also
+		// counts what the location rules only counted (ObservePlaces), so it is
+		// the rows themselves that say whether the bound is reached.
+		n, err := tx.CountDetections(inc.ID)
+		if err != nil {
+			return Outcome{}, err
+		}
+		if n >= MaxDetectionsPerIncident {
+			out.Incident, err = tx.UpdateIncident(inc)
+			return out, err
+		}
 	}
 	row, err := tx.AddDetection(store.Detection{IncidentID: inc.ID, KeyID: d.KeyID, At: at, Rule: d.Rule, Severity: d.Severity, EvidenceJSON: string(evidence)})
 	if err != nil {
