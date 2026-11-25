@@ -50,6 +50,9 @@ func TestClientOfReducesAUserAgentToAProductAndItsMajorVersion(t *testing.T) {
 		{"a digit in a name", "urllib3/2.0.7", "urllib3/2"},
 		{"a short number in a name", "aws-sdk-go-v2/1.24.0", "aws-sdk-go-v2/1"},
 		{"three digits in a name", "win386-tool/1", "win386-tool/1"},
+		// The price of refusing host labels: a product named with two runs of
+		// digits is unknown too, and unknown cannot be a known source.
+		{"a product with two runs of digits", "x86_64-linux-gnu/1", "unknown"},
 
 		// No header at all is a client of its own.
 		{"empty", "", "none"},
@@ -109,6 +112,7 @@ func TestClientOfDropsWhateverAnAppPutInItsUserAgentThatItShouldNotHave(t *testi
 		{"a short token", "a1b2c3d4", "unknown"},
 		{"a short token with a version", "x9k2/1", "unknown"},
 		{"an EC2 host name", "ip-172-31-5-9", "unknown"},
+		{"a token in a name and an SDK's word together", "qzxhtrblmwpnvks7/Abcdefghijklmnop 1", "unknown"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got := events.ClientOf(c.ua)
@@ -133,6 +137,7 @@ func TestClientOfIsBoundedWhateverItIsGiven(t *testing.T) {
 		{"a name just under the limit", strings.Repeat("a", 18) + "/1", strings.Repeat("a", 18) + "/1"},
 		{"a long name with a short digit run still fits", strings.Repeat("b", 40) + "/1", strings.Repeat("b", 30) + "/1"},
 		{"a huge version is no version", "my-app/" + strings.Repeat("9", 5000), "my-app"},
+		{"nor is one cut off by the end of the window", strings.Repeat(" ", 250) + "app/0412555", "app"},
 		{"a long run of spaces first", strings.Repeat(" ", 100000) + "curl/8", "unknown"},
 		{"a very long run of product-like noise", strings.Repeat("a-", 100000), "unknown"},
 		{"product-like noise inside the window", strings.Repeat("a-", 100) + "/1", strings.Repeat("a-", 15) + "/1"},
@@ -181,6 +186,7 @@ func FuzzClientOf(f *testing.F) {
 	for _, s := range []string{
 		"", "curl/8.5.0", "OpenAI/Python 3.49.0", "kmn_abc", "ek_kmn_abc", "a@b", "\x00", "\xff", "Mozilla/5.0 (X11)",
 		strings.Repeat("x", 500), "my-app/1 kmn_zzz", "sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxx", "a b c", "/", "///", "a/", "a/ 1",
+		"ip-10-0-3-7", strings.Repeat("a", 256) + "@x", "x9k2/1", "qzxhtrblmwpnvks7/Abcdefghijklmnop 1", strings.Repeat(" ", 250) + "app/0412555",
 	} {
 		f.Add(s)
 	}
@@ -197,6 +203,26 @@ func FuzzClientOf(f *testing.F) {
 		}
 		if events.ClientOf(ua) != got {
 			t.Fatalf("ClientOf(%q) is not the same twice", ua)
+		}
+		if got == events.ClientNone || got == events.ClientUnknown {
+			return
+		}
+		// A recorded client passes its own rules again: no host label, no token.
+		if !events.IsClient(got) {
+			t.Fatalf("ClientOf(%q) = %q, which ClientOf does not record as itself", ua, got)
+		}
+		product, _, _ := strings.Cut(got, "/")
+		runs, digits := 0, 0
+		for i := range len(product) {
+			if product[i] >= '0' && product[i] <= '9' {
+				digits++
+				if i == 0 || product[i-1] < '0' || product[i-1] > '9' {
+					runs++
+				}
+			}
+		}
+		if runs > 1 || digits > 3 {
+			t.Fatalf("ClientOf(%q) = %q, a name with %d runs of digits and %d digits", ua, got, runs, digits)
 		}
 	})
 }

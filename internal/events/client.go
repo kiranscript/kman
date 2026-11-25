@@ -90,7 +90,7 @@ func ClientOf(userAgent string) string {
 			return ClientUnknown
 		}
 	}
-	if (len(name) >= minSecretLength && strings.ContainsAny(name, "0123456789")) || containsFold(name, "kmn_") {
+	if containsFold(name, "kmn_") {
 		return ClientUnknown
 	}
 	if runs, n := digitRuns(name); runs > maxNameDigitRuns || n > maxNameDigits {
@@ -99,6 +99,24 @@ func ClientOf(userAgent string) string {
 	major, word := "", ""
 	if i < len(ua) && ua[i] == '/' {
 		major, word = versionAfterSlash(ua[i+1:])
+		// A version that runs to the end of the window may be the start of a
+		// longer number, which is no version.
+		end := i + 1 + len(major)
+		if word != "" {
+			end += len(word) + 1
+		}
+		if major != "" && end == len(ua) && len(userAgent) > userAgentWindow {
+			major, word = "", ""
+		}
+	}
+	// A token is long and holds a digit: the name as it is recorded, with an
+	// SDK's word, is what is judged, so that a recorded client is one again.
+	product := len(name)
+	if word != "" {
+		product += 1 + len(word)
+	}
+	if product >= minSecretLength && strings.ContainsAny(name, "0123456789") {
+		return ClientUnknown
 	}
 	var out [MaxClientLength]byte
 	n := 0
@@ -152,6 +170,14 @@ func majorOf(d string) string {
 		return ""
 	}
 	return d
+}
+
+// IsClient reports whether v is a client ClientOf records for some User-Agent,
+// other than ClientNone and ClientUnknown: a product, in lower case, that passes
+// every rule above, and a major version. ClientOf returns such a client
+// unchanged, which is what this checks.
+func IsClient(v string) bool {
+	return v != "" && v != ClientNone && v != ClientUnknown && ClientOf(v) == v
 }
 
 // digitRuns counts the runs of digits in s, and its digits.
