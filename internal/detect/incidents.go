@@ -279,7 +279,7 @@ func (e *Engine) raise(tx *store.Tx, d Detection, grouped bool) (Outcome, error)
 		// Past the bound a repeat is counted, not recorded. The counter also
 		// counts what the location rules only counted (ObservePlaces), so it is
 		// the rows themselves that say whether the bound is reached.
-		n, err := tx.CountDetections(inc.ID)
+		n, err := tx.CountDetections(inc.ID, MaxDetectionsPerIncident)
 		if err != nil {
 			return Outcome{}, err
 		}

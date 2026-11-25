@@ -562,6 +562,24 @@ func TestPastTheBoundAFiringOnAQuietIncidentIsStillRaised(t *testing.T) {
 	}
 }
 
+// A place that was only counted is still a firing: a later place is measured
+// from it, so a batch that is quiet from the last raise but not from the last
+// counted place does not escalate.
+func TestPastTheBoundACountedPlaceIsTheLastFiringForTheQuietCheck(t *testing.T) {
+	r := boundedRig(t, 1)
+	r.mustWrite(
+		sprayer("abcd1234", afterLearning, 1),
+		sprayer("abcd1234", afterLearning.Add(50*time.Minute), 2),
+		sprayer("abcd1234", afterLearning.Add(100*time.Minute), 3),
+	)
+	if n := len(r.alerts.got()); n != 1 {
+		t.Errorf("%d alerts, want only the open: no hour went by without a firing", n)
+	}
+	if n := len(r.detections(1)); n != 3 {
+		t.Errorf("%d rows, want the first request's 3", n)
+	}
+}
+
 // The worst case with many keys: each still opens its incident, so the cost
 // grows with the keys, but not with their requests (ADR 0015).
 func TestAHundredKeysSprayingNewPlacesInOneBatchAreRaisedInBoundedTime(t *testing.T) {
