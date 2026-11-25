@@ -1,0 +1,39 @@
+{
+ "description": "A key that has been used from 1,000 clients keeps no more places of that kind: the next client is counted in the overflow row, which is not a place and never raises. A new country on the same request still does.",
+ "start": "2026-11-01T09:00:00Z",
+ "keys": [
+  {
+   "name": "app"
+  }
+ ],
+ "steps": [
+  {
+   "at": "0s",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "app-{i}/1",
+   "repeat": 1000
+  },
+  {
+   "at": "8d",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "late/1"
+  },
+  {
+   "at": "8d1m",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "late/2"
+  }
+ ]
+}

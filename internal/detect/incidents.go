@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/kirank55/kman/internal/store"
@@ -104,6 +105,9 @@ type Options struct {
 // open, escalation and expiry (SPEC §2).
 type Engine struct {
 	o Options
+	// wakePending says a transaction queued an incident alert that the
+	// dispatcher has not been woken for (AfterCommit).
+	wakePending atomic.Bool
 }
 
 // New returns an Engine.
@@ -168,6 +172,46 @@ func (e *Engine) wake(out Outcome) {
 // through the Alerter, unless the detection is Silent. A repeat writes neither.
 // The caller wakes the dispatcher after the commit (Wake, or RaiseNow).
 func (e *Engine) Raise(tx *store.Tx, d Detection) (Outcome, error) {
+	return e.raise(tx, d, false)
+}
+
+// RaiseGroup records detections that are about one key and one cause, as the
+// location rules raise a request that is new in several ways at once: each moves
+// the incident as Raise does, but the group alerts once, for the highest
+// severity among those that opened or escalated the incident, and its alert
+// names the incident as it stands after all of them. A group with no open or
+// escalation alerts nothing. The caller wakes the dispatcher after the commit
+// (Wake).
+func (e *Engine) RaiseGroup(tx *store.Tx, ds []Detection) ([]Outcome, error) {
+	if len(ds) == 0 {
+		return nil, nil
+	}
+	outs := make([]Outcome, len(ds))
+	best := -1
+	for i, d := range ds {
+		if d.KeyID != ds[0].KeyID {
+			return nil, errors.New("detect: a group of detections is about one key")
+		}
+		out, err := e.raise(tx, d, true)
+		if err != nil {
+			return nil, err
+		}
+		outs[i] = out
+		if out.Change != Repeated && !d.Silent && (best < 0 || d.Severity.Rank() > ds[best].Severity.Rank()) {
+			best = i
+		}
+	}
+	if best >= 0 && e.o.Alerts != nil {
+		if err := e.o.Alerts.AlertIncident(tx, string(outs[best].Change), outs[len(outs)-1].Incident, outs[best].Detection); err != nil {
+			return nil, err
+		}
+	}
+	return outs, nil
+}
+
+// raise is Raise; grouped says the caller queues the alert itself, once for a
+// group (RaiseGroup), so none is queued here.
+func (e *Engine) raise(tx *store.Tx, d Detection, grouped bool) (Outcome, error) {
 	switch {
 	case d.KeyID == "":
 		return Outcome{}, errors.New("detect: a detection needs a key")
@@ -248,7 +292,7 @@ func (e *Engine) Raise(tx *store.Tx, d Detection) (Outcome, error) {
 	if err := e.audit(tx, at, "incident."+map[Change]string{Opened: "open", Escalated: "escalate"}[change], inc, d.Rule); err != nil {
 		return Outcome{}, err
 	}
-	if !d.Silent && e.o.Alerts != nil {
+	if !d.Silent && !grouped && e.o.Alerts != nil {
 		if err := e.o.Alerts.AlertIncident(tx, string(change), inc, row); err != nil {
 			return Outcome{}, err
 		}
@@ -337,15 +381,19 @@ type Origin struct {
 	Client  string
 }
 
-// MatchKnownSource returns the known source, among sources, that applies to a
-// request from o on a key, and says whether there is one. Sources for another
-// key are skipped; a source matches by its kind: a CIDR contains the address, a
-// country or a client is equal, an ASN is the same number.
+// MatchKnownPlace returns the known source, among sources, that silences a new
+// place of this kind (store.PlaceCountry and the others) for a request from o on
+// a key, and says whether there is one (ADR 0015). Sources for another key are
+// skipped. A CIDR that contains the request's address silences every place of the
+// request, a new network included, since it says where the request came from. A
+// country silences only a new country, an ASN only a new ASN, and a client only a
+// new client: one false positive must not blind the key to a thief from the same
+// country or using the same SDK.
 //
 // A canary is never matched: no known source silences one (ADR 0013). Whatever
 // calls this for a key must say whether it is a canary, so the rule holds
 // however a location rule is written.
-func MatchKnownSource(sources []store.KnownSource, keyID string, canary bool, o Origin) (store.KnownSource, bool) {
+func MatchKnownPlace(sources []store.KnownSource, keyID string, canary bool, kind string, o Origin) (store.KnownSource, bool) {
 	if canary {
 		return store.KnownSource{}, false
 	}
@@ -363,15 +411,15 @@ func MatchKnownSource(sources []store.KnownSource, keyID string, canary bool, o 
 				return s, true
 			}
 		case store.SourceCountry:
-			if o.Country != "" && s.Value == o.Country {
+			if kind == store.PlaceCountry && o.Country != "" && s.Value == o.Country {
 				return s, true
 			}
 		case store.SourceASN:
-			if o.ASN != 0 && s.Value == strconv.FormatInt(o.ASN, 10) {
+			if kind == store.PlaceASN && o.ASN != 0 && s.Value == strconv.FormatInt(o.ASN, 10) {
 				return s, true
 			}
 		case store.SourceClient:
-			if o.Client != "" && s.Value == o.Client {
+			if kind == store.PlaceClient && o.Client != "" && s.Value == o.Client {
 				return s, true
 			}
 		}

@@ -1,7 +1,9 @@
 package policy_test
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/kirank55/kman/internal/policy"
 )
@@ -125,5 +127,127 @@ func TestNormalizeRefusesSoftBudgetsThatMakeNoSense(t *testing.T) {
 		if _, got, err := policy.Normalize([]byte(raw)); err == nil {
 			t.Errorf("Normalize(%s) = %s, want an error", raw, got)
 		}
+	}
+}
+
+func TestALearningPeriodIsKeptInItsShortestFormAndReadBack(t *testing.T) {
+	for raw, want := range map[string]string{
+		`{"learning_period":"3d"}`:     `{"learning_period":"3d"}`,
+		`{"learning_period":"72h"}`:    `{"learning_period":"3d"}`,
+		`{"learning_period":"36h"}`:    `{"learning_period":"36h"}`,
+		`{"learning_period":"1h30m"}`:  `{"learning_period":"1h30m"}`,
+		`{"learning_period":"90m"}`:    `{"learning_period":"1h30m"}`,
+		`{"learning_period":"90s"}`:    `{"learning_period":"1m30s"}`,
+		`{"learning_period":"5m"}`:     `{"learning_period":"5m"}`,
+		`{"learning_period":"0s"}`:     `{"learning_period":"0s"}`,
+		`{"learning_period":"0"}`:      `{"learning_period":"0s"}`,
+		`{"learning_period":"90d"}`:    `{"learning_period":"90d"}`,
+		` {"learning_period": "7d" } `: `{"learning_period":"7d"}`,
+	} {
+		_, got, err := policy.Normalize([]byte(raw))
+		if err != nil {
+			t.Errorf("Normalize(%s) = %v", raw, err)
+			continue
+		}
+		if string(got) != want {
+			t.Errorf("Normalize(%s) = %s, want %s", raw, got, want)
+		}
+		if _, err := policy.Parse(string(got)); err != nil {
+			t.Errorf("the normalized form %s does not parse: %v", got, err)
+		}
+	}
+	p, err := policy.Parse(`{"learning_period":"3d"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d, ok := p.LearningPeriodOverride(); !ok || d != 72*time.Hour {
+		t.Errorf("LearningPeriodOverride = %v, %v, want 72h", d, ok)
+	}
+	p, _ = policy.Parse(`{"learning_period":"0s"}`)
+	if d, ok := p.LearningPeriodOverride(); !ok || d != 0 {
+		t.Errorf("a learning period of 0 is an override of none: %v, %v", d, ok)
+	}
+	p, _ = policy.Parse(`{}`)
+	if _, ok := p.LearningPeriodOverride(); ok {
+		t.Error("a policy that sets none overrides nothing")
+	}
+}
+
+func TestNormalizeRefusesALearningPeriodThatMakesNoSense(t *testing.T) {
+	for _, raw := range []string{
+		`{"learning_period":""}`, `{"learning_period":"soon"}`, `{"learning_period":"-1h"}`, `{"learning_period":"-1d"}`,
+		`{"learning_period":"91d"}`, `{"learning_period":"2200h"}`, `{"learning_period":7}`, `{"learning_period":"1.5d"}`,
+		`{"learning_period":null}`,
+	} {
+		if _, got, err := policy.Normalize([]byte(raw)); err == nil {
+			t.Errorf("Normalize(%s) = %s, want an error", raw, got)
+		}
+	}
+}
+
+func TestARuleIsOnUnlessAKeyTurnsItOff(t *testing.T) {
+	p, err := policy.Parse(`{"detect":{"new_country":false,"new_asn":true}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rule, want := range map[string]bool{"new_country": false, "new_asn": true, "new_network": true, "new_client": true} {
+		if got := p.RuleEnabled(rule); got != want {
+			t.Errorf("RuleEnabled(%s) = %v, want %v", rule, got, want)
+		}
+	}
+	_, got, err := policy.Normalize([]byte(`{"detect":{"new_client":false,"new_asn":true,"new_country":false}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A rule that is on is the default, so it is not kept.
+	if want := `{"detect":{"new_client":false,"new_country":false}}`; string(got) != want {
+		t.Errorf("Normalize = %s, want %s", got, want)
+	}
+	_, got, err = policy.Normalize([]byte(`{"detect":{"new_asn":true}}`))
+	if err != nil || string(got) != `{}` {
+		t.Errorf("Normalize(a rule left on) = %s, %v, want {}", got, err)
+	}
+}
+
+func TestNormalizeRefusesARuleThatDoesNotExistAndTheCanaryRule(t *testing.T) {
+	for raw, mention := range map[string]string{
+		`{"detect":{"new_planet":false}}`: "new_country",
+		`{"detect":{"canary":false}}`:     "canary",
+		`{"detect":{"new_planet":true}}`:  "new_country",
+		`{"detect":{"new_country":"no"}}`: "",
+		`{"detect":{"new_country":null}}`: "",
+		`{"detect":[]}`:                   "",
+		`{"detect":{"":false}}`:           "",
+	} {
+		_, got, err := policy.Normalize([]byte(raw))
+		if err == nil {
+			t.Errorf("Normalize(%s) = %s, want an error", raw, got)
+			continue
+		}
+		if mention != "" && !strings.Contains(err.Error(), mention) {
+			t.Errorf("Normalize(%s) = %v, want it to mention %q", raw, err, mention)
+		}
+	}
+}
+
+// The default policy turns every location rule on, so a key made before they
+// existed is watched by them.
+func TestAPolicyThatSaysNothingKeepsEveryRuleOn(t *testing.T) {
+	p, err := policy.Parse(``)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rule := range policy.LocationRules {
+		if !p.RuleEnabled(rule) {
+			t.Errorf("%s is off by default", rule)
+		}
+	}
+}
+
+// Only turning the canary rule off is refused: saying it is on is true.
+func TestSayingTheCanaryRuleIsOnIsAccepted(t *testing.T) {
+	_, got, err := policy.Normalize([]byte(`{"detect":{"canary":true}}`))
+	if err != nil || string(got) != `{}` {
+		t.Errorf("Normalize = %s, %v, want {} and no error", got, err)
 	}
 }

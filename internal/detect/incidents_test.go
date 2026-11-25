@@ -61,12 +61,23 @@ type rig struct {
 // canary cafe0001. Its clock is the rig's now, which tests move.
 func newRig(t *testing.T) *rig {
 	t.Helper()
+	st := seedStore(t,
+		store.VirtualKey{ID: "abcd1234", Name: "app", CredentialID: "cr_1"},
+		store.VirtualKey{ID: "beef5678", Name: "batch", CredentialID: "cr_1"},
+		store.VirtualKey{ID: "cafe0001", Name: "decoy", Kind: store.KeyCanary})
+	r := &rig{t: t, store: st, alerts: &alerter{}, now: t0}
+	r.engine = detect.New(detect.Options{Store: st, Now: func() time.Time { return r.now }, Alerts: r.alerts})
+	return r
+}
+
+// seedStore opens a store holding an upstream, a credential cr_1 and the keys.
+func seedStore(t *testing.T, keys ...store.VirtualKey) *store.Store {
+	t.Helper()
 	st, err := store.Open(context.Background(), store.Options{Dir: t.TempDir(), Now: t0})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	r := &rig{t: t, store: st, alerts: &alerter{}, now: t0}
 	err = st.Do(context.Background(), func(tx *store.Tx) error {
 		if err := tx.CreateDataKey(store.DataKey{ID: "dek_1", Wrapped: []byte("w"), Nonce: []byte("n"), KEKFingerprint: "mkf_1", CreatedAt: t0}); err != nil {
 			return err
@@ -80,12 +91,11 @@ func newRig(t *testing.T) *rig {
 			DataKeyID: "dek_1", Last4: "abcd", CreatedAt: t0}); err != nil {
 			return err
 		}
-		for _, k := range []store.VirtualKey{
-			{ID: "abcd1234", Name: "app", CredentialID: "cr_1"},
-			{ID: "beef5678", Name: "batch", CredentialID: "cr_1"},
-			{ID: "cafe0001", Name: "decoy", Kind: store.KeyCanary},
-		} {
-			k.PolicyJSON, k.PolicyVersion, k.TagsJSON, k.CreatedAt = `{}`, 1, `[]`, t0
+		for _, k := range keys {
+			if k.PolicyJSON == "" {
+				k.PolicyJSON = `{}`
+			}
+			k.PolicyVersion, k.TagsJSON, k.CreatedAt = 1, `[]`, t0
 			if _, err := tx.CreateKey(k, []byte("01234567890123456789012345678901")); err != nil {
 				return err
 			}
@@ -95,8 +105,7 @@ func newRig(t *testing.T) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.engine = detect.New(detect.Options{Store: st, Now: func() time.Time { return r.now }, Alerts: r.alerts})
-	return r
+	return st
 }
 
 func (r *rig) raise(d detect.Detection) detect.Outcome {
@@ -530,30 +539,73 @@ func TestKnownSourcesMatchByKind(t *testing.T) {
 	}
 	cases := []struct {
 		name string
+		kind string // the kind of place that is new
 		o    detect.Origin
 		want int64
 	}{
-		{"an address in a CIDR", detect.Origin{Addr: netip.MustParseAddr("203.0.113.77")}, 1},
-		{"the same address mapped into IPv6", detect.Origin{Addr: netip.MustParseAddr("::ffff:203.0.113.77")}, 1},
-		{"an address outside", detect.Origin{Addr: netip.MustParseAddr("203.0.114.1")}, 0},
-		{"an IPv6 address in a v6 CIDR", detect.Origin{Addr: netip.MustParseAddr("2001:db8:1::1")}, 6},
-		{"a country", detect.Origin{Country: "DE"}, 2},
-		{"another country", detect.Origin{Country: "US"}, 0},
-		{"an ASN", detect.Origin{ASN: 3320}, 3},
-		{"another ASN", detect.Origin{ASN: 1}, 0},
-		{"a client", detect.Origin{Client: "curl/8"}, 4},
-		{"another client version", detect.Origin{Client: "curl/7"}, 0},
-		{"a source for another key", detect.Origin{Country: "FR"}, 0},
-		{"nothing is known", detect.Origin{}, 0},
+		{"an address in a CIDR", store.PlaceNetwork, detect.Origin{Addr: netip.MustParseAddr("203.0.113.77")}, 1},
+		{"the same address mapped into IPv6", store.PlaceNetwork, detect.Origin{Addr: netip.MustParseAddr("::ffff:203.0.113.77")}, 1},
+		{"an address outside", store.PlaceNetwork, detect.Origin{Addr: netip.MustParseAddr("203.0.114.1")}, 0},
+		{"an IPv6 address in a v6 CIDR", store.PlaceNetwork, detect.Origin{Addr: netip.MustParseAddr("2001:db8:1::1")}, 6},
+		{"a country", store.PlaceCountry, detect.Origin{Country: "DE"}, 2},
+		{"another country", store.PlaceCountry, detect.Origin{Country: "US"}, 0},
+		{"an ASN", store.PlaceASN, detect.Origin{ASN: 3320}, 3},
+		{"another ASN", store.PlaceASN, detect.Origin{ASN: 1}, 0},
+		{"a client", store.PlaceClient, detect.Origin{Client: "curl/8"}, 4},
+		{"another client version", store.PlaceClient, detect.Origin{Client: "curl/7"}, 0},
+		{"a source for another key", store.PlaceCountry, detect.Origin{Country: "FR"}, 0},
+		{"nothing is known", store.PlaceCountry, detect.Origin{}, 0},
 	}
 	for _, c := range cases {
-		got, ok := detect.MatchKnownSource(sources, "abcd1234", false, c.o)
+		got, ok := detect.MatchKnownPlace(sources, "abcd1234", false, c.kind, c.o)
 		if c.want == 0 && ok || c.want != 0 && (!ok || got.ID != c.want) {
 			t.Errorf("%s: got %+v, %v; want source %d", c.name, got, ok, c.want)
 		}
 	}
-	if got, ok := detect.MatchKnownSource(sources, "beef5678", false, detect.Origin{Country: "FR"}); !ok || got.ID != 5 {
+	if got, ok := detect.MatchKnownPlace(sources, "beef5678", false, store.PlaceCountry, detect.Origin{Country: "FR"}); !ok || got.ID != 5 {
 		t.Errorf("a key's own source: %+v, %v", got, ok)
+	}
+}
+
+// #89: a known source silences the place of its own kind, and only a CIDR, which
+// says where the request came from, silences a request whatever is new in it.
+func TestAKnownSourceSilencesOnlyThePlaceOfItsKindAndACIDRSilencesTheRequest(t *testing.T) {
+	cidr := store.KnownSource{ID: 1, Kind: store.SourceCIDR, Value: "203.0.113.0/24"}
+	country := store.KnownSource{ID: 2, Kind: store.SourceCountry, Value: "DE"}
+	asn := store.KnownSource{ID: 3, Kind: store.SourceASN, Value: "3320"}
+	client := store.KnownSource{ID: 4, Kind: store.SourceClient, Value: "curl/8"}
+	all := []store.KnownSource{cidr, country, asn, client}
+	in := detect.Origin{Addr: netip.MustParseAddr("203.0.113.77"), Country: "DE", ASN: 3320, Client: "curl/8"}
+	out := detect.Origin{Addr: netip.MustParseAddr("198.51.100.1"), Country: "DE", ASN: 3320, Client: "curl/8"}
+	for _, c := range []struct {
+		name    string
+		sources []store.KnownSource
+		kind    string
+		o       detect.Origin
+		want    int64
+	}{
+		{"a CIDR silences a new country", all[:1], store.PlaceCountry, in, 1},
+		{"a CIDR silences a new ASN", all[:1], store.PlaceASN, in, 1},
+		{"a CIDR silences a new network", all[:1], store.PlaceNetwork, in, 1},
+		{"a CIDR silences a new client", all[:1], store.PlaceClient, in, 1},
+		{"an address outside the CIDR is not covered", all[:1], store.PlaceCountry, out, 0},
+		{"a country silences a new country", all[1:2], store.PlaceCountry, out, 2},
+		{"a country does not silence a new ASN", all[1:2], store.PlaceASN, out, 0},
+		{"a country does not silence a new client", all[1:2], store.PlaceClient, out, 0},
+		{"a country does not silence a new network", all[1:2], store.PlaceNetwork, out, 0},
+		{"an ASN silences a new ASN", all[2:3], store.PlaceASN, out, 3},
+		{"an ASN does not silence a new country", all[2:3], store.PlaceCountry, out, 0},
+		{"an ASN does not silence a new network", all[2:3], store.PlaceNetwork, out, 0},
+		{"a client silences a new client", all[3:], store.PlaceClient, out, 4},
+		{"a client does not silence a new country", all[3:], store.PlaceCountry, out, 0},
+		{"a client does not silence a new ASN", all[3:], store.PlaceASN, out, 0},
+		{"a client does not silence a new network", all[3:], store.PlaceNetwork, out, 0},
+		{"another country is not the source's", all[1:2], store.PlaceCountry, detect.Origin{Country: "FR"}, 0},
+	} {
+		got, ok := detect.MatchKnownPlace(c.sources, "abcd1234", false, c.kind, c.o)
+		if c.want == 0 && ok || c.want != 0 && (!ok || got.ID != c.want) {
+			t.Errorf("%s: got %+v, %v; want source %d", c.name, got, ok, c.want)
+		}
 	}
 }
 
@@ -563,11 +615,13 @@ func TestAKnownSourceNeverSilencesACanary(t *testing.T) {
 		{ID: 3, Kind: store.SourceASN, Value: "3320"}, {ID: 4, Kind: store.SourceClient, Value: "curl/8"},
 	}
 	o := detect.Origin{Addr: netip.MustParseAddr("203.0.113.5"), Country: "DE", ASN: 3320, Client: "curl/8"}
-	if _, ok := detect.MatchKnownSource(sources, "abcd1234", false, o); !ok {
-		t.Fatal("a standard key's known source did not match")
-	}
-	if got, ok := detect.MatchKnownSource(sources, "cafe0001", true, o); ok {
-		t.Errorf("a known source silenced a canary: %+v (ADR 0013)", got)
+	for _, kind := range []string{store.PlaceCountry, store.PlaceASN, store.PlaceNetwork, store.PlaceClient} {
+		if _, ok := detect.MatchKnownPlace(sources, "abcd1234", false, kind, o); !ok {
+			t.Fatalf("a standard key's known source did not match a new %s", kind)
+		}
+		if got, ok := detect.MatchKnownPlace(sources, "cafe0001", true, kind, o); ok {
+			t.Errorf("a known source silenced a canary's %s: %+v (ADR 0013)", kind, got)
+		}
 	}
 }
 

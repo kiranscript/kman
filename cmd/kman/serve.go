@@ -135,7 +135,7 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 		}})
 	incidents = detect.New(detect.Options{Store: st, Now: s.now, Alerts: alert, Log: log})
 	// The event bus is made before the admin service, which streams from it.
-	pipe := startEvents(ctx, st, log, alert)
+	pipe := startEvents(ctx, st, log, alert, incidents)
 	defer pipe.stop() // a second time is harmless: the first stop is below
 	// The update check is the one thing kman asks the network by itself, and only
 	// when the operator turned it on (ADR 0008).

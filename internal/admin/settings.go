@@ -17,6 +17,7 @@ type Settings struct {
 	DefaultKeyTTLSeconds  int64  `json:"default_key_ttl_seconds" doc:"How long a new virtual key stays valid unless told otherwise. At most the maximum key lifetime. Default 90 days."`
 	SpendTimezone         string `json:"spend_timezone" doc:"The IANA time zone in which daily and monthly spend periods start at 00:00. Default UTC. A change takes effect when kman restarts."`
 	ExposeClientAddresses bool   `json:"expose_client_addresses" doc:"Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients), the networks a key was used from (GET /keys/{id}/places), and the client address of each event (GET /events and its stream). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited."`
+	LearningPeriodSeconds int64  `json:"learning_period_seconds" doc:"How long, from its first forwarded request, a key's location rules (a new country, ASN, network or client) only record where it is used from, before they raise detections. A key's policy may set its own (learning_period). 0 is no learning period. Default 7 days, at most 90. A change applies at once, to keys that have already learned too: lowering it ends learning for the keys that have passed the shorter period, and raising it puts keys that had finished learning back into learning until the longer period, counted from each key's first forwarded request, has passed."`
 	SoftBudgetPercents    []int  `json:"soft_budget_defaults" doc:"The percentages of each spend cap or soft budget that raise a warning when crossed, rising, for keys whose policy sets none (soft_budget_percents). Each warns once per day or month. Default 50, 80, 100; an empty list warns for no key that sets none. A change takes effect at the next check, within a minute."`
 }
 
@@ -27,6 +28,7 @@ type SettingsUpdate struct {
 	DefaultKeyTTLSeconds  *int64  `json:"default_key_ttl_seconds,omitempty"`
 	SpendTimezone         *string `json:"spend_timezone,omitempty"`
 	SoftBudgetPercents    *[]int  `json:"soft_budget_defaults,omitempty"`
+	LearningPeriodSeconds *int64  `json:"learning_period_seconds,omitempty"`
 	ExposeClientAddresses *bool   `json:"expose_client_addresses,omitempty"`
 }
 
@@ -37,6 +39,7 @@ const (
 	settingSpendTimezone  = "spend_timezone"
 	settingSoftBudgets    = "soft_budget_defaults"
 	settingExposeClients  = "expose_client_addresses"
+	settingLearningPeriod = store.SettingLearningPeriod
 )
 
 const day = 24 * 60 * 60
@@ -48,6 +51,7 @@ func DefaultSettings() Settings {
 		DefaultKeyTTLSeconds:  90 * day,
 		SpendTimezone:         "UTC",
 		SoftBudgetPercents:    []int{50, 80, 100},
+		LearningPeriodSeconds: int64(store.DefaultLearningPeriod / time.Second),
 	}
 }
 
@@ -73,6 +77,7 @@ func (s Settings) list() []setting {
 		{settingSpendTimezone, s.SpendTimezone},
 		{settingSoftBudgets, s.SoftBudgetPercents},
 		{settingExposeClients, s.ExposeClientAddresses},
+		{settingLearningPeriod, s.LearningPeriodSeconds},
 	}
 }
 
@@ -91,6 +96,8 @@ func (s *Settings) load(key string, raw []byte) error {
 		dst = &s.SoftBudgetPercents
 	case settingExposeClients:
 		dst = &s.ExposeClientAddresses
+	case settingLearningPeriod:
+		dst = &s.LearningPeriodSeconds
 	default:
 		return nil
 	}
@@ -114,6 +121,9 @@ func (s Settings) apply(u SettingsUpdate) (Settings, bool) {
 	}
 	if u.ExposeClientAddresses != nil {
 		s.ExposeClientAddresses, named = *u.ExposeClientAddresses, true
+	}
+	if u.LearningPeriodSeconds != nil {
+		s.LearningPeriodSeconds, named = *u.LearningPeriodSeconds, true
 	}
 	return s, named
 }
@@ -200,6 +210,9 @@ func (s Settings) check() error {
 	}
 	if _, err := time.LoadLocation(s.SpendTimezone); err != nil {
 		return errorf(CodeInvalid, "spend_timezone %q is not a time zone kman knows", s.SpendTimezone)
+	}
+	if s.LearningPeriodSeconds < 0 || s.LearningPeriodSeconds > 90*day {
+		return errorf(CodeInvalid, "learning_period must be between 0 (none) and 90 days")
 	}
 	if len(s.SoftBudgetPercents) > maxSoftBudgets {
 		return errorf(CodeInvalid, "soft_budget_defaults holds at most %d percentages", maxSoftBudgets)

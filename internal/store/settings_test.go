@@ -46,3 +46,30 @@ func TestSettingsOfANewInstallIsEmpty(t *testing.T) {
 		return err
 	})
 }
+
+func TestLearningPeriodIsTheSettingOrSevenDays(t *testing.T) {
+	s := open(t)
+	read := func() (d time.Duration, err error) {
+		err = s.Do(t.Context(), func(tx *store.Tx) (e error) { d, e = tx.LearningPeriod(); return })
+		return
+	}
+	if d, err := read(); err != nil || d != 7*24*time.Hour {
+		t.Errorf("LearningPeriod with no setting = %v, %v, want 7 days", d, err)
+	}
+	for value, want := range map[string]time.Duration{"259200": 72 * time.Hour, "0": 0} {
+		do(t, s, func(tx *store.Tx) error {
+			_, err := tx.PutSetting(store.Setting{Key: store.SettingLearningPeriod, ValueJSON: value, UpdatedAt: now})
+			return err
+		})
+		if d, err := read(); err != nil || d != want {
+			t.Errorf("LearningPeriod with %s stored = %v, %v, want %v", value, d, err, want)
+		}
+	}
+	do(t, s, func(tx *store.Tx) error {
+		_, err := tx.PutSetting(store.Setting{Key: store.SettingLearningPeriod, ValueJSON: `"soon"`, UpdatedAt: now})
+		return err
+	})
+	if _, err := read(); err == nil {
+		t.Error("a learning period that is not a number of seconds was read")
+	}
+}

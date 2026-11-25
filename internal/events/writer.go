@@ -25,10 +25,35 @@ type Sink interface {
 	AddEvents(ctx context.Context, batch []Event) error
 }
 
-// SQLite returns a Sink that writes to the store's events and usage_hourly tables.
-func SQLite(s *store.Store) Sink { return sqliteSink{s} }
+// Observer is told about each batch an SQLite sink stores, inside the
+// transaction that stores it, so that what it writes commits with the batch or
+// not at all. detect is one: a place a key is used from for the first time is
+// new exactly once, and the detection it raises is in the same transaction as the
+// place, so a crash cannot record the place and lose the detection (#89).
+//
+// An observer runs on the writer's goroutine, never on the request path, and
+// adds to the transaction's time: it must be quick, and an error it returns
+// fails the batch, which the writer retries.
+type Observer interface {
+	// ObservePlaces is given the batch's rows and the places the batch gave their
+	// keys for the first time (store.NewPlace.Event indexes rows).
+	ObservePlaces(tx *store.Tx, rows []store.EventRow, fresh []store.NewPlace) error
+	// AfterCommit is called once a transaction in which ObservePlaces returned
+	// without an error has committed, for what needs doing then, such as waking a
+	// dispatcher. It is also called for a transaction that rolled back, which is
+	// harmless to do too early.
+	AfterCommit()
+}
 
-type sqliteSink struct{ s *store.Store }
+// SQLite returns a Sink that writes to the store's events and usage_hourly
+// tables and key places, and tells each observer of every batch in the same
+// transaction.
+func SQLite(s *store.Store, observers ...Observer) Sink { return sqliteSink{s, observers} }
+
+type sqliteSink struct {
+	s         *store.Store
+	observers []Observer
+}
 
 func (k sqliteSink) AddEvents(ctx context.Context, batch []Event) error {
 	rows := make([]store.EventRow, len(batch))
@@ -47,7 +72,22 @@ func (k sqliteSink) AddEvents(ctx context.Context, batch []Event) error {
 			CostMicro: e.CostMicro, CostKnown: e.CostKnown, CostEstimated: e.CostEstimated,
 		}
 	}
-	return k.s.Do(ctx, func(tx *store.Tx) error { return tx.AddEvents(rows) })
+	err := k.s.Do(ctx, func(tx *store.Tx) error {
+		fresh, err := tx.AddEventsFresh(rows)
+		if err != nil {
+			return err
+		}
+		for _, o := range k.observers {
+			if err := o.ObservePlaces(tx, rows, fresh); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	for _, o := range k.observers {
+		o.AfterCommit()
+	}
+	return err
 }
 
 // WriterOptions configures a Writer.

@@ -20,6 +20,7 @@ func TestANewInstallHasTheDefaultSettings(t *testing.T) {
 		DefaultKeyTTLSeconds:  90 * day,
 		SpendTimezone:         "UTC",
 		SoftBudgetPercents:    []int{50, 80, 100},
+		LearningPeriodSeconds: 7 * day,
 	}
 	if !equalSettings(got, want) {
 		t.Errorf("Settings = %+v, want %+v", got, want)
@@ -33,7 +34,7 @@ func TestUpdateSettingsChangesOnlyWhatItNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := admin.Settings{MaxKeyLifetimeSeconds: 365 * day, DefaultKeyTTLSeconds: 30 * day, SpendTimezone: tz, SoftBudgetPercents: []int{50, 80, 100}}
+	want := admin.Settings{MaxKeyLifetimeSeconds: 365 * day, DefaultKeyTTLSeconds: 30 * day, SpendTimezone: tz, SoftBudgetPercents: []int{50, 80, 100}, LearningPeriodSeconds: 7 * day}
 	if !equalSettings(got, want) {
 		t.Errorf("UpdateSettings = %+v, want %+v", got, want)
 	}
@@ -72,21 +73,23 @@ func TestUpdateSettingsRefusesBadValues(t *testing.T) {
 	s := func(v string) *string { return &v }
 	p := func(v ...int) *[]int { return &v }
 	for name, u := range map[string]admin.SettingsUpdate{
-		"nothing":                      {},
-		"a TTL past the lifetime":      {DefaultKeyTTLSeconds: i(400 * day)},
-		"a lifetime under the TTL":     {MaxKeyLifetimeSeconds: i(30 * day)},
-		"a zero lifetime (never)":      {MaxKeyLifetimeSeconds: i(0)},
-		"a lifetime over ten years":    {MaxKeyLifetimeSeconds: i(3651 * day)},
-		"a TTL under an hour":          {DefaultKeyTTLSeconds: i(59 * 60)},
-		"an unknown time zone":         {SpendTimezone: s("Mars/Olympus")},
-		"the local time zone":          {SpendTimezone: s("Local")},
-		"an empty time zone":           {SpendTimezone: s("")},
-		"percentages out of order":     {SoftBudgetPercents: p(80, 50)},
-		"a repeated percentage":        {SoftBudgetPercents: p(50, 50)},
-		"a zero percentage":            {SoftBudgetPercents: p(0, 50)},
-		"a percentage over 1000":       {SoftBudgetPercents: p(50, 1001)},
-		"more than ten percentages":    {SoftBudgetPercents: p(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)},
-		"a fine TTL beside a bad zone": {DefaultKeyTTLSeconds: i(7 * day), SpendTimezone: s("Nowhere")},
+		"nothing":                        {},
+		"a TTL past the lifetime":        {DefaultKeyTTLSeconds: i(400 * day)},
+		"a lifetime under the TTL":       {MaxKeyLifetimeSeconds: i(30 * day)},
+		"a zero lifetime (never)":        {MaxKeyLifetimeSeconds: i(0)},
+		"a lifetime over ten years":      {MaxKeyLifetimeSeconds: i(3651 * day)},
+		"a TTL under an hour":            {DefaultKeyTTLSeconds: i(59 * 60)},
+		"an unknown time zone":           {SpendTimezone: s("Mars/Olympus")},
+		"the local time zone":            {SpendTimezone: s("Local")},
+		"an empty time zone":             {SpendTimezone: s("")},
+		"percentages out of order":       {SoftBudgetPercents: p(80, 50)},
+		"a repeated percentage":          {SoftBudgetPercents: p(50, 50)},
+		"a zero percentage":              {SoftBudgetPercents: p(0, 50)},
+		"a percentage over 1000":         {SoftBudgetPercents: p(50, 1001)},
+		"more than ten percentages":      {SoftBudgetPercents: p(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)},
+		"a fine TTL beside a bad zone":   {DefaultKeyTTLSeconds: i(7 * day), SpendTimezone: s("Nowhere")},
+		"a negative learning period":     {LearningPeriodSeconds: i(-1)},
+		"a learning period over 90 days": {LearningPeriodSeconds: i(91 * day)},
 	} {
 		if _, err := in.svc.UpdateSettings(as("owner"), u); code(err) != admin.CodeInvalid {
 			t.Errorf("%s = %v, want invalid", name, err)
@@ -112,5 +115,24 @@ func TestUpdateSettingsRefusesBadValues(t *testing.T) {
 func equalSettings(a, b admin.Settings) bool {
 	return a.MaxKeyLifetimeSeconds == b.MaxKeyLifetimeSeconds && a.DefaultKeyTTLSeconds == b.DefaultKeyTTLSeconds &&
 		a.SpendTimezone == b.SpendTimezone && slices.Equal(a.SoftBudgetPercents, b.SoftBudgetPercents) &&
-		a.ExposeClientAddresses == b.ExposeClientAddresses
+		a.ExposeClientAddresses == b.ExposeClientAddresses && a.LearningPeriodSeconds == b.LearningPeriodSeconds
+}
+
+// The learning period is how long a key's location rules only record (#89). It
+// has a default, a setting, and 0 for no learning period at all.
+func TestTheLearningPeriodIsASettingThatMayBeZero(t *testing.T) {
+	in := newInstall(t)
+	for _, secs := range []int64{0, 3600, 30 * day, 90 * day} {
+		if _, err := in.svc.UpdateSettings(as("owner"), admin.SettingsUpdate{LearningPeriodSeconds: &secs}); err != nil {
+			t.Fatalf("learning period of %d s = %v", secs, err)
+		}
+		got, err := in.svc.Settings(as("owner"))
+		if err != nil || got.LearningPeriodSeconds != secs {
+			t.Errorf("Settings after setting %d = %+v, %v", secs, got, err)
+		}
+	}
+	e := in.latest(t, 1)[0]
+	if e.TargetID != "learning_period" || e.Action != "settings.set" {
+		t.Errorf("audit entry = %+v, want settings.set of learning_period", e)
+	}
 }

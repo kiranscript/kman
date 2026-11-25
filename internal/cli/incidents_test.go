@@ -478,3 +478,24 @@ func TestIncidentsFollowDoesNotReprintIncidentsPastTheLimit(t *testing.T) {
 		t.Errorf("follow reprinted an older incident as a change:\n%s", stdout.String())
 	}
 }
+
+// #89: the timeline says what was new, what the key normally does, and, with
+// addresses exposed, the networks it normally uses.
+func TestIncidentShowSaysWhatWasNewAndWhatIsUsual(t *testing.T) {
+	in, k := withIncident(t)
+	in.detect(t, k.ID, "new_network", store.SeverityLow, store.Evidence{Address: "198.51.100.9", Network: "198.51.100.0/24",
+		Observed: "new network", Baseline: "1 usual network", Usual: "203.0.113.0/24 (40 requests)", Detail: "the request was refused (address_not_allowed)"})
+	out := in.kman(t, "incident", "show", "1")
+	for _, want := range []string{"observed new network, baseline 1 usual network", "the request was refused (address_not_allowed)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("show lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "203.0.113.0/24") || strings.Contains(out, "198.51.100") {
+		t.Errorf("show gave out a network while addresses are withheld:\n%s", out)
+	}
+	in.kman(t, "settings", "set", "expose_client_addresses", "true")
+	if out := in.kman(t, "incident", "show", "1"); !strings.Contains(out, "usual networks 203.0.113.0/24 (40 requests)") {
+		t.Errorf("with the setting on, show lacks the usual networks:\n%s", out)
+	}
+}

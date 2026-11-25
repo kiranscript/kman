@@ -50,11 +50,11 @@ The audit log is a producer, so the change and its alert commit in one transacti
 
 With the default `--min-severity medium`, a channel hears about the first two groups. A key that is used again and again alerts once per 10 minutes, and the next alert says how many uses it held back.
 
-An incident's own alert (`kind` `incident`) says whether it opened or escalated, its severity, the key, the rules that fired, what the detection saw (the client address too: it goes only to the channel you added), the incident id, and the commands to respond: `kman incident show N`, `ack N`, `key disable <key> --incident N` and `this-was-me N`. A canary's use alerts as before and names its incident, so one use is one alert.
+An incident's own alert (`kind` `incident`) says whether it opened or escalated, its severity, the key, the rules that fired, what the detection saw (the client address too: it goes only to the channel you added), the incident id, and the commands to respond: `kman incident show N`, `ack N`, `key disable <key> --incident N`, `key rotate <key> --incident N` and `this-was-me N`. For a [location rule](incidents.md#location-rules) it also names the new place with its label and the places the key normally uses; a request that is new in several ways is one alert. A canary's use alerts as before and names its incident, so one use is one alert.
 
 Retention's own pass (`data.prune`, actor `system:retention`) is alerted on like any other entry. `kman restore` and `kman rekey` run with the server stopped: they are audited, but no alert is queued or sent for them.
 
-Not yet: incidents and the detection rules, Discord and ntfy.
+Not yet: the rate and spend detection rules, Discord and ntfy.
 
 ## Warnings
 

@@ -54,7 +54,16 @@ func TestMigration0002FillsPlacesFromTheEventsAlreadyStored(t *testing.T) {
 			t.Errorf("place %d = %+v\nwant      %+v", i, got[i], want[i])
 		}
 	}
+	// The learning period began at the key's first forwarded request: the refused
+	// one after it does not count, and a key that was only refused has none.
+	var started int64
+	if err := s.db.QueryRowContext(ctx, `SELECT started_at FROM key_learning WHERE key_id = 'kkkk1111'`).Scan(&started); err != nil || started != toMilli(first) {
+		t.Errorf("key_learning started_at = %d (%v), want the key's first forwarded request at %d", started, err, toMilli(first))
+	}
 	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM key_learning`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("key_learning holds %d rows (%v), want only the key that was forwarded", n, err)
+	}
 	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM baseline_places`).Scan(&n); err != nil || n != 3 {
 		t.Errorf("baseline_places holds %d rows (%v), want only the key's 3 and no client", n, err)
 	}
@@ -181,7 +190,7 @@ func TestIncidentsRefuseWhatBreaksTheStateMachine(t *testing.T) {
 }
 
 func TestADatabaseWithoutTheIncidentTablesIsRefusedWithTheFix(t *testing.T) {
-	for _, table := range []string{"incidents", "detections", "known_sources"} {
+	for _, table := range []string{"incidents", "detections", "known_sources", "key_learning"} {
 		dir := t.TempDir()
 		ctx := context.Background()
 		s := openTest(t, dir)

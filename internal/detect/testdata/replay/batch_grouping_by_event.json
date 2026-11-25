@@ -1,0 +1,69 @@
+{
+ "description": "One batch: the first request is new in country and ASN (one group, one alert) and the second only in client (a group of its own, which escalates because it is a rule the incident has not had, and alerts).",
+ "start": "2026-11-01T09:00:00Z",
+ "keys": [
+  {
+   "name": "app"
+  }
+ ],
+ "steps": [
+  {
+   "at": "0h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "24h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "48h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "72h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "8d",
+   "batch": [
+    {
+     "key": "app",
+     "ip": "198.51.100.7",
+     "country": "DE",
+     "asn": 3320,
+     "as_org": "Deutsche Telekom AG",
+     "client": "openai-python/3"
+    },
+    {
+     "key": "app",
+     "ip": "198.51.100.7",
+     "country": "US",
+     "asn": 64500,
+     "as_org": "Example Net",
+     "client": "curl/8",
+     "at": "8d1s"
+    }
+   ]
+  }
+ ]
+}

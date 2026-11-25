@@ -1,0 +1,63 @@
+scenario: first_place_of_a_kind
+A key used for days with no GeoIP database has no countries or ASNs. A first country and ASN during the learning period are only recorded. For a key that finished learning with none, the first it shows afterwards is raised, because a key used only from private addresses has a network and nothing else, and a thief abroad is exactly that. (Installing a GeoIP database later raises one new_country and new_asn per key, which this was me resolves.)
+
+step 1  0h       during  request  198.51.100.7 openai-python/3
+  nothing raised
+
+step 2  24h      during  request  198.51.100.7 openai-python/3
+  nothing raised
+
+step 3  48h      during  request  198.51.100.7 openai-python/3
+  nothing raised
+
+step 4  72h      during  request  198.51.100.7 openai-python/3
+  nothing raised
+
+step 5  0h       after   request  198.51.100.7 openai-python/3
+  nothing raised
+
+step 6  24h      after   request  198.51.100.7 openai-python/3
+  nothing raised
+
+step 7  48h      after   request  198.51.100.7 openai-python/3
+  nothing raised
+
+step 8  72h      after   request  198.51.100.7 openai-python/3
+  nothing raised
+
+step 9  5d       during  request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 10  9d       during  request  198.51.100.7 DE AS64500 openai-python/3
+  detection #1 incident 1: new_country high
+      observed new country DE
+      baseline US (1 request)
+      from     198.51.100.7
+      network  198.51.100.0/24
+      country  DE
+      as       AS64500 Example Net
+      client   openai-python/3
+  alert: incident 1 opened, high, rules [new_country], about new_country
+
+step 11  9d       after   request  198.51.100.7 US AS64500 openai-python/3
+  detection #2 incident 2: new_country high
+      observed new country US
+      baseline no usual places recorded
+      from     198.51.100.7
+      network  198.51.100.0/24
+      country  US
+      as       AS64500 Example Net
+      client   openai-python/3
+  detection #3 incident 2: new_asn medium
+      observed new ASN AS64500 (Example Net)
+      baseline no usual places recorded
+      from     198.51.100.7
+      network  198.51.100.0/24
+      country  US
+      as       AS64500 Example Net
+      client   openai-python/3
+  alert: incident 2 opened, high, rules [new_country new_asn], about new_country
+
+incidents at the end:
+  #1 during open high rules [new_country], 1 detections, opened 216h0m0s, last fired 216h0m0s
+  #2 after open high rules [new_country new_asn], 2 detections, opened 216h0m0s, last fired 216h0m0s

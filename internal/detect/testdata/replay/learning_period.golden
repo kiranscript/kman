@@ -1,0 +1,31 @@
+scenario: learning_period
+The key is refused from Germany first (that is a place, but not a forwarded request, so no learning period starts), forwarded from the US on day 1, and learns until day 8. A new country at 7d23h59m into it is only recorded; one a minute later is raised. Germany, already seen when refused, is not new.
+
+step 1  0h       app     blocked  (address_not_allowed) 203.0.113.9 DE AS64500 curl/8
+  nothing raised
+
+step 2  24h      app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 3  72h      app     request  198.51.100.7 FR AS64500 openai-python/3
+  nothing raised
+
+step 4  191h59m  app     request  198.51.100.7 NL AS64500 openai-python/3
+  nothing raised
+
+step 5  192h     app     request  198.51.100.7 BE AS64500 openai-python/3
+  detection #1 incident 1: new_country high
+      observed new country BE
+      baseline NL (1 request), FR (1 request), US (1 request)
+      from     198.51.100.7
+      network  198.51.100.0/24
+      country  BE
+      as       AS64500 Example Net
+      client   openai-python/3
+  alert: incident 1 opened, high, rules [new_country], about new_country
+
+step 6  216h     app     request  203.0.113.9 DE AS64500 openai-python/3
+  nothing raised
+
+incidents at the end:
+  #1 app open high rules [new_country], 1 detections, opened 192h0m0s, last fired 192h0m0s

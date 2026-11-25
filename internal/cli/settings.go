@@ -69,6 +69,23 @@ var settings = []setting{
 		},
 	},
 	{
+		name: "learning_period",
+		get: func(s admin.Settings) string {
+			if s.LearningPeriodSeconds == 0 {
+				return "none"
+			}
+			return formatSeconds(s.LearningPeriodSeconds)
+		},
+		parse: func(v string, u *admin.SettingsUpdate) error {
+			n, err := parseLearningPeriod(v)
+			if err != nil {
+				return err
+			}
+			u.LearningPeriodSeconds = &n
+			return nil
+		},
+	},
+	{
 		name: "soft_budget_defaults",
 		get: func(s admin.Settings) string {
 			if len(s.SoftBudgetPercents) == 0 {
@@ -210,6 +227,31 @@ func parseSeconds(v string) (int64, error) {
 	return 0, errors.New("want a duration such as 90d, 36h or 1h30m (never is not allowed)")
 }
 
+// parseLearningPeriod parses a learning period: a duration as parseSeconds takes
+// it, or none, 0, 0s or 0d for no learning period. A period under a second would
+// be stored as none, so it is refused rather than read as that.
+func parseLearningPeriod(v string) (int64, error) {
+	if v == "none" {
+		return 0, nil
+	}
+	bad := errors.New("want a duration such as 7d, 36h or 1h30m, at least 1s, or none for no learning period")
+	if n, ok := strings.CutSuffix(v, "d"); ok {
+		days, err := strconv.ParseInt(n, 10, 64)
+		if err != nil || days < 0 || days > 100000 {
+			return 0, bad
+		}
+		return days * int64(day/time.Second), nil
+	}
+	if v == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 || (d > 0 && d < time.Second) {
+		return 0, bad
+	}
+	return int64(d / time.Second), nil
+}
+
 // formatSeconds prints whole days as 90d and anything else as a Go
 // duration, such as 36h.
 func formatSeconds(n int64) string {
@@ -218,6 +260,12 @@ func formatSeconds(n int64) string {
 		return strconv.FormatInt(int64(d/day), 10) + "d"
 	}
 	s := d.String()
-	s = strings.TrimSuffix(s, "0s")
-	return strings.TrimSuffix(s, "0m")
+	// Drop a zero unit only: the 0 of 1h30m or 10m is a digit of the one before.
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
 }

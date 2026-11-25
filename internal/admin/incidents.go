@@ -95,6 +95,7 @@ type IncidentDetection struct {
 // expose_client_addresses setting is on; everything else always is given.
 type IncidentEvidence struct {
 	Address         string `json:"address,omitempty" doc:"The client address. Left out unless expose_client_addresses is on."`
+	Usual           string `json:"usual,omitempty" doc:"For a new network, the networks the key normally uses, busiest first. Left out unless expose_client_addresses is on."`
 	Network         string `json:"network,omitempty" doc:"The network (IPv4 /24, IPv6 /64). Left out unless expose_client_addresses is on."`
 	AddressWithheld bool   `json:"address_withheld,omitempty" doc:"There is an address or network, which is left out because expose_client_addresses is off."`
 	Country         string `json:"country,omitempty"`
@@ -265,14 +266,14 @@ func evidenceDTO(raw string, expose bool) (IncidentEvidence, bool) {
 		return IncidentEvidence{}, false
 	}
 	out := IncidentEvidence{Country: ev.Country, ASN: ev.ASN, ASOrg: ev.ASOrg, Client: ev.Client, Observed: ev.Observed, Baseline: ev.Baseline, Detail: ev.Detail}
-	if ev.Address == "" && ev.Network == "" {
+	if ev.Address == "" && ev.Network == "" && ev.Usual == "" {
 		return out, false
 	}
 	if !expose {
 		out.AddressWithheld = true
 		return out, true
 	}
-	out.Address, out.Network = ev.Address, ev.Network
+	out.Address, out.Network, out.Usual = ev.Address, ev.Network, ev.Usual
 	return out, false
 }
 

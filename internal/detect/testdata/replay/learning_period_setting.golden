@@ -1,0 +1,83 @@
+scenario: learning_period_setting
+The install-wide setting is 2 days; one key keeps it, one has a policy of 5 minutes and one has none at all. The same new country on day 1 is raised for the key whose period is 5 minutes and the one with none, and only recorded for the other two until their periods are over; on day 3 the install-wide one is over.
+
+step 1  0h       setting request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 2  0h       short   request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 3  0h       none    request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 4  0h       long    request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 5  24h      setting request  198.51.100.7 DE AS64500 openai-python/3
+  nothing raised
+
+step 6  24h      short   request  198.51.100.7 DE AS64500 openai-python/3
+  detection #1 incident 1: new_country high
+      observed new country DE
+      baseline US (1 request)
+      from     198.51.100.7
+      network  198.51.100.0/24
+      country  DE
+      as       AS64500 Example Net
+      client   openai-python/3
+  alert: incident 1 opened, high, rules [new_country], about new_country
+
+step 7  24h      none    request  198.51.100.7 DE AS64500 openai-python/3
+  detection #2 incident 2: new_country high
+      observed new country DE
+      baseline US (1 request)
+      from     198.51.100.7
+      network  198.51.100.0/24
+      country  DE
+      as       AS64500 Example Net
+      client   openai-python/3
+  alert: incident 2 opened, high, rules [new_country], about new_country
+
+step 8  24h      long    request  198.51.100.7 DE AS64500 openai-python/3
+  nothing raised
+
+step 9  72h      setting request  198.51.100.7 FR AS64500 openai-python/3
+  detection #3 incident 3: new_country high
+      observed new country FR
+      baseline DE (1 request), US (1 request)
+      from     198.51.100.7
+      network  198.51.100.0/24
+      country  FR
+      as       AS64500 Example Net
+      client   openai-python/3
+  alert: incident 3 opened, high, rules [new_country], about new_country
+
+step 10  72h      short   request  198.51.100.7 FR AS64500 openai-python/3
+  detection #4 incident 1: new_country high
+      observed new country FR
+      baseline US (1 request)
+      from     198.51.100.7
+      network  198.51.100.0/24
+      country  FR
+      as       AS64500 Example Net
+      client   openai-python/3
+  alert: incident 1 escalated, high, rules [new_country], about new_country
+
+step 11  72h      none    request  198.51.100.7 FR AS64500 openai-python/3
+  detection #5 incident 2: new_country high
+      observed new country FR
+      baseline US (1 request)
+      from     198.51.100.7
+      network  198.51.100.0/24
+      country  FR
+      as       AS64500 Example Net
+      client   openai-python/3
+  alert: incident 2 escalated, high, rules [new_country], about new_country
+
+step 12  72h      long    request  198.51.100.7 FR AS64500 openai-python/3
+  nothing raised
+
+incidents at the end:
+  #1 short open high rules [new_country], 2 detections, opened 24h0m0s, last fired 72h0m0s
+  #2 none open high rules [new_country], 2 detections, opened 24h0m0s, last fired 72h0m0s
+  #3 setting open high rules [new_country], 1 detections, opened 72h0m0s, last fired 72h0m0s

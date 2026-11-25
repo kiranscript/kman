@@ -1,0 +1,42 @@
+scenario: refused_request
+An address lock refuses a request from a new country; the refusal is a place and a detection, so the operator hears about a leak the lock stopped. The detection says it was refused and why.
+
+step 1  0h       app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 2  24h      app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 3  48h      app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 4  72h      app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 5  8d       app     blocked  (address_not_allowed) 203.0.113.9 DE AS64500 openai-python/3
+  detection #1 incident 1: new_country high
+      observed new country DE
+      baseline US (4 requests)
+      detail   the request was refused (address_not_allowed)
+      from     203.0.113.9
+      network  203.0.113.0/24
+      country  DE
+      as       AS64500 Example Net
+      client   openai-python/3
+  detection #2 incident 1: new_network low
+      observed new network
+      baseline 1 usual network
+      usual    198.51.100.0/24 (4 requests)
+      detail   the request was refused (address_not_allowed)
+      from     203.0.113.9
+      network  203.0.113.0/24
+      country  DE
+      as       AS64500 Example Net
+      client   openai-python/3
+  alert: incident 1 opened, high, rules [new_country new_network], about new_country
+
+step 6  8d1m     app     blocked  (address_not_allowed) 203.0.113.9 DE AS64500 openai-python/3
+  nothing raised
+
+incidents at the end:
+  #1 app open high rules [new_country new_network], 2 detections, opened 192h0m0s, last fired 192h0m0s

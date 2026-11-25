@@ -638,3 +638,24 @@ func TestAnIncidentOnACanaryResolvesWhenTheCanaryIsRevoked(t *testing.T) {
 		t.Errorf("incident = %+v", i)
 	}
 }
+
+// #89: a new network's detection lists the networks the key normally uses, which
+// are addresses, so they are withheld with the rest; what is usual in names that
+// are not addresses (countries, ASNs, clients) is always given.
+func TestTheUsualNetworksOfANewNetworkDetectionAreWithheldLikeAddresses(t *testing.T) {
+	in, app, _ := withIncident(t)
+	in.detect(t, app.Key.ID, "new_network", store.SeverityLow, store.Evidence{Address: "198.51.100.9", Network: "198.51.100.0/24",
+		Observed: "new network", Baseline: "2 usual networks", Usual: "203.0.113.0/24 (40 requests), 192.0.2.0/24 (2 requests)"})
+	d, err := in.svc.GetIncident(as("owner"), admin.IncidentRef{ID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := d.Detections[1].Evidence
+	if got.Usual != "" || !got.AddressWithheld || got.Baseline != "2 usual networks" || got.Observed != "new network" {
+		t.Errorf("evidence = %+v, want the usual networks withheld and the counts and name given", got)
+	}
+	in.exposeClients(t, true)
+	if d, err = in.svc.GetIncident(as("owner"), admin.IncidentRef{ID: 1}); err != nil || d.Detections[1].Evidence.Usual == "" {
+		t.Errorf("with the setting on, usual = %q (%v), want the networks", d.Detections[1].Evidence.Usual, err)
+	}
+}

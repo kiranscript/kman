@@ -297,8 +297,8 @@ func (tx *Tx) AuditEntriesForIncident(incidentID int64) ([]AuditEntry, error) {
 }
 
 // Evidence is what a detection saw, as detections.evidence_json holds it. An
-// address is personal data (ADR 0010): Address and Network are the only fields
-// that may hold one, so the admin API withholds exactly those unless
+// address is personal data (ADR 0010): Address, Network and Usual are the only
+// fields that may hold one, so the admin API withholds exactly those unless
 // expose_client_addresses is on. Observed, Baseline and Detail say numbers and
 // names, and a rule never puts an address in them.
 type Evidence struct {
@@ -311,4 +311,8 @@ type Evidence struct {
 	Observed string `json:"observed,omitempty"`
 	Baseline string `json:"baseline,omitempty"`
 	Detail   string `json:"detail,omitempty"`
+	// Usual lists the networks a key normally uses, when a detection is about a
+	// new network: they are addresses, so the admin API withholds them like
+	// Address and Network.
+	Usual string `json:"usual,omitempty"`
 }

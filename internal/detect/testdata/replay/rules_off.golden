@@ -1,0 +1,86 @@
+scenario: rules_off
+A key turns off new_country and new_client in its policy, so a request new in every way raises only new_asn and new_network (one alert). Another key, with nothing turned off, gets all four.
+
+step 1  0h       app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 2  24h      app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 3  48h      app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 4  72h      app     request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 5  0h       other   request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 6  24h      other   request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 7  48h      other   request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 8  72h      other   request  198.51.100.7 US AS64500 openai-python/3
+  nothing raised
+
+step 9  8d       app     request  203.0.113.9 DE AS3320 curl/8
+  detection #1 incident 1: new_asn medium
+      observed new ASN AS3320 (Deutsche Telekom AG)
+      baseline AS64500 Example Net (4 requests)
+      from     203.0.113.9
+      network  203.0.113.0/24
+      country  DE
+      as       AS3320 Deutsche Telekom AG
+      client   curl/8
+  detection #2 incident 1: new_network low
+      observed new network
+      baseline 1 usual network
+      usual    198.51.100.0/24 (4 requests)
+      from     203.0.113.9
+      network  203.0.113.0/24
+      country  DE
+      as       AS3320 Deutsche Telekom AG
+      client   curl/8
+  alert: incident 1 opened, medium, rules [new_asn new_network], about new_asn
+
+step 10  8d       other   request  203.0.113.9 DE AS3320 curl/8
+  detection #3 incident 2: new_country high
+      observed new country DE
+      baseline US (4 requests)
+      from     203.0.113.9
+      network  203.0.113.0/24
+      country  DE
+      as       AS3320 Deutsche Telekom AG
+      client   curl/8
+  detection #4 incident 2: new_asn medium
+      observed new ASN AS3320 (Deutsche Telekom AG)
+      baseline AS64500 Example Net (4 requests)
+      from     203.0.113.9
+      network  203.0.113.0/24
+      country  DE
+      as       AS3320 Deutsche Telekom AG
+      client   curl/8
+  detection #5 incident 2: new_client medium
+      observed new client curl/8
+      baseline openai-python/3 (4 requests)
+      from     203.0.113.9
+      network  203.0.113.0/24
+      country  DE
+      as       AS3320 Deutsche Telekom AG
+      client   curl/8
+  detection #6 incident 2: new_network low
+      observed new network
+      baseline 1 usual network
+      usual    198.51.100.0/24 (4 requests)
+      from     203.0.113.9
+      network  203.0.113.0/24
+      country  DE
+      as       AS3320 Deutsche Telekom AG
+      client   curl/8
+  alert: incident 2 opened, high, rules [new_country new_asn new_client new_network], about new_country
+
+incidents at the end:
+  #1 app open medium rules [new_asn new_network], 2 detections, opened 192h0m0s, last fired 192h0m0s
+  #2 other open high rules [new_country new_asn new_client new_network], 4 detections, opened 192h0m0s, last fired 192h0m0s

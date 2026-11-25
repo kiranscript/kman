@@ -1,0 +1,52 @@
+{
+ "description": "Learning ends at day 7 for this key (it started with its first request). A batch lists a request at 7d10m first and one from the same new country at 6d23h59m second: the place was first seen inside the learning period, so nothing is raised. The same country from a later request is not new.",
+ "start": "2026-11-01T09:00:00Z",
+ "keys": [
+  {
+   "name": "app"
+  }
+ ],
+ "steps": [
+  {
+   "at": "0h",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "US",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  },
+  {
+   "at": "1h",
+   "batch": [
+    {
+     "key": "app",
+     "ip": "198.51.100.7",
+     "country": "DE",
+     "asn": 64500,
+     "as_org": "Example Net",
+     "client": "openai-python/3",
+     "at": "7d10m"
+    },
+    {
+     "key": "app",
+     "ip": "198.51.100.7",
+     "country": "DE",
+     "asn": 64500,
+     "as_org": "Example Net",
+     "client": "openai-python/3",
+     "at": "6d23h59m"
+    }
+   ]
+  },
+  {
+   "at": "8d",
+   "key": "app",
+   "ip": "198.51.100.7",
+   "country": "DE",
+   "asn": 64500,
+   "as_org": "Example Net",
+   "client": "openai-python/3"
+  }
+ ]
+}

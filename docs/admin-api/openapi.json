@@ -1260,6 +1260,10 @@
           "observed": {
             "description": "What the rule saw, for a rule that compares: a rate, a spend, a place.",
             "type": "string"
+          },
+          "usual": {
+            "description": "For a new network, the networks the key normally uses, busiest first. Left out unless expose_client_addresses is on.",
+            "type": "string"
           }
         },
         "required": [],
@@ -2195,6 +2199,11 @@
             "description": "Whether the admin API may tell which client addresses used a key (GET /keys/{id}/clients), the networks a key was used from (GET /keys/{id}/places), and the client address of each event (GET /events and its stream). Off by default: an address is personal data, and it stays out of the API until an operator turns it on. Turning it on and off is audited.",
             "type": "boolean"
           },
+          "learning_period_seconds": {
+            "description": "How long, from its first forwarded request, a key's location rules (a new country, ASN, network or client) only record where it is used from, before they raise detections. A key's policy may set its own (learning_period). 0 is no learning period. Default 7 days, at most 90. A change applies at once, to keys that have already learned too: lowering it ends learning for the keys that have passed the shorter period, and raising it puts keys that had finished learning back into learning until the longer period, counted from each key's first forwarded request, has passed.",
+            "format": "int64",
+            "type": "integer"
+          },
           "max_key_lifetime_seconds": {
             "description": "The longest any virtual key may stay valid. No key is created or extended past it. Default 365 days.",
             "format": "int64",
@@ -2217,6 +2226,7 @@
           "default_key_ttl_seconds",
           "spend_timezone",
           "expose_client_addresses",
+          "learning_period_seconds",
           "soft_budget_defaults"
         ],
         "type": "object"
@@ -2230,6 +2240,10 @@
           },
           "expose_client_addresses": {
             "type": "boolean"
+          },
+          "learning_period_seconds": {
+            "format": "int64",
+            "type": "integer"
           },
           "max_key_lifetime_seconds": {
             "format": "int64",

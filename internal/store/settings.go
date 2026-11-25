@@ -1,6 +1,11 @@
 package store
 
-import "time"
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"time"
+)
 
 // Setting is one row of the settings table: what an operator changes while
 // kman runs, through the admin API. The admin module owns the keys, their
@@ -53,4 +58,31 @@ func (tx *Tx) Settings() ([]Setting, error) {
 		return nil, typed(err, "list settings")
 	}
 	return out, nil
+}
+
+// SettingLearningPeriod is the key of the learning_period setting, a whole
+// number of seconds (#89). detect reads it in the transaction that raises a
+// location rule, so it is the one setting both modules know by name.
+const SettingLearningPeriod = "learning_period"
+
+// DefaultLearningPeriod is the learning period of an install that never set one.
+const DefaultLearningPeriod = 7 * 24 * time.Hour
+
+// LearningPeriod returns the install's learning period: the learning_period
+// setting, or DefaultLearningPeriod when none was set. A stored value that is
+// not a number of seconds is an error.
+func (tx *Tx) LearningPeriod() (time.Duration, error) {
+	var raw string
+	err := tx.tx.QueryRowContext(tx.ctx, `SELECT value_json FROM settings WHERE key = ?`, SettingLearningPeriod).Scan(&raw)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return DefaultLearningPeriod, nil
+	case err != nil:
+		return 0, typed(err, "read the learning period")
+	}
+	var secs int64
+	if err := json.Unmarshal([]byte(raw), &secs); err != nil || secs < 0 {
+		return 0, typed(errors.New("the learning_period setting holds "+raw), "read the learning period")
+	}
+	return time.Duration(secs) * time.Second, nil
 }

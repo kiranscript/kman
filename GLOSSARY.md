@@ -151,7 +151,7 @@ The events as they happen, or the recent ones: `kman events`, and `kman events -
 _Avoid_: Request log, activity log
 
 **Place**:
-Where a virtual key has been used from, at one of three grains: a country, an autonomous system (ASN), or a network (an IPv4 /24 or an IPv6 /64); and, listed with them, the **client** that used it. kman keeps each place a key turns up at, with when it was first and last seen and how many requests it forwarded and refused, forever. `kman key places` lists them.
+Where a virtual key has been used from, at one of three grains: a country, an autonomous system (ASN), or a network (an IPv4 /24 or an IPv6 /64); and, listed with them, the **client** that used it. A place is **new** the first time a key turns up at it, once its learning period is over, and that is what the location rules raise. kman keeps each place a key turns up at, with when it was first and last seen and how many requests it forwarded and refused, forever. `kman key places` lists them.
 _Avoid_: Source (a known source is an operator's label for a place), location
 
 **Client**:
@@ -166,7 +166,10 @@ _Avoid_: Caller IP, source IP
 What normal use of one virtual key looks like: its usual request rate, spend, and the places it is used from.
 
 **Learning period**:
-The time after a key is created during which kman builds its baseline, and the rules that compare against the baseline only record.
+The time after a key's first forwarded request (not its creation, and not a refusal) during which kman builds its baseline, and the rules that compare against the baseline only record. 7 days by default: the `learning_period` setting, or the `learning_period` of a key's policy. A key that has only been refused has not started one. It is counted from that first request, so raising it puts a key that had finished learning back into it.
+
+**Location rule**:
+A detection rule that compares where a key is used from with its places: **new country** (high), **new ASN** (medium), **new network** (low) and **new client** (medium). After the learning period, the first use from a place the key has never been used from, forwarded or refused, raises it on the key's incident, unless a known source covers it, the key's policy turned the rule off, or the key is a canary. Once learning is over, the first place of a kind counts too; what a key had while learning is its baseline.
 
 **Detection**:
 One firing of one rule against one virtual key, with its evidence.
@@ -195,7 +198,7 @@ _Avoid_: Notification queue
 The path that takes the use of a disabled key or a canary key from the gateway to the alert outbox without waiting behind ordinary events. Its alerts say where the request came from (and, for a canary, where it was planted) and never what the request said.
 
 **Known source**:
-A labelled CIDR, country, ASN or client that the operator has said is legitimate, either for every key or for one key. Use from a known source never counts as a new location. A CIDR is no wider than an IPv4 /16 or an IPv6 /32, and the clients `none` and `unknown` are refused, so one cannot silence everything. It never silences a canary: a canary has an ignore list of its own.
+A labelled CIDR, country, ASN or client that the operator has said is legitimate, either for every key or for one key. The location rules do not raise what it names: a CIDR silences every rule for a request from inside it, and a country, ASN or client silences only a new place of its own kind. A CIDR is no wider than an IPv4 /16 or an IPv6 /32, and the clients `none` and `unknown` are refused, so one cannot silence everything. It never silences a canary: a canary has an ignore list of its own.
 _Avoid_: Allowlist (an allowlist refuses everything else; a known source refuses nothing)
 
 **This was me**:

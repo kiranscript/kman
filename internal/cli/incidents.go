@@ -344,6 +344,9 @@ func evidenceText(e admin.IncidentEvidence) string {
 	if e.Observed != "" || e.Baseline != "" {
 		parts = append(parts, "observed "+orDash(cleanDashboard(e.Observed))+", baseline "+orDash(cleanDashboard(e.Baseline)))
 	}
+	if e.Usual != "" {
+		parts = append(parts, "usual networks "+cleanDashboard(e.Usual))
+	}
 	if e.Detail != "" {
 		parts = append(parts, cleanDashboard(e.Detail))
 	}
