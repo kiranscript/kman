@@ -1018,7 +1018,7 @@
             "type": "string"
           },
           "detection_count": {
-            "description": "Every detection raised, repeats included. The detail lists at most 100 of them, its escalations first among them.",
+            "description": "Every detection raised, repeats included. The detail lists at most 100 of them, every escalation included when there are 100 or fewer.",
             "format": "int64",
             "type": "integer"
           },
@@ -1107,7 +1107,7 @@
             "type": "boolean"
           },
           "detection_count": {
-            "description": "Every detection raised, repeats included. The detail lists at most 100 of them, its escalations first among them.",
+            "description": "Every detection raised, repeats included. The detail lists at most 100 of them, every escalation included when there are 100 or fewer.",
             "format": "int64",
             "type": "integer"
           },

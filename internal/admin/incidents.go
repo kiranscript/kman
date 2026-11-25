@@ -54,7 +54,7 @@ type Incident struct {
 	Quiet          bool       `json:"quiet,omitempty" doc:"Nothing has fired for an hour. Display only: the incident is still unresolved, and a new firing on a quiet incident alerts again."`
 	Severity       string     `json:"severity" doc:"low, medium, high or critical: the highest of its detections."`
 	Rules          []string   `json:"rules" doc:"The rules that have fired, in the order they first did."`
-	DetectionCount int64      `json:"detection_count" doc:"Every detection raised, repeats included. The detail lists at most 100 of them, its escalations first among them."`
+	DetectionCount int64      `json:"detection_count" doc:"Every detection raised, repeats included. The detail lists at most 100 of them, every escalation included when there are 100 or fewer."`
 	OpenedAt       time.Time  `json:"opened_at"`
 	LastFiredAt    time.Time  `json:"last_fired_at"`
 	AcknowledgedAt *time.Time `json:"acknowledged_at,omitempty"`

@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -22,13 +23,15 @@ func TestShownDetectionsTakeEveryRowPastTheFirstFiringsAsAnEscalation(t *testing
 	for i := range recordedFirings + 3 {
 		ds = append(ds, store.Detection{ID: int64(i + 1), At: t0.Add(time.Duration(i) * time.Second), Rule: "new_country", Severity: store.SeverityMedium})
 	}
-	got := shownDetections(ds, 10)
-	if len(got) != 10 || got[0].ID != 1 || got[7].ID != recordedFirings+1 || got[9].ID != recordedFirings+3 {
-		var ids []int64
-		for _, d := range got {
-			ids = append(ids, d.ID)
-		}
-		t.Errorf("shown %v, want the first, then the oldest and newest of the rest, and the three rows past the firings", ids)
+	var got []int64
+	for _, d := range shownDetections(ds, 10) {
+		got = append(got, d.ID)
+	}
+	// The first and the three past the firings, then 3 of the oldest and 3 of
+	// the newest of the rest.
+	want := []int64{1, 2, 3, 4, 98, 99, 100, 101, 102, 103}
+	if !slices.Equal(got, want) {
+		t.Errorf("shown %v, want %v", got, want)
 	}
 }
 
