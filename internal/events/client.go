@@ -71,7 +71,9 @@ func ClientOf(userAgent string) string {
 		return ClientUnknown
 	}
 	start := i
+	hasDigit := false
 	for i < len(ua) && isNameByte(ua[i]) {
+		hasDigit = hasDigit || ua[i]-'0' < 10
 		i++
 	}
 	name := ua[start:i]
@@ -90,33 +92,39 @@ func ClientOf(userAgent string) string {
 			return ClientUnknown
 		}
 	}
-	if containsFold(name, "kmn_") {
+	if strings.IndexByte(name, '_') >= 0 && containsFold(name, "kmn_") { // no "kmn_" without its '_'
 		return ClientUnknown
 	}
-	if runs, n := digitRuns(name); runs > maxNameDigitRuns || n > maxNameDigits {
-		return ClientUnknown
+	if hasDigit {
+		if runs, n := digitRuns(name); runs > maxNameDigitRuns || n > maxNameDigits {
+			return ClientUnknown
+		}
 	}
 	major, word := "", ""
 	if i < len(ua) && ua[i] == '/' {
 		major, word = versionAfterSlash(ua[i+1:])
 		// A version that runs to the end of the window may be the start of a
 		// longer number, which is no version.
-		end := i + 1 + len(major)
-		if word != "" {
-			end += len(word) + 1
-		}
-		if major != "" && end == len(ua) && len(userAgent) > userAgentWindow {
-			major, word = "", ""
+		if major != "" && len(userAgent) > userAgentWindow {
+			end := i + 1 + len(major)
+			if word != "" {
+				end += len(word) + 1
+			}
+			if end == len(ua) {
+				major, word = "", ""
+			}
 		}
 	}
 	// A token is long and holds a digit: the name as it is recorded, with an
 	// SDK's word, is what is judged, so that a recorded client is one again.
-	product := len(name)
-	if word != "" {
-		product += 1 + len(word)
-	}
-	if product >= minSecretLength && strings.ContainsAny(name, "0123456789") {
-		return ClientUnknown
+	if hasDigit {
+		product := len(name)
+		if word != "" {
+			product += 1 + len(word)
+		}
+		if product >= minSecretLength {
+			return ClientUnknown
+		}
 	}
 	var out [MaxClientLength]byte
 	n := 0
@@ -124,16 +132,14 @@ func ClientOf(userAgent string) string {
 	if major != "" {
 		room -= 1 + len(major)
 	}
-	put := func(s string) {
-		for j := 0; j < len(s) && n < room; j++ {
-			out[n] = lower(s[j])
-			n++
-		}
+	n += copy(out[:room], name)
+	if word != "" && n < room {
+		out[n] = '-'
+		n++
+		n += copy(out[n:room], word)
 	}
-	put(name)
-	if word != "" {
-		put("-")
-		put(word)
+	for j := range n { // the name and the word, in lower case
+		out[j] = lower(out[j])
 	}
 	if major != "" {
 		out[n] = '/'
@@ -184,7 +190,7 @@ func IsClient(v string) bool {
 func digitRuns(s string) (runs, n int) {
 	in := false
 	for i := 0; i < len(s); i++ {
-		d := s[i] >= '0' && s[i] <= '9'
+		d := s[i]-'0' < 10
 		if d {
 			n++
 			if !in {
