@@ -1537,6 +1537,39 @@ describe('App', () => {
       m.unmount();
     });
 
+    // The wide layout gives the other panels more than a collapsed line, so the
+    // page has to come from the layout that is drawn (#117).
+    it('pages the Keys list by the rows it shows in the wide layout too', async () => {
+      const client = fakeClient();
+      const base = client.keys[0]!;
+      client.keys.length = 0;
+      for (let i = 0; i < 60; i++) client.keys.push({ ...base, id: `k_${pad(i)}`, name: `nocap-${pad(i)}`, policy: {} });
+      const m = mount(client, { columns: 120, rows: 40 });
+      await loaded(m);
+      await m.press('2');
+      const shown = lines(m).filter((l) => /^[│┃] nocap-\d\d/.test(l)).length;
+      await m.press('\u001b[6~'); // PgDn
+      expect(m.screen()).toContain(`${shown} of 60`);
+      await m.press('\u001b[6~');
+      expect(m.screen()).toContain(`${2 * shown - 1} of 60`);
+      await m.press('\u001b[5~'); // PgUp, by the same page
+      expect(m.screen()).toContain(`${shown} of 60`);
+      m.unmount();
+    });
+
+    it('pages the Audit list by the rows it shows in the wide layout too', async () => {
+      const client = fakeClient();
+      client.latestAudit = async () =>
+        Array.from({ length: 60 }, (_, i) => ({ id: i + 1, time: '2026-11-17T12:00:00Z', actor: 'owner', action: 'key.create', target_kind: 'key', target_id: `k_${i}` }));
+      const m = mount(client, { columns: 140, rows: 45 });
+      await loaded(m);
+      await m.press('4');
+      const shown = lines(m).filter((l) => /key\.create +k_\d+/.test(l)).length;
+      await m.press('\u001b[6~');
+      expect(m.screen()).toContain(`${shown} of 60`);
+      m.unmount();
+    });
+
     it('pages the Audit list by the rows it shows', async () => {
       const client = fakeClient();
       client.latestAudit = async () =>
