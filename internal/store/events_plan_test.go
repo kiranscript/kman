@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A busy key's newest page must come from events_by_key in id order. With only
@@ -16,6 +17,8 @@ func TestListEventsForAKeyReadsTheIndexInIDOrderWithoutSorting(t *testing.T) {
 		"a key":              {KeyID: "abcd1234"},
 		"a key, next page":   {KeyID: "abcd1234", BeforeID: 500},
 		"a key and its kind": {KeyID: "abcd1234", Kinds: []string{"blocked"}},
+		"a key since":        {KeyID: "abcd1234", Since: testNow.Add(-7 * 24 * time.Hour)},
+		"a key in a window":  {KeyID: "abcd1234", Since: testNow.Add(-7 * 24 * time.Hour), Until: testNow},
 	} {
 		query, args := listEventsQuery(f, 51)
 		rows, err := s.db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+query, args...)

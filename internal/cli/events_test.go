@@ -368,6 +368,7 @@ func TestEventsFollowSaysWhenKmanEndsTheStreamAndWhenItDroppedEvents(t *testing.
 // A reader that fell behind hears so even when no event follows the drop: the
 // feed may go quiet right after a burst (#108).
 func TestEventsFollowSaysItDroppedEventsWithoutWaitingForTheNextOne(t *testing.T) {
+	t.Cleanup(cli.SetMissedEvery(time.Millisecond))
 	in := newInstall(t).loggedIn(t)
 	release := make(chan struct{})
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

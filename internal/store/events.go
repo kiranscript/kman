@@ -399,11 +399,18 @@ func listEventsQuery(f EventFilter, limit int) (string, []any) {
 	if f.BlockedCode != "" {
 		add("e.blocked_code = ?", f.BlockedCode)
 	}
+	// With a key, the unary plus keeps SQLite off events_key_ts for the time
+	// bounds: it walks events_by_key newest first and checks the time as it
+	// goes, where events_key_ts would read the whole window and sort it.
+	ts := "e.ts"
+	if f.KeyID != "" {
+		ts = "+e.ts"
+	}
 	if !f.Since.IsZero() {
-		add("e.ts >= ?", toMilli(f.Since))
+		add(ts+" >= ?", toMilli(f.Since))
 	}
 	if !f.Until.IsZero() {
-		add("e.ts < ?", toMilli(f.Until))
+		add(ts+" < ?", toMilli(f.Until))
 	}
 	if f.BeforeID > 0 {
 		add("e.id < ?", f.BeforeID)

@@ -29,10 +29,9 @@ const SchemaVersion = 2
 // moves on only by appending a migration.
 var migrations = []migration{migrate0001, migrate0002}
 
-// schemaPart is something a migration creates: a table, or one column of a
-// table that an earlier migration made.
-// schemaPart is a table, a table's column, or (with table naming an index and
-// no column) an index.
+// schemaPart is something a migration creates: a table, an index (named in
+// table, with no column), or one column of a table that an earlier migration
+// made.
 type schemaPart struct{ table, column string }
 
 // unreleased is what each migration that is not in a tagged release creates,

@@ -160,7 +160,7 @@ func eventStatus(e admin.Event) string {
 
 // missedEvery is how often --follow checks whether the stream lost events, so
 // it says so within that time even when no event follows.
-const missedEvery = time.Second
+var missedEvery = time.Second
 
 // eventsFollow prints the stored events the query picks, oldest first, and then
 // every new one as it happens. Interrupting it, which ends ctx, is how it is
