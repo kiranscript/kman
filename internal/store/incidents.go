@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -268,8 +269,21 @@ func (tx *Tx) AddDetection(d Detection) (Detection, error) {
 // Detections returns the detections recorded under an incident, oldest first, at
 // most limit.
 func (tx *Tx) Detections(incidentID int64, limit int) ([]Detection, error) {
-	rows, err := tx.tx.QueryContext(tx.ctx, `SELECT id, incident_id, key_id, ts, rule, severity, evidence_json
+	return tx.detections(`SELECT id, incident_id, key_id, ts, rule, severity, evidence_json
 		FROM detections WHERE incident_id = ? ORDER BY id LIMIT ?`, incidentID, limit)
+}
+
+// NewestDetections returns the newest limit detections recorded under an
+// incident, oldest first.
+func (tx *Tx) NewestDetections(incidentID int64, limit int) ([]Detection, error) {
+	ds, err := tx.detections(`SELECT id, incident_id, key_id, ts, rule, severity, evidence_json
+		FROM detections WHERE incident_id = ? ORDER BY id DESC LIMIT ?`, incidentID, limit)
+	slices.Reverse(ds)
+	return ds, err
+}
+
+func (tx *Tx) detections(query string, incidentID int64, limit int) ([]Detection, error) {
+	rows, err := tx.tx.QueryContext(tx.ctx, query, incidentID, limit)
 	if err != nil {
 		return nil, typed(err, "list detections")
 	}

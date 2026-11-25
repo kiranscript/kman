@@ -149,9 +149,9 @@ func TestACanaryUseOpensACriticalIncidentAndItsAlertNamesIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var eng *detect.Engine
 		in := newInstall(t, func(o *alerts.Options) {
-			o.CanaryIncident = func(tx *store.Tx, keyID string, at time.Time, ev store.Evidence) (int64, error) {
+			o.CanaryIncident = func(tx *store.Tx, keyID string, at time.Time, ev store.Evidence) (int64, bool, error) {
 				out, err := eng.Raise(tx, detect.Detection{KeyID: keyID, Rule: "canary", Severity: store.SeverityCritical, At: at, Evidence: ev, Silent: true})
-				return out.Incident.ID, err
+				return out.Incident.ID, out.Change != detect.Repeated, err
 			}
 		})
 		eng = in.engine()
@@ -209,12 +209,61 @@ func TestACanaryUseOpensACriticalIncidentAndItsAlertNamesIt(t *testing.T) {
 	})
 }
 
+// A canary used again soon after its incident was resolved opens a new incident,
+// and that is news: it alerts even inside the canary's throttle window (#112).
+func TestACanaryReusedRightAfterItsIncidentIsResolvedAlertsForTheNewOne(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var eng *detect.Engine
+		in := newInstall(t, func(o *alerts.Options) {
+			o.CanaryIncident = func(tx *store.Tx, keyID string, at time.Time, ev store.Evidence) (int64, bool, error) {
+				out, err := eng.Raise(tx, detect.Detection{KeyID: keyID, Rule: "canary", Severity: store.SeverityCritical, At: at, Evidence: ev, Silent: true})
+				return out.Incident.ID, out.Change != detect.Repeated, err
+			}
+		})
+		eng = in.engine()
+		in.channel("ch_1", "slack", "hooks.test", "critical", true, "")
+		in.withCanary("cafe0001", "decoy", "the deploy repo's .env")
+		bus, stop := in.priorityLane()
+		defer stop()
+		bus.Emit(canaryUse("cafe0001", "203.0.113.7"))
+		synctest.Wait()
+		if n := len(in.net.received("hooks.test")); n != 1 {
+			t.Fatalf("%d alerts for the first use, want 1", n)
+		}
+		err := in.store.Do(context.Background(), func(tx *store.Tx) error {
+			inc, err := tx.Incident(1)
+			if err != nil {
+				return err
+			}
+			inc.State, inc.Resolution, inc.ResolvedAt, inc.ResolvedBy = store.IncidentResolved, "confirmed", time.Now(), "owner"
+			_, err = tx.UpdateIncident(inc)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Minute) // well inside the canary's 10-minute window
+		bus.Emit(canaryUse("cafe0001", "198.51.100.9"))
+		synctest.Wait()
+		got := in.net.received("hooks.test")
+		if len(got) != 2 || !strings.Contains(got[1].Body, "kman incident show 2") {
+			t.Fatalf("after the resolve: %d alerts, want a second naming incident 2", len(got))
+		}
+		// Its repeats are held back as before.
+		bus.Emit(canaryUse("cafe0001", "198.51.100.9"))
+		synctest.Wait()
+		if n := len(in.net.received("hooks.test")); n != 2 {
+			t.Errorf("a repeat on the new incident alerted: %d alerts", n)
+		}
+	})
+}
+
 // An address on a canary's ignore list is no use at all: it opens no incident.
 func TestAnIgnoredCanaryUseOpensNoIncident(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		called := 0
 		in := newInstall(t, func(o *alerts.Options) {
-			o.CanaryIncident = func(*store.Tx, string, time.Time, store.Evidence) (int64, error) { called++; return 1, nil }
+			o.CanaryIncident = func(*store.Tx, string, time.Time, store.Evidence) (int64, bool, error) { called++; return 1, true, nil }
 		})
 		in.channel("ch_1", "slack", "hooks.test", "critical", true, "")
 		in.withCanary("cafe0001", "decoy", "the wiki", "192.0.2.0/24")
@@ -233,7 +282,7 @@ func TestADisabledKeyUseOpensNoIncident(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		called := 0
 		in := newInstall(t, func(o *alerts.Options) {
-			o.CanaryIncident = func(*store.Tx, string, time.Time, store.Evidence) (int64, error) { called++; return 1, nil }
+			o.CanaryIncident = func(*store.Tx, string, time.Time, store.Evidence) (int64, bool, error) { called++; return 1, true, nil }
 		})
 		in.channel("ch_1", "slack", "hooks.test", "medium", true, "")
 		in.withKey("abcd1234", "ci-bot")

@@ -24,12 +24,24 @@ const (
 	ResolutionExpired       = store.ResolutionExpired
 )
 
+// IncidentQuietAfter is how long an unresolved incident goes without a firing
+// before it is quiet; a firing on a quiet incident is an escalation.
+const IncidentQuietAfter = store.IncidentQuietAfter
+
 // Limits on listing incidents.
 const (
 	defaultIncidentLimit = 50
 	maxIncidentLimit     = 500
 	// maxShownDetections is how many detections an incident's detail gives out.
 	maxShownDetections = 100
+	// recordedFirings is detect.MaxDetectionsPerIncident: an incident's first
+	// rows are every firing, and the rows after them are only escalations.
+	recordedFirings = 100
+	// maxNewestDetections bounds the rows read after the first recordedFirings.
+	// Escalations are rare (a new rule, a higher severity, or a firing after an
+	// hour of quiet), so only an incident left open for over a year holds more,
+	// and then its oldest escalations past the first rows are not read.
+	maxNewestDetections = 10_000
 )
 
 // Incident is the open case for one key: the detections of its rules, grouped,
@@ -42,7 +54,7 @@ type Incident struct {
 	Quiet          bool       `json:"quiet,omitempty" doc:"Nothing has fired for an hour. Display only: the incident is still unresolved, and a new firing on a quiet incident alerts again."`
 	Severity       string     `json:"severity" doc:"low, medium, high or critical: the highest of its detections."`
 	Rules          []string   `json:"rules" doc:"The rules that have fired, in the order they first did."`
-	DetectionCount int64      `json:"detection_count" doc:"Every detection raised, repeats included. The detail lists the first 100 of them."`
+	DetectionCount int64      `json:"detection_count" doc:"Every detection raised, repeats included. The detail lists at most 100 of them, every escalation included when there are 100 or fewer."`
 	OpenedAt       time.Time  `json:"opened_at"`
 	LastFiredAt    time.Time  `json:"last_fired_at"`
 	AcknowledgedAt *time.Time `json:"acknowledged_at,omitempty"`
@@ -74,7 +86,7 @@ type IncidentRef struct {
 // IncidentDetail is an incident with what it recorded and what was done about it.
 type IncidentDetail struct {
 	Incident
-	Detections []IncidentDetection    `json:"detections" doc:"What fired, oldest first, at most 100."`
+	Detections []IncidentDetection    `json:"detections" doc:"What fired, oldest first, at most 100: the detections that escalated the incident (the first and the newest, if there are more), then the oldest and the newest of the rest. detection_count says how many there were."`
 	Actions    []AuditEntry           `json:"actions" doc:"The audit entries that carry the incident's id: its opening and escalations by system:detect, and what operators did about it. With the detections, the timeline."`
 	Candidates []KnownSourceCandidate `json:"known_source_candidates" doc:"The places the detections saw, which this was me can add as known sources. None for a canary."`
 	// AddressesWithheld says an address or network was left out.
@@ -163,7 +175,7 @@ func incidentDTO(tx *store.Tx, inc store.Incident, now time.Time) (Incident, err
 }
 
 func quiet(inc store.Incident, now time.Time) bool {
-	return inc.State != store.IncidentResolved && now.Sub(inc.LastFiredAt) >= store.IncidentQuietAfter
+	return inc.State != store.IncidentResolved && now.Sub(inc.LastFiredAt) >= IncidentQuietAfter
 }
 
 func incidentNotFound(id int64) error {
@@ -226,12 +238,12 @@ func (s *Service) GetIncident(ctx context.Context, req IncidentRef) (IncidentDet
 		if out.Incident, err = incidentDTO(tx, inc, s.now()); err != nil {
 			return err
 		}
-		ds, err := tx.Detections(inc.ID, maxShownDetections)
+		ds, err := readDetections(tx, inc.ID)
 		if err != nil {
 			return err
 		}
 		out.Detections = []IncidentDetection{}
-		for _, d := range ds {
+		for _, d := range shownDetections(ds, maxShownDetections) {
 			ev, withheld := evidenceDTO(d.EvidenceJSON, settings.ExposeClientAddresses)
 			out.AddressesWithheld = out.AddressesWithheld || withheld
 			out.Detections = append(out.Detections, IncidentDetection{ID: d.ID, Time: d.At, Rule: d.Rule, Severity: string(d.Severity), Evidence: ev})
@@ -256,6 +268,84 @@ func (s *Service) GetIncident(ctx context.Context, req IncidentRef) (IncidentDet
 		return nil
 	})
 	return out, err
+}
+
+// readDetections reads an incident's detection rows, oldest first: the first
+// recordedFirings, which are every firing, and the newest maxNewestDetections
+// after them, which are escalations.
+func readDetections(tx *store.Tx, incidentID int64) ([]store.Detection, error) {
+	ds, err := tx.Detections(incidentID, recordedFirings)
+	if err != nil || len(ds) < recordedFirings {
+		return ds, err
+	}
+	tail, err := tx.NewestDetections(incidentID, maxNewestDetections)
+	if err != nil {
+		return nil, err
+	}
+	last := ds[len(ds)-1].ID
+	for _, d := range tail {
+		if d.ID > last {
+			ds = append(ds, d)
+		}
+	}
+	return ds, nil
+}
+
+// shownDetections picks at most limit of an incident's detections (as
+// readDetections reads them), oldest first, to show: every one that escalated
+// it, and then the oldest and the newest of the rest. Every row past the first
+// recordedFirings is an escalation, since detect records nothing else there;
+// among the first, a row escalated if it was the first, a new rule, a higher
+// severity, or a firing an hour or more after every earlier one. If the
+// escalations alone are too many, the first and the newest of them are shown.
+func shownDetections(ds []store.Detection, limit int) []store.Detection {
+	if len(ds) <= limit {
+		return ds
+	}
+	keep := make([]bool, len(ds))
+	var escalations []int
+	rules := map[string]bool{}
+	var top store.Severity
+	var latest time.Time
+	for i, d := range ds {
+		if i == 0 || i >= recordedFirings || !rules[d.Rule] || d.Severity.Rank() > top.Rank() || d.At.Sub(latest) >= store.IncidentQuietAfter {
+			escalations = append(escalations, i)
+		}
+		rules[d.Rule] = true
+		if d.Severity.Rank() > top.Rank() {
+			top = d.Severity
+		}
+		if d.At.After(latest) {
+			latest = d.At
+		}
+	}
+	if len(escalations) > limit {
+		escalations = append(escalations[:1], escalations[len(escalations)-(limit-1):]...)
+	}
+	for _, i := range escalations {
+		keep[i] = true
+	}
+	var rest []int
+	for i := range ds {
+		if !keep[i] {
+			rest = append(rest, i)
+		}
+	}
+	room := min(limit-len(escalations), len(rest))
+	oldest := (room + 1) / 2
+	for _, i := range rest[:oldest] {
+		keep[i] = true
+	}
+	for _, i := range rest[len(rest)-(room-oldest):] {
+		keep[i] = true
+	}
+	out := make([]store.Detection, 0, limit)
+	for i, d := range ds {
+		if keep[i] {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // evidenceDTO reads a detection's evidence, leaving out its address and network
@@ -523,7 +613,7 @@ func (s *Service) ThisWasMe(ctx context.Context, req ThisWasMeRequest) (ThisWasM
 		if err != nil {
 			return nil, err
 		}
-		ds, err := tx.Detections(inc.ID, maxShownDetections)
+		ds, err := readDetections(tx, inc.ID) // every place it saw, not only those shown
 		if err != nil {
 			return nil, err
 		}

@@ -65,7 +65,7 @@ func (s *Service) priorityEvent(held map[string]*throttled, e events.Event) {
 		queued, ignored = false, false
 		var canary *store.Canary
 		var incident int64
-		firedNow := false
+		firedNow, news := false, false
 		if e.Canary {
 			c, err := tx.Canary(e.KeyID)
 			switch {
@@ -86,7 +86,7 @@ func (s *Service) priorityEvent(held map[string]*throttled, e events.Event) {
 					// incident in this transaction, so the incident, the canary's
 					// row and the alert are never apart. The alert below is still
 					// the canary's own, with its own throttle (ADR 0013).
-					if incident, err = s.o.CanaryIncident(tx, e.KeyID, e.Time, store.Evidence{
+					if incident, news, err = s.o.CanaryIncident(tx, e.KeyID, e.Time, store.Evidence{
 						Address: addressOf(e), Country: usableCountry(e.Country), ASN: e.ASN, ASOrg: clean(e.ASOrg), Client: clean(e.Client),
 						Detail: plantedDetail(c),
 					}); err != nil {
@@ -97,7 +97,10 @@ func (s *Service) priorityEvent(held map[string]*throttled, e events.Event) {
 				return err
 			}
 		}
-		if inWindow && !firedNow {
+		// Inside the window only a use that armed the canary's first firing, or
+		// that opened or escalated its incident (a use after the last one was
+		// resolved), alerts: the rest are counted for the next alert.
+		if inWindow && !firedNow && !news {
 			return nil
 		}
 		if t != nil {

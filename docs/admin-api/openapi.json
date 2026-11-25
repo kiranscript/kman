@@ -1018,7 +1018,7 @@
             "type": "string"
           },
           "detection_count": {
-            "description": "Every detection raised, repeats included. The detail lists the first 100 of them.",
+            "description": "Every detection raised, repeats included. The detail lists at most 100 of them, every escalation included when there are 100 or fewer.",
             "format": "int64",
             "type": "integer"
           },
@@ -1107,12 +1107,12 @@
             "type": "boolean"
           },
           "detection_count": {
-            "description": "Every detection raised, repeats included. The detail lists the first 100 of them.",
+            "description": "Every detection raised, repeats included. The detail lists at most 100 of them, every escalation included when there are 100 or fewer.",
             "format": "int64",
             "type": "integer"
           },
           "detections": {
-            "description": "What fired, oldest first, at most 100.",
+            "description": "What fired, oldest first, at most 100: the detections that escalated the incident (the first and the newest, if there are more), then the oldest and the newest of the rest. detection_count says how many there were.",
             "items": {
               "$ref": "#/components/schemas/IncidentDetection"
             },
