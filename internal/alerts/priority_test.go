@@ -485,6 +485,90 @@ func TestCanaryAndDisabledKeyAlertsWaitOnNothingUnder256WayLoad(t *testing.T) {
 	})
 }
 
+// A client hammering a canary and a disabled key while the event writer is busy
+// with ordinary traffic: the lane drops nothing, another canary's first use
+// behind the hammering still alerts at once, the writer stores every event, and
+// the hammering costs the store far fewer transactions than uses (#114).
+func TestAHammeredCanaryUnderLoadHoldsUpNeitherTheWriterNorAnotherCanary(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		in := newInstall(t)
+		in.channel("ch_ok", "slack", "ok.test", "low", true, "")
+		in.withCanary("cafe0001", "decoy", "the deploy repo's .env")
+		in.withCanary("cafe0002", "decoy-2", "the wiki")
+		in.withKey("abcd1234", "ci-bot")
+
+		bus := events.New(events.Options{})
+		writer := events.NewWriter(events.WriterOptions{Sink: events.SQLite(in.store)})
+		storeSub := bus.Subscribe("store", events.SubOptions{Buffer: 4 * events.DefaultCapacity})
+		alertSub := bus.Subscribe("alerts", events.SubOptions{PriorityOnly: true, Buffer: events.DefaultPriorityCapacity})
+		ctx, cancel := context.WithCancel(context.Background())
+		var pipeline sync.WaitGroup
+		pipeline.Go(func() { bus.Run(ctx) })
+		pipeline.Go(func() { writer.Run(storeSub) })
+		pipeline.Go(func() { in.svc.RunPriority(alertSub) })
+		stopDelivery := in.run()
+		defer func() { cancel(); pipeline.Wait(); stopDelivery() }()
+
+		start := time.Now()
+		var clients sync.WaitGroup
+		for i := range 64 {
+			clients.Go(func() {
+				ip := netip.AddrFrom4([4]byte{10, 0, 0, byte(i + 1)})
+				for range 20 {
+					bus.Emit(events.Event{Time: time.Now(), Kind: events.KindRequest, KeyID: "load0001", ClientIP: ip, Status: 200, Method: "POST", Path: "/v1/chat/completions"})
+				}
+			})
+		}
+		const hammer = 400
+		clients.Go(func() {
+			for i := range hammer {
+				bus.Emit(canaryUse("cafe0001", "203.0.113.7"))
+				if i%4 == 0 {
+					bus.Emit(disabledUse("abcd1234", "203.0.113.8"))
+				}
+			}
+			bus.Emit(canaryUse("cafe0002", "192.0.2.9"))
+		})
+		clients.Wait()
+		synctest.Wait()
+		if got := time.Since(start); got != 0 {
+			t.Errorf("the alerts took %v of fake time: something in the path waited", got)
+		}
+		var first, second, disabled bool
+		for _, r := range in.net.received("ok.test") {
+			first = first || strings.Contains(r.Body, "kman canary reset cafe0001")
+			second = second || strings.Contains(r.Body, "kman canary reset cafe0002")
+			disabled = disabled || (strings.Contains(r.Body, "A disabled key was used") && strings.Contains(r.Body, "abcd1234"))
+		}
+		if !first || !second || !disabled {
+			t.Errorf("alerts: first canary %v, second canary %v, disabled key %v", first, second, disabled)
+		}
+		if s := bus.Stats(); s.DroppedPriority != 0 || s.Dropped != 0 {
+			t.Errorf("the bus dropped %d priority and %d ordinary events", s.DroppedPriority, s.Dropped)
+		}
+		time.Sleep(10 * time.Second) // past the writer's flush interval
+		synctest.Wait()
+		var stored []store.EventRow
+		var c store.Canary
+		in.store.Do(context.Background(), func(tx *store.Tx) (err error) {
+			if stored, err = tx.EventsSince(time.Time{}); err != nil {
+				return err
+			}
+			c, err = tx.Canary("cafe0001")
+			return err
+		})
+		if want := 64*20 + hammer + hammer/4 + 1; len(stored) != want {
+			t.Errorf("the writer stored %d events, want all %d", len(stored), want)
+		}
+		if c.Fires != hammer {
+			t.Errorf("the hammered canary has %d fires, want %d", c.Fires, hammer)
+		}
+		if n := in.svc.PriorityTransactions(); n > hammer/4 {
+			t.Errorf("%d priority transactions for %d canary uses", n, hammer)
+		}
+	})
+}
+
 // A disabled key's repeat uses inside its window are counted without waiting for
 // the store, which the event writer shares: an operator who disables a leaked key
 // that is still in use must not make the lane drop the next canary's first use.

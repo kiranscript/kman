@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/kirank55/kman/internal/store"
@@ -98,6 +99,9 @@ type Settings struct {
 type Service struct {
 	o    Options
 	wake chan struct{}
+	// priorityTxs counts the transactions the priority lane has opened, for
+	// tests of how much a hammering client costs the store.
+	priorityTxs atomic.Int64
 }
 
 // New returns a Service. Nothing is delivered until Run.

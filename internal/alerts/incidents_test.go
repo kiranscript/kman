@@ -3,13 +3,16 @@ package alerts_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/kirank55/kman/internal/alerts"
 	"github.com/kirank55/kman/internal/detect"
+	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/store"
 )
 
@@ -254,6 +257,140 @@ func TestACanaryReusedRightAfterItsIncidentIsResolvedAlertsForTheNewOne(t *testi
 		synctest.Wait()
 		if n := len(in.net.received("hooks.test")); n != 2 {
 			t.Errorf("a repeat on the new incident alerted: %d alerts", n)
+		}
+	})
+}
+
+// A client hammering a canary costs the store a transaction per batch of the
+// priority lane, not one per use, and another canary's first use behind it
+// still alerts (#114).
+func TestAHammeredCanaryCostsATransactionPerBatchAndHoldsUpNoOther(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var eng *detect.Engine
+		in := newInstall(t, func(o *alerts.Options) {
+			o.CanaryIncident = func(tx *store.Tx, keyID string, at time.Time, ev store.Evidence) (int64, bool, error) {
+				out, err := eng.Raise(tx, detect.Detection{KeyID: keyID, Rule: "canary", Severity: store.SeverityCritical, At: at, Evidence: ev, Silent: true})
+				return out.Incident.ID, out.Change != detect.Repeated, err
+			}
+		})
+		eng = in.engine()
+		in.channel("ch_1", "slack", "hooks.test", "critical", true, "")
+		in.withCanary("cafe0001", "decoy", "the deploy repo's .env")
+		in.withCanary("cafe0002", "decoy-2", "the wiki")
+		in.withKey("abcd1234", "ci-bot")
+		bus, stop := in.priorityLane()
+		defer stop()
+		for i := range 200 {
+			bus.Emit(canaryUse("cafe0001", "203.0.113.7"))
+			if i%4 == 0 {
+				bus.Emit(disabledUse("abcd1234", "198.51.100.1"))
+			}
+		}
+		bus.Emit(canaryUse("cafe0002", "192.0.2.9"))
+		synctest.Wait()
+		got := in.net.received("hooks.test")
+		var bodies []string
+		for _, r := range got {
+			bodies = append(bodies, r.Body)
+		}
+		all := strings.Join(bodies, "\n")
+		if len(got) != 2 || !strings.Contains(all, "kman canary reset cafe0001") || !strings.Contains(all, "kman canary reset cafe0002") {
+			t.Fatalf("%d alerts, want one for each canary's first use:\n%s", len(got), all)
+		}
+		if n := in.svc.PriorityTransactions(); n > 20 {
+			t.Errorf("%d transactions for 251 priority events, want a few batches", n)
+		}
+		var c store.Canary
+		var inc store.Incident
+		in.store.Do(context.Background(), func(tx *store.Tx) (err error) {
+			if c, err = tx.Canary("cafe0001"); err != nil {
+				return err
+			}
+			inc, err = tx.Incident(1)
+			return err
+		})
+		if c.Fires != 200 || inc.Detections != 200 {
+			t.Errorf("canary fires %d, incident counted %d; want every one of 200 uses", c.Fires, inc.Detections)
+		}
+	})
+}
+
+// backlog starts the priority lane only once events are waiting in it, so
+// they are read as batches and not as they come.
+func (in *install) backlog(es ...events.Event) (stop func()) {
+	bus := events.New(events.Options{})
+	sub := bus.Subscribe("alerts", events.SubOptions{PriorityOnly: true, Buffer: events.DefaultPriorityCapacity})
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Go(func() { bus.Run(ctx) })
+	for _, e := range es {
+		bus.Emit(e)
+	}
+	synctest.Wait()
+	wg.Go(func() { in.svc.RunPriority(sub) })
+	stopRun := in.run()
+	return func() { cancel(); wg.Wait(); stopRun() }
+}
+
+// A batch that fails is handled event by event, so one canary whose incident
+// cannot be recorded costs no other its alert, and what the failed batch did
+// is not done twice.
+func TestAFailingPriorityEventCostsNoOtherInItsBatchItsAlert(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		in := newInstall(t, func(o *alerts.Options) {
+			o.CanaryIncident = func(_ *store.Tx, keyID string, _ time.Time, _ store.Evidence) (int64, bool, error) {
+				if keyID == "cafe0001" {
+					return 0, false, errors.New("the incident cannot be recorded")
+				}
+				return 7, true, nil
+			}
+		})
+		in.channel("ch_1", "slack", "hooks.test", "critical", true, "")
+		in.withCanary("cafe0001", "decoy", "the deploy repo's .env")
+		in.withCanary("cafe0002", "decoy-2", "the wiki")
+		// The one that works comes first, so the failed batch rolls it back.
+		stop := in.backlog(canaryUse("cafe0002", "192.0.2.9"), canaryUse("cafe0001", "203.0.113.7"))
+		defer stop()
+		synctest.Wait()
+		got := in.net.received("hooks.test")
+		if len(got) != 1 || !strings.Contains(got[0].Body, "kman canary reset cafe0002") {
+			t.Fatalf("%d alerts, want the second canary's alone", len(got))
+		}
+		var c store.Canary
+		in.store.Do(context.Background(), func(tx *store.Tx) (err error) { c, err = tx.Canary("cafe0002"); return })
+		if c.Fires != 1 {
+			t.Errorf("the canary that worked has %d fires, want 1", c.Fires)
+		}
+		if n := in.svc.PriorityTransactions(); n != 3 {
+			t.Errorf("%d transactions, want the batch and then one for each event", n)
+		}
+	})
+}
+
+// What is waiting is read in batches of at most maxPriorityBatch (64), each in
+// one transaction, and every use is recorded.
+func TestABacklogOfCanaryUsesIsReadInBoundedBatches(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		in := newInstall(t)
+		in.channel("ch_1", "slack", "hooks.test", "critical", true, "")
+		in.withCanary("cafe0001", "decoy", "the deploy repo's .env")
+		var es []events.Event
+		for range 300 {
+			es = append(es, canaryUse("cafe0001", "203.0.113.7"))
+		}
+		stop := in.backlog(es...)
+		defer stop()
+		synctest.Wait()
+		if n := in.svc.PriorityTransactions(); n != 5 {
+			t.Errorf("%d transactions for 300 waiting uses, want 5 batches of at most 64", n)
+		}
+		if n := len(in.net.received("hooks.test")); n != 1 {
+			t.Errorf("%d alerts, want the first use's alone", n)
+		}
+		var c store.Canary
+		in.store.Do(context.Background(), func(tx *store.Tx) (err error) { c, err = tx.Canary("cafe0001"); return })
+		if c.Fires != 300 {
+			t.Errorf("fires = %d, want 300", c.Fires)
 		}
 	})
 }
