@@ -461,6 +461,8 @@ func TestAKnownSourceIsValidatedAndBoundedSoItCannotSilenceEverything(t *testing
 		"the client unknown":          {Kind: "client", Value: "unknown", Label: "x"},
 		"a client with a space":       {Kind: "client", Value: "my app/1", Label: "x"},
 		"a client that is an address": {Kind: "client", Value: "203.0.113.7", Label: "x"},
+		"a client no event records":   {Kind: "client", Value: "ip-10-0-3-7/1", Label: "x"},
+		"a product named in numbers":  {Kind: "client", Value: "x86_64", Label: "x"},
 		"a missing value":             {Kind: "client", Value: "", Label: "x"},
 		"an unknown key":              {Kind: "country", Value: "DE", Label: "x", Key: "nokey000"},
 	}
