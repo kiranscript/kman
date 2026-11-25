@@ -266,6 +266,16 @@ func (tx *Tx) AddDetection(d Detection) (Detection, error) {
 	return d, nil
 }
 
+// CountDetections returns how many detection rows an incident has, counting no
+// further than limit, so its cost is bounded however many it has.
+func (tx *Tx) CountDetections(incidentID int64, limit int) (int64, error) {
+	var n int64
+	if err := tx.tx.QueryRowContext(tx.ctx, `SELECT COUNT(*) FROM (SELECT 1 FROM detections WHERE incident_id = ? LIMIT ?)`, incidentID, limit).Scan(&n); err != nil {
+		return 0, typed(err, "count detections")
+	}
+	return n, nil
+}
+
 // Detections returns the detections recorded under an incident, oldest first, at
 // most limit.
 func (tx *Tx) Detections(incidentID int64, limit int) ([]Detection, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -421,8 +422,201 @@ func TestAThousandNewPlacesInOneBatchAreRaisedInBoundedTime(t *testing.T) {
 	if got := strings.Join(inc.Rules(), ","); got != "new_asn,new_client,new_network" {
 		t.Errorf("rules = %s, want every rule that fired, however many requests there were", got)
 	}
+	// A key keeps 1,000 places of a kind, its usual one among them, so 999 of
+	// each kind are new and the last request's are only counted as places.
+	if inc.Detections != 3*999 {
+		t.Errorf("the incident counted %d detections, want every one of the 2,997 new places", inc.Detections)
+	}
 	if n := len(r.alerts.got()); n != 1 {
 		t.Errorf("%d alerts for one batch, want 1", n)
+	}
+}
+
+// Many keys spraying new places at once must not make the writer's transaction
+// slow either: past the batch's bound a key raises only the rules it has not
+// raised yet in the batch, so each incident still opens with every rule, and
+// what is not raised is still counted on it (#113).
+func TestManyKeysSprayingNewPlacesInOneBatchAreBoundedTogetherAndStillCounted(t *testing.T) {
+	r := newRig(t)
+	for _, k := range []string{"abcd1234", "beef5678"} {
+		r.mustWrite(ev(t0, func(e *events.Event) { e.KeyID = k }))
+		r.mustWrite(ev(t0.Add(time.Hour), func(e *events.Event) { e.KeyID = k }))
+	}
+	r.engine = detect.New(detect.Options{Store: r.store, Now: func() time.Time { return r.now }, Alerts: r.alerts, MaxDetectionGroupsPerBatch: 5})
+	var batch []events.Event
+	for i := range 40 {
+		key := "abcd1234"
+		if i >= 20 {
+			key = "beef5678"
+		}
+		batch = append(batch, ev(afterLearning.Add(time.Duration(i)*time.Millisecond), func(e *events.Event) {
+			e.KeyID = key
+			e.ClientIP = netip.AddrFrom4([4]byte{10, 1, byte(i), 1})
+			e.ASN, e.Client = int64(100000+i), "bot-"+strconv.Itoa(i)+"/1"
+		}))
+	}
+	r.mustWrite(batch...)
+	// abcd1234 used up the batch's five groups; beef5678 raised one, for its rules.
+	for id, want := range map[int64]int{1: 5 * 3, 2: 3} {
+		inc := r.incident(id)
+		if n := len(r.detections(id)); n != want {
+			t.Errorf("incident %d (%s): %d detection rows, want %d", id, inc.KeyID, n, want)
+		}
+		if got := strings.Join(inc.Rules(), ","); got != "new_asn,new_client,new_network" {
+			t.Errorf("incident %d rules = %s", id, got)
+		}
+		if inc.Detections != 20*3 {
+			t.Errorf("incident %d counted %d detections, want all 60 new places", id, inc.Detections)
+		}
+		if want := afterLearning.Add(time.Duration(19+20*(id-1)) * time.Millisecond); !inc.LastFiredAt.Equal(want) {
+			t.Errorf("incident %d last fired %v, want its last request's %v", id, inc.LastFiredAt, want)
+		}
+	}
+}
+
+// sprayer is a request of key from a place new in network, ASN and client.
+func sprayer(key string, at time.Time, n int) events.Event {
+	return ev(at, func(e *events.Event) {
+		e.KeyID = key
+		e.ClientIP = netip.AddrFrom4([4]byte{10, byte(n / 256), byte(n % 256), 1})
+		e.ASN, e.Client = int64(100000+n), "bot-"+strconv.Itoa(n%1000)+"/1"
+	})
+}
+
+// boundedRig is a learned rig for both standard keys whose engine raises at
+// most budget detection groups a batch.
+func boundedRig(t *testing.T, budget int) *rig {
+	r := newRig(t)
+	for _, k := range []string{"abcd1234", "beef5678"} {
+		r.mustWrite(ev(t0, func(e *events.Event) { e.KeyID = k }))
+		r.mustWrite(ev(t0.Add(time.Hour), func(e *events.Event) { e.KeyID = k }))
+	}
+	r.engine = detect.New(detect.Options{Store: r.store, Now: func() time.Time { return r.now }, Alerts: r.alerts, MaxDetectionGroupsPerBatch: budget})
+	return r
+}
+
+// Counting what the bound held back must not stop an incident recording its
+// first 100 detections: a key held back in one batch still records who and
+// where in the next (SPEC §10).
+func TestAKeyHeldBackByTheBatchBoundStillRecordsItsLaterDetections(t *testing.T) {
+	r := boundedRig(t, 5)
+	var batch []events.Event
+	for i := range 80 {
+		key := "abcd1234"
+		if i >= 20 {
+			key = "beef5678"
+		}
+		batch = append(batch, sprayer(key, afterLearning.Add(time.Duration(i)*time.Millisecond), i))
+	}
+	r.mustWrite(batch...)
+	if inc := r.incident(2); len(r.detections(2)) != 3 || inc.Detections != 60*3 {
+		t.Fatalf("incident 2: %d rows, counter %d; want 3 and 180", len(r.detections(2)), inc.Detections)
+	}
+	for i := range 3 {
+		r.mustWrite(sprayer("beef5678", afterLearning.Add(time.Duration(i+1)*time.Minute), 500+i))
+	}
+	if n := len(r.detections(2)); n != 3+3*3 {
+		t.Errorf("incident 2 has %d rows after three more new places, want 12: it is far from 100 rows", n)
+	}
+}
+
+// Past the bound a request from a known source is not counted on the incident
+// and does not move its last firing: the operator's own traffic must not keep an
+// incident from going quiet.
+func TestPastTheBoundAKnownSourceIsNotCounted(t *testing.T) {
+	r := boundedRig(t, 1)
+	if err := r.store.Do(context.Background(), func(tx *store.Tx) error {
+		_, err := tx.CreateKnownSource(store.KnownSource{Scope: "abcd1234", Kind: store.SourceCIDR, Value: "10.9.0.0/16", Label: "ours", CreatedBy: "owner", CreatedAt: t0})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var batch []events.Event
+	for i := range 5 {
+		batch = append(batch, sprayer("abcd1234", afterLearning.Add(time.Duration(i)*time.Millisecond), i))
+	}
+	for i := range 5 {
+		batch = append(batch, sprayer("abcd1234", afterLearning.Add(time.Duration(10+i)*time.Millisecond), 9*256+i))
+	}
+	r.mustWrite(batch...)
+	inc := r.incident(1)
+	if inc.Detections != 5*3 || !inc.LastFiredAt.Equal(afterLearning.Add(4*time.Millisecond)) {
+		t.Errorf("counter %d, last fired %v: want 15 and the last unknown request's time", inc.Detections, inc.LastFiredAt)
+	}
+}
+
+// A batch the writer catches up with can span an hour. Past the bound a place
+// that fires on an incident gone quiet is still raised, since that escalates.
+func TestPastTheBoundAFiringOnAQuietIncidentIsStillRaised(t *testing.T) {
+	r := boundedRig(t, 1)
+	r.mustWrite(
+		sprayer("abcd1234", afterLearning, 1),
+		sprayer("abcd1234", afterLearning.Add(time.Second), 2),
+		sprayer("abcd1234", afterLearning.Add(2*time.Hour), 3),
+	)
+	if n := len(r.detections(1)); n != 6 {
+		t.Errorf("%d rows, want 3 for the first request and 3 for the one after two quiet hours", n)
+	}
+	if n := len(r.alerts.got()); n != 2 {
+		t.Errorf("%d alerts, want the open and the escalation", n)
+	}
+}
+
+// A place that was only counted is still a firing: a later place is measured
+// from it, so a batch that is quiet from the last raise but not from the last
+// counted place does not escalate.
+func TestPastTheBoundACountedPlaceIsTheLastFiringForTheQuietCheck(t *testing.T) {
+	r := boundedRig(t, 1)
+	r.mustWrite(
+		sprayer("abcd1234", afterLearning, 1),
+		sprayer("abcd1234", afterLearning.Add(50*time.Minute), 2),
+		sprayer("abcd1234", afterLearning.Add(100*time.Minute), 3),
+	)
+	if n := len(r.alerts.got()); n != 1 {
+		t.Errorf("%d alerts, want only the open: no hour went by without a firing", n)
+	}
+	if n := len(r.detections(1)); n != 3 {
+		t.Errorf("%d rows, want the first request's 3", n)
+	}
+}
+
+// The worst case with many keys: each still opens its incident, so the cost
+// grows with the keys, but not with their requests (ADR 0015).
+func TestAHundredKeysSprayingNewPlacesInOneBatchAreRaisedInBoundedTime(t *testing.T) {
+	keys := []store.VirtualKey{}
+	for i := range 100 {
+		keys = append(keys, store.VirtualKey{ID: fmt.Sprintf("k%07d", i), Name: fmt.Sprintf("app-%d", i), CredentialID: "cr_1"})
+	}
+	st := seedStore(t, keys...)
+	r := &rig{t: t, store: st, alerts: &alerter{}, now: t0}
+	r.engine = detect.New(detect.Options{Store: st, Now: func() time.Time { return r.now }, Alerts: r.alerts})
+	var learn, later, batch []events.Event
+	for _, k := range keys {
+		learn = append(learn, ev(t0, func(e *events.Event) { e.KeyID = k.ID }))
+		later = append(later, ev(t0.Add(time.Hour), func(e *events.Event) { e.KeyID = k.ID }))
+	}
+	r.mustWrite(learn...)
+	r.mustWrite(later...)
+	for i := range 100 * 50 {
+		batch = append(batch, sprayer(keys[i%100].ID, afterLearning.Add(time.Duration(i)*time.Millisecond), i))
+	}
+	began := time.Now()
+	r.mustWrite(batch...)
+	if took := time.Since(began); took > 10*time.Second && !raceDetector {
+		t.Errorf("100 keys of 50 requests each, every one new in network, ASN and client, took %v in the writer's transaction", took)
+	}
+	rows := 0
+	for id := range int64(100) {
+		inc := r.incident(id + 1)
+		// 50 networks and ASNs each, and 10 clients: sprayer's clients repeat
+		// every 1,000 requests, every 10th of a key's.
+		if inc.Detections != 50+50+10 || len(inc.Rules()) != 3 {
+			t.Errorf("incident %d: counter %d, rules %v; want 110 and all three", id+1, inc.Detections, inc.Rules())
+		}
+		rows += len(r.detections(id + 1))
+	}
+	if bound := 3 * (detect.MaxDetectionGroupsPerBatch + 3*100); rows > bound {
+		t.Errorf("%d detection rows, want at most %d", rows, bound)
 	}
 }
 

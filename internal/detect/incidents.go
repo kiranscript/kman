@@ -94,7 +94,10 @@ type Options struct {
 	Alerts Alerter
 	// QuietAfter, ExpireAfter and SweepEvery default to the constants above.
 	QuietAfter, ExpireAfter, SweepEvery time.Duration
-	Log                                 *slog.Logger // defaults to discarding
+	// MaxDetectionGroupsPerBatch bounds the location detection groups one batch
+	// of events raises across all its keys. Default the constant of that name.
+	MaxDetectionGroupsPerBatch int
+	Log                        *slog.Logger // defaults to discarding
 }
 
 // Engine runs the incident state machine: one unresolved incident per key,
@@ -120,6 +123,9 @@ func New(o Options) *Engine {
 	}
 	if o.SweepEvery <= 0 {
 		o.SweepEvery = DefaultSweepEvery
+	}
+	if o.MaxDetectionGroupsPerBatch <= 0 {
+		o.MaxDetectionGroupsPerBatch = MaxDetectionGroupsPerBatch
 	}
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
@@ -270,9 +276,17 @@ func (e *Engine) raise(tx *store.Tx, d Detection, grouped bool) (Outcome, error)
 	}
 	out := Outcome{Change: change, silent: d.Silent}
 	if change == Repeated && inc.Detections > MaxDetectionsPerIncident {
-		// Counted, not recorded.
-		out.Incident, err = tx.UpdateIncident(inc)
-		return out, err
+		// Past the bound a repeat is counted, not recorded. The counter also
+		// counts what the location rules only counted (ObservePlaces), so it is
+		// the rows themselves that say whether the bound is reached.
+		n, err := tx.CountDetections(inc.ID, MaxDetectionsPerIncident)
+		if err != nil {
+			return Outcome{}, err
+		}
+		if n >= MaxDetectionsPerIncident {
+			out.Incident, err = tx.UpdateIncident(inc)
+			return out, err
+		}
 	}
 	row, err := tx.AddDetection(store.Detection{IncidentID: inc.ID, KeyID: d.KeyID, At: at, Rule: d.Rule, Severity: d.Severity, EvidenceJSON: string(evidence)})
 	if err != nil {
