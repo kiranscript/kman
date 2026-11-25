@@ -31,15 +31,17 @@ const (
 // an address on its ignore list is no use at all (#87).
 //
 // What the lane holds when it is read is handled together, in one transaction
-// (at most priorityBatch events), so a client hammering a canary costs the
-// store, which the event writer shares, one transaction per batch and not one
-// per use; a use alerts no later than it did alone.
+// (at most maxPriorityBatch events). When a client hammers a canary and the
+// lane backs up, that costs the store, which the event writer shares, one
+// transaction per batch and not one per use; a lane that keeps up still takes
+// one per use. A use alerts once its batch has committed, so it may wait for
+// the rest of the batch, which is bounded to keep that short.
 func (s *Service) RunPriority(sub *events.Subscription) {
 	held := map[string]*throttled{}
 	for e := range sub.C {
 		batch := []events.Event{e}
 	drain:
-		for len(batch) < priorityBatch {
+		for len(batch) < maxPriorityBatch {
 			select {
 			case e, ok := <-sub.C:
 				if !ok {
@@ -54,9 +56,10 @@ func (s *Service) RunPriority(sub *events.Subscription) {
 	}
 }
 
-// priorityBatch bounds the events of the priority lane handled in one
-// transaction.
-const priorityBatch = 256
+// maxPriorityBatch bounds the events of the priority lane handled in one
+// transaction, and so how long the batch holds the store's one connection and
+// how long its first alert waits for the others: tens of milliseconds.
+const maxPriorityBatch = 64
 
 // priorityBatch handles events of the priority lane. A canary's use is recorded
 // on its row, and the alert is queued, in one transaction for the batch, so
