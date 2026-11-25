@@ -47,6 +47,9 @@ func TestClientOfReducesAUserAgentToAProductAndItsMajorVersion(t *testing.T) {
 		{"a trailing comment is dropped", "my-app/1.2 (build 77; contact ops@example.com)", "my-app/1"},
 		{"a second product is dropped", "my-app/1.2 other/3", "my-app/1"},
 		{"a bare slash", "my-app/", "my-app"},
+		{"a digit in a name", "urllib3/2.0.7", "urllib3/2"},
+		{"a short number in a name", "aws-sdk-go-v2/1.24.0", "aws-sdk-go-v2/1"},
+		{"three digits in a name", "win386-tool/1", "win386-tool/1"},
 
 		// No header at all is a client of its own.
 		{"empty", "", "none"},
@@ -98,6 +101,14 @@ func TestClientOfDropsWhateverAnAppPutInItsUserAgentThatItShouldNotHave(t *testi
 		{"a path", "/usr/bin/my-app", "unknown"},
 		{"a user and a host", "alice@laptop", "unknown"},
 		{"a name followed by a colon", "user:password", "unknown"},
+		// Short enough to pass as a name, and still not a product (#115).
+		{"a host label with an address in it", "ip-10-0-3-7", "unknown"},
+		{"a host label with a version", "ip-10-0-3-7/1", "unknown"},
+		{"a host label after a product", "my-app/1.0 ip-10-0-3-7", "my-app/1"},
+		{"a numbered host", "node-0042/2", "unknown"},
+		{"a short token", "a1b2c3d4", "unknown"},
+		{"a short token with a version", "x9k2/1", "unknown"},
+		{"an EC2 host name", "ip-172-31-5-9", "unknown"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got := events.ClientOf(c.ua)
@@ -115,13 +126,16 @@ func TestClientOfDropsWhateverAnAppPutInItsUserAgentThatItShouldNotHave(t *testi
 
 func TestClientOfIsBoundedWhateverItIsGiven(t *testing.T) {
 	for _, c := range []struct{ name, ua, want string }{
-		{"a very long name is cut to 32 characters", strings.Repeat("a", 1000), strings.Repeat("a", 32)},
+		{"a very long name is cut to 32 characters", strings.Repeat("a", 200), strings.Repeat("a", 32)},
+		{"a first word that fills the window read is no product", strings.Repeat("a", 1000), "unknown"},
+		{"nor is one that fills it before an email's @", strings.Repeat("a", 256) + "@example.com", "unknown"},
 		{"a long name with a version keeps both inside 32", strings.Repeat("a", 100) + "/12.3", strings.Repeat("a", 29) + "/12"},
 		{"a name just under the limit", strings.Repeat("a", 18) + "/1", strings.Repeat("a", 18) + "/1"},
 		{"a long name with a short digit run still fits", strings.Repeat("b", 40) + "/1", strings.Repeat("b", 30) + "/1"},
 		{"a huge version is no version", "my-app/" + strings.Repeat("9", 5000), "my-app"},
 		{"a long run of spaces first", strings.Repeat(" ", 100000) + "curl/8", "unknown"},
-		{"a very long run of product-like noise", strings.Repeat("a-", 100000), strings.Repeat("a-", 16)},
+		{"a very long run of product-like noise", strings.Repeat("a-", 100000), "unknown"},
+		{"product-like noise inside the window", strings.Repeat("a-", 100) + "/1", strings.Repeat("a-", 15) + "/1"},
 		{"a long name that holds digits is not a product", strings.Repeat("a1", 20), "unknown"},
 	} {
 		t.Run(c.name, func(t *testing.T) {

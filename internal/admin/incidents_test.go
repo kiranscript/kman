@@ -8,6 +8,7 @@ import (
 
 	"github.com/kirank55/kman/internal/admin"
 	"github.com/kirank55/kman/internal/detect"
+	"github.com/kirank55/kman/internal/events"
 	"github.com/kirank55/kman/internal/store"
 )
 
@@ -494,6 +495,17 @@ func TestAKnownSourceIsValidatedAndBoundedSoItCannotSilenceEverything(t *testing
 	}
 	if got, err := in.svc.AddKnownSource(as("owner"), admin.AddKnownSourceRequest{Kind: "client", Value: "OpenAI-Python/3", Label: "x"}); err != nil || got.Value != "openai-python/3" {
 		t.Errorf("client = %+v (%v), want it lower-cased as events record it", got, err)
+	}
+	// Every client an event can record can be a known source, the longest too,
+	// and nothing longer (#116).
+	for _, ua := range []string{strings.Repeat("a", 40), strings.Repeat("b", 40) + "/1234", "Vendor/Language 1.2.3"} {
+		client := events.ClientOf(ua)
+		if got, err := in.svc.AddKnownSource(as("owner"), admin.AddKnownSourceRequest{Kind: "client", Value: client, Label: "x"}); err != nil || got.Value != client {
+			t.Errorf("the recorded client %q as a known source = %+v (%v)", client, got, err)
+		}
+	}
+	if _, err := in.svc.AddKnownSource(as("owner"), admin.AddKnownSourceRequest{Kind: "client", Value: strings.Repeat("c", events.MaxClientLength+1), Label: "x"}); err == nil {
+		t.Error("a client longer than events record was accepted")
 	}
 }
 
