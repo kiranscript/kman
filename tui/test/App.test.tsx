@@ -1550,8 +1550,10 @@ describe('App', () => {
       const shown = lines(m).filter((l) => /^[│┃] nocap-\d\d/.test(l)).length;
       await m.press('\u001b[6~'); // PgDn
       expect(m.screen()).toContain(`${shown} of 60`);
-      await m.press('\u001b[5~'); // PgUp
-      expect(m.screen()).toContain('1 of 60');
+      await m.press('\u001b[6~');
+      expect(m.screen()).toContain(`${2 * shown - 1} of 60`);
+      await m.press('\u001b[5~'); // PgUp, by the same page
+      expect(m.screen()).toContain(`${shown} of 60`);
       m.unmount();
     });
 
