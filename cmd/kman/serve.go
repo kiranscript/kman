@@ -140,7 +140,8 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	// The update check is the one thing kman asks the network by itself, and only
 	// when the operator turned it on (ADR 0008).
 	var updates *updateChecker
-	adminOpts := admin.Options{Events: pipe.bus, Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices, Alerts: alert,
+	var proxyURL string // assigned after binding, before the first admin request
+	adminOpts := admin.Options{ProxyURL: func() string { return proxyURL }, Events: pipe.bus, Store: st, Now: s.now, Vault: v, Presets: profiles.Presets(), Apply: reg.Apply, Prices: builtinPrices, Alerts: alert,
 		ApplyPrices: publishOverrides(prices), NormalizePolicy: normalizePolicy(geo),
 		Spend: func(keyID, policyJSON string) admin.KeySpend { return keySpend(spend, s.now(), keyID, policyJSON) }}
 	if cfg.UpdateCheck {
@@ -213,6 +214,7 @@ func serve(ctx context.Context, s *sys, log *slog.Logger, configDir string, opts
 	if err != nil {
 		return err
 	}
+	proxyURL = ls[0].localURL(cfg.ProxyListen)
 	if cfg.MetricsListen != "" {
 		ml, err := newListener("metrics", cfg.MetricsListen, ListenerTLS{}, metricsOnly(metrics), log)
 		if err != nil {
@@ -280,6 +282,24 @@ type listener struct {
 	l    net.Listener
 	srv  *http.Server
 	tls  bool
+}
+
+// Preserve a configured DNS name for TLS and use the actual port for :0 listeners.
+func (l *listener) localURL(configured string) string {
+	host, _, _ := net.SplitHostPort(configured)
+	boundHost, port, _ := net.SplitHostPort(l.l.Addr().String())
+	if host == "" || net.ParseIP(host).IsUnspecified() {
+		if net.ParseIP(boundHost).To4() == nil {
+			host = "::1"
+		} else {
+			host = "127.0.0.1"
+		}
+	}
+	scheme := "http"
+	if l.tls {
+		scheme = "https"
+	}
+	return scheme + "://" + net.JoinHostPort(host, port)
 }
 
 func (l *listener) serve() error {

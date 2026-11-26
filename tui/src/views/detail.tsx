@@ -8,7 +8,7 @@ import { capMoney, clock, dateTime, fit, money, padEnd, plural, requestsText, un
 import { keyLabel } from '../keys.js';
 import { keyRisks } from '../risk.js';
 import { Frame, titleFits } from '../ui/frame.js';
-import { Field, Meter, RiskLine, SectionTitle, StatusBadge, Wrapped } from '../ui/parts.js';
+import { Field, Meter, RiskLine, SectionTitle, StatusBadge, UpstreamSetup, Wrapped } from '../ui/parts.js';
 import { color, severityColor, severityGlyph } from '../ui/theme.js';
 import { AUDIT_LIMIT } from '../useAdmin.js';
 import { actionColor, rowTarget, targetName, targetText } from './audit.js';
@@ -28,18 +28,12 @@ function Body({ children }: { children: React.ReactNode }) {
   );
 }
 
-export const UPSTREAM_COMMAND = 'kman upstream add openai --preset openai';
-
 /** The text of an empty panel, wrapped by words inside its border; a command under it stays whole on one line. */
-function Empty({ text, command, width }: { text: string; command?: string; width: number }) {
+function Empty({ text, setup, width }: { text: string; setup?: boolean; width: number }) {
   return (
     <Box flexDirection="column" paddingX={1}>
       <Wrapped text={text} width={width - 4} maxLines={6} dim />
-      {command ? (
-        <Text bold wrap="truncate-end">
-          {command}
-        </Text>
-      ) : null}
+      {setup ? <UpstreamSetup /> : null}
     </Box>
   );
 }
@@ -95,11 +89,7 @@ export function StartMain({ width, height, scroll, canCreate }: Size & { scroll:
         <Wrapped text="A virtual key is what an app uses in place of your real API key: kman checks it, applies its limits, and forwards the request." width={width - 4} maxLines={6} dim />
         <Box marginTop={1} flexDirection="column">
           <Wrapped text={canCreate ? 'Press n to create the first one.' : 'Add an upstream first:'} width={width - 4} maxLines={3} />
-          {canCreate ? null : (
-            <Text bold wrap="truncate-end">
-              {UPSTREAM_COMMAND}
-            </Text>
-          )}
+          {canCreate ? null : <UpstreamSetup />}
         </Box>
       </Box>
     </Frame>
@@ -171,6 +161,7 @@ function SpendRow({ which, k, barW, roomy }: { which: 'today' | 'month'; k: Key;
   const s = k.spend?.[which];
   if (!s) return null;
   const amount = s.cap_micro ? `${money(s.cost_micro)} / ${capMoney(s.cap_micro)}` : `${money(s.cost_micro)}, no cap`;
+  const remaining = s.cap_micro && k.status === 'active' ? Math.max(0, s.cap_micro - s.cost_micro - (s.reserved_micro ?? 0)) : undefined;
   const requests = `${requestsText(s.requests)}${s.unmetered_requests ? `, ${s.unmetered_requests} unmetered` : ''}`;
   return (
     <Box flexDirection="column">
@@ -179,7 +170,7 @@ function SpendRow({ which, k, barW, roomy }: { which: 'today' | 'month'; k: Key;
         <Meter period={s} width={barW} muted={k.status === 'revoked'} />
         <Text wrap="truncate-end">
           {' '}
-          {amount}
+          {amount}{remaining === undefined ? '' : ` · ${money(remaining)} left`}
           {roomy ? '' : <Text dimColor>{`  ${requests}`}</Text>}
         </Text>
       </Box>
@@ -303,8 +294,7 @@ export function UpstreamMain({
   height,
   scroll,
   none = 'No upstream selected.',
-  command,
-}: Size & { upstream: Upstream | undefined; keys: Key[]; scroll: Scroll; none?: string; command?: string }) {
+}: Size & { upstream: Upstream | undefined; keys: Key[]; scroll: Scroll; none?: string }) {
   const { onMax } = scroll;
   useEffect(() => {
     if (!u) onMax(0);
@@ -312,7 +302,7 @@ export function UpstreamMain({
   if (!u) {
     return (
       <Frame title="Upstream" width={width} height={height}>
-        <Empty text={none} command={command} width={width} />
+        <Empty text={none} setup width={width} />
       </Frame>
     );
   }

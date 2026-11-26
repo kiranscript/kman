@@ -66,6 +66,7 @@ type SpendPeriod struct {
 
 // CreatedKey is a new key and its secret, which is shown only this once.
 type CreatedKey struct {
+	ProxyURL    string `json:"proxy_url,omitempty" doc:"The running proxy origin on the kman host, including its bound port."`
 	Key         Key    `json:"key"`
 	Secret      Secret `json:"secret" doc:"The virtual key itself (kmn_...). kman keeps only its hash, so it is shown only this once."`
 	SDKEnv      string `json:"sdk_env,omitempty" doc:"The variable an SDK for its upstream reads the key from."`
@@ -254,6 +255,9 @@ func (s *Service) CreateKey(ctx context.Context, req CreateKeyRequest) (CreatedK
 			return nil, err
 		}
 		out = CreatedKey{Key: dto, Secret: Secret(minted.Reveal()), SDKEnv: u.SDKEnv, SDKBasePath: u.SDKBasePath}
+		if s.proxyURL != nil {
+			out.ProxyURL = s.proxyURL()
+		}
 		return []audit{{action: "key.create", kind: "key", id: k.ID, after: dto}}, nil
 	})
 	if err != nil {

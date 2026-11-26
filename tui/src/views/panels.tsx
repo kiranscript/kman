@@ -388,7 +388,7 @@ export function StatusPanel({
                   { t: ` ${padEnd(fitMiddle(name, nameW), nameW)}` },
                 ]}
                 right={[
-                  { t: topRisk(risks)!.short, color: severityColor[top], dim: top === 'info' },
+                  { t: topRisk(risks)!.listLabel ?? topRisk(risks)!.short, color: severityColor[top], dim: top === 'info' },
                   { t: risks.length > 1 ? ` +${risks.length - 1} ${risks.length === 2 ? 'issue' : 'issues'} ` : ' ', dim: true },
                 ]}
               />
@@ -449,9 +449,10 @@ export function KeysPanel({
       { t: ` ${lapsed ? 'expired' : k.status}`, color: lapsed ? color.danger : undefined, dim: !lapsed },
     ];
     const warn: Seg[] = risk ? [{ t: `${severityGlyph[risk.severity]} ${risk.short}`, color: severityColor[risk.severity], dim: risk.severity === 'info' }] : [];
+    const share = ratio !== undefined && inner >= 72 ? `${Math.round(ratio * 100)}% daily  ` : '';
     const spend: Seg[] =
       !gone && today
-        ? [{ t: money(today.cost_micro), color: ratio === undefined ? undefined : ratioColor(ratio), dim: ratio === undefined || ratio < 0.8 }]
+        ? [{ t: share + money(today.cost_micro), color: ratio === undefined ? undefined : ratioColor(ratio), dim: ratio === undefined || ratio < 0.8 }]
         : [];
     return { label: keyLabel(k), status, risk: warn, spend };
   };

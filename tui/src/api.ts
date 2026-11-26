@@ -124,6 +124,7 @@ export interface KeyClients {
 }
 
 export interface CreatedKey {
+  proxy_url?: string;
   key: Key;
   /** The virtual key itself. Shown once: kman keeps only its hash. */
   secret: string;

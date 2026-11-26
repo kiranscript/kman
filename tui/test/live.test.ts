@@ -38,6 +38,9 @@ describe.skipIf(!url || !token)('against a real kman', () => {
       ttl_seconds: 3600,
       policy: { daily_cap_micro: 1_000_000, monthly_cap_micro: 5_000_000 },
     });
+    const proxy = new URL(created.proxy_url!);
+    expect(['http:', 'https:']).toContain(proxy.protocol);
+    expect(proxy.port).not.toBe('0');
     expect(created.secret).toMatch(/^kmn_/);
     expect(created.key.status).toBe('active');
 
