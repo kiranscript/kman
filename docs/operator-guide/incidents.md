@@ -30,7 +30,7 @@ ID  KEY              STATE         SEVERITY  RULES   DETECTIONS  OPENED         
 
 **Client addresses are personal data**, so `incident show` and the admin API leave out the address and network of what a detection saw, and say so, unless you turn on `kman settings set expose_client_addresses true` ([ADR 0010](../adr/0010-client-addresses-are-opt-in-on-the-admin-api.md)). The country, the AS, the client and what a rule observed are always shown. An *alert* to your own channel does name the address: it is how you know who used the key.
 
-`--follow` asks kman every 2 seconds and prints a line each time an incident opens, escalates, is acknowledged or is resolved. A repeat is not a change and prints nothing. `--json` prints one incident per line.
+`--follow` asks kman every 2 seconds and prints a line each time an incident opens, escalates, is acknowledged or is resolved. A repeat is not a change and prints nothing. It watches the newest 200 incidents; with `--open`, one that newer incidents push past those is still reported when it changes or is resolved, which can take a few polls when there are more than 500 of them. `--json` prints one incident per line.
 
 ## Respond
 

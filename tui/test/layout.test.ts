@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COLLAPSED, layout } from '../src/layout.js';
+import { COLLAPSED, layout, listArea } from '../src/layout.js';
 import type { Tab } from '../src/ui/chrome.js';
 
 const TABS: Tab[] = ['status', 'keys', 'upstreams', 'audit'];
@@ -67,5 +67,26 @@ describe('layout', () => {
     expect(narrow.wide).toBe(false);
     expect(narrow.mainW).toBe(80);
     expect(narrow.mainH).toBeGreaterThanOrEqual(7);
+  });
+});
+
+describe('listArea', () => {
+  it('gives a list the rows inside its border, less the filter row under Keys', () => {
+    expect(listArea(10, { tab: 'upstreams' }).rows).toBe(8);
+    expect(listArea(10, { tab: 'audit' }).rows).toBe(8);
+    expect(listArea(10, { tab: 'keys', filterRow: false }).rows).toBe(8);
+    expect(listArea(10, { tab: 'keys', filterRow: true }).rows).toBe(7);
+    // A strip has no border.
+    expect(listArea(1, { tab: 'keys', filterRow: false }).rows).toBe(1);
+  });
+
+  it('shares the Status panel between its summary, the list header and the list', () => {
+    // 12 rows inside: three for the summary, one for the header, the rest for the list.
+    expect(listArea(14, { tab: 'status', items: 20, noKeys: false })).toEqual({ header: 1, rows: 8 });
+    // A short list takes only what it holds, and an empty one a single line.
+    expect(listArea(14, { tab: 'status', items: 2, noKeys: false })).toEqual({ header: 1, rows: 2 });
+    expect(listArea(14, { tab: 'status', items: 0, noKeys: false })).toEqual({ header: 0, rows: 1 });
+    // Too short for the header, the list still keeps a line.
+    expect(listArea(6, { tab: 'status', items: 20, noKeys: false })).toEqual({ header: 0, rows: 2 });
   });
 });

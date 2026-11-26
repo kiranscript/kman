@@ -1,0 +1,19 @@
+# kman keys for trufflehog, which has no detector for them.
+#
+#   trufflehog filesystem --config=trufflehog.yaml <path>
+#
+# A finding is reported as detector "CustomRegex" with the name below. There is
+# no verify block, so a found key is reported as unverified and sent nowhere.
+# https://github.com/kiranscript/kman/blob/main/docs/operator-guide/scan.md
+
+detectors:
+  - name: kman-virtual-key
+    keywords:
+      - kmn_
+    regex:
+      key: '\bkmn_[0-9A-Za-z]{8}_[0-9A-Za-z]{49}\b'
+  - name: kman-child-key
+    keywords:
+      - ek_kmn_
+    regex:
+      key: '\bek_kmn_[0-9A-Za-z]{8}_[0-9A-Za-z]{49}\b'

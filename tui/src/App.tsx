@@ -9,7 +9,8 @@ import { SecretDialog } from './dialogs/SecretDialog.js';
 import { fit } from './format.js';
 import { keyLabel, visibleKeys } from './keys.js';
 import { attention, upstreamAttention } from './risk.js';
-import { layout } from './layout.js';
+import { layout, hasFilterRow, listArea, summaryRows } from './layout.js';
+import type { ListPanel } from './layout.js';
 import { Footer, noticeRows, TABS } from './ui/chrome.js';
 import type { HintItem, Notice, Tab } from './ui/chrome.js';
 import { Hint, Panel } from './ui/parts.js';
@@ -116,15 +117,18 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
   const shownNotice = link.state === 'denied' ? undefined : notice;
   const bodyRows = rows - 1 - noticeRows(shownNotice, columns);
   const tooSmall = columns < MIN_COLUMNS || rows < MIN_ROWS;
-  // The summary is a line when there are no keys to count, else three.
-  const summaryLines = data.keys.length === 0 ? 1 : 3;
+  const noKeys = data.keys.length === 0;
+  const filterRow = tab === 'keys' && hasFilterRow(filter, mode.kind === 'filter');
+  /** What of the focused panel decides how many rows its list gets. */
+  const listPanel: ListPanel =
+    tab === 'status' ? { tab, items: items.length, noKeys } : tab === 'keys' ? { tab, filterRow } : { tab };
+  // All of Status's list and its header, were there no limit.
+  const statusList = listArea(Infinity, { tab: 'status', items: items.length, noKeys });
   // What each list could fill; Status is its summary, and under it the list when focused.
   const wants = {
-    status: summaryLines + (tab === 'status' ? (items.length > 0 ? 1 : 0) + Math.max(1, items.length) : 1),
+    status: summaryRows(noKeys) + (tab === 'status' ? statusList.header + statusList.rows : 1),
     // While filtering the panel keeps the height of the whole list, so it does not shrink under the cursor.
-    keys:
-      Math.max(1, tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? data.keys.length : visible.length) +
-      (tab === 'keys' && (filter !== '' || mode.kind === 'filter') ? 1 : 0),
+    keys: Math.max(1, filterRow ? data.keys.length : visible.length) + (filterRow ? 1 : 0),
     upstreams: Math.max(1, data.upstreams.length),
     audit: Math.max(1, data.audit.length),
   };
@@ -140,15 +144,9 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
     if (selectedId) setKeySel((cur) => cur ?? selectedId);
   }, [selectedId]);
 
-  /**
-   * Rows of the focused list on screen at once, so a page moves by what was shown: the
-   * panel's height in the layout that is drawn, less its border, Status's summary and
-   * the header of its list, and the filter row under Keys.
-   */
+  /** Rows of the focused list on screen at once, in the layout that is drawn, so a page moves by what was shown. */
   function pageRows(): number {
-    const own = lay.heights[tab];
-    const above = tab === 'status' ? summaryLines + (items.length > 0 ? 1 : 0) : 0;
-    return Math.max(1, own - 2 - above - (tab === 'keys' && filter !== '' ? 1 : 0));
+    return Math.max(1, listArea(lay.heights[tab], listPanel).rows);
   }
 
   function move(to: number | 'first' | 'last') {
