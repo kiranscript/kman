@@ -13,6 +13,7 @@ import (
 )
 
 func TestBackupAndRestoreRoundTripThroughTheRealBinary(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)
@@ -66,6 +67,7 @@ func TestBackupAndRestoreRoundTripThroughTheRealBinary(t *testing.T) {
 }
 
 func TestRestoreWithTheWrongMasterKeyChangesNothing(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)
@@ -87,6 +89,7 @@ func TestRestoreWithTheWrongMasterKeyChangesNothing(t *testing.T) {
 }
 
 func TestPruneThroughTheRealBinaryIsAudited(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)
@@ -155,6 +158,7 @@ func (p *proxyRecorder) env() []string {
 // Nothing in kman contacts GitHub unless the operator runs version --check or
 // turns update_check on (ADR 0008).
 func TestNothingContactsGitHubUnlessTheOperatorRunsTheCheckOrOptsIn(t *testing.T) {
+	t.Parallel()
 	p := newProxyRecorder(t)
 	h := installed(t).with(p.env()...)
 	s := h.serve(t)
@@ -182,6 +186,7 @@ func TestNothingContactsGitHubUnlessTheOperatorRunsTheCheckOrOptsIn(t *testing.T
 }
 
 func TestUpdateCheckTrueMakesServeAskGitHubAtStartupAndNothingElse(t *testing.T) {
+	t.Parallel()
 	p := newProxyRecorder(t)
 	h := installed(t).with(p.env()...)
 	h.appendConfig(t, "update_check: true\n")

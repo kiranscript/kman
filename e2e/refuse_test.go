@@ -41,12 +41,14 @@ func (h *home) moveKeyIntoDataDir(t *testing.T) {
 }
 
 func TestServeRefusesAMasterKeyInsideTheDataDirectory(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	h.moveKeyIntoDataDir(t)
 	h.refused(t, "inside the data directory")
 }
 
 func TestServeRefusesAMasterKeyReachedThroughASymlinkIntoTheDataDirectory(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks need privileges on Windows")
 	}
@@ -61,6 +63,7 @@ func TestServeRefusesAMasterKeyReachedThroughASymlinkIntoTheDataDirectory(t *tes
 }
 
 func TestServeRefusesAKeyFileFromTheEnvironmentInsideTheDataDirectory(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	key := filepath.Join(h.dataDir(), "master.key")
 	if err := os.Rename(filepath.Join(h.configDir(), "master.key"), key); err != nil {
@@ -70,6 +73,7 @@ func TestServeRefusesAKeyFileFromTheEnvironmentInsideTheDataDirectory(t *testing
 }
 
 func TestServeStartsWithTheKeyInTheDataDirectoryWhenAllowed(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	h.moveKeyIntoDataDir(t)
 	h.appendConfig(t, "allow_key_in_data_dir: true\n")
@@ -80,6 +84,7 @@ func TestServeStartsWithTheKeyInTheDataDirectoryWhenAllowed(t *testing.T) {
 }
 
 func TestServeNeverInitialisesAnEmptyDataDirectory(t *testing.T) {
+	t.Parallel()
 	for name, prepare := range map[string]func(dir string) error{
 		"missing": os.RemoveAll,
 		"empty": func(dir string) error {
@@ -103,6 +108,7 @@ func TestServeNeverInitialisesAnEmptyDataDirectory(t *testing.T) {
 }
 
 func TestServeRefusesPlainHTTPOnAPublicAdminAddress(t *testing.T) {
+	t.Parallel()
 	for _, addr := range []string{"0.0.0.0:0", ":0", `"[::]:0"`, "example.com:0"} {
 		t.Run(addr, func(t *testing.T) {
 			h := installed(t)
@@ -113,6 +119,7 @@ func TestServeRefusesPlainHTTPOnAPublicAdminAddress(t *testing.T) {
 }
 
 func TestServeAllowsPlainHTTPOnAPublicAdminAddressWhenEnabled(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	h.editConfig(t, "admin_listen: 127.0.0.1:0", "admin_listen: 0.0.0.0:0")
 	h.appendConfig(t, "allow_plain_http: true\n")
@@ -124,6 +131,7 @@ func TestServeAllowsPlainHTTPOnAPublicAdminAddressWhenEnabled(t *testing.T) {
 }
 
 func TestServeTerminatesTLSOnAPublicAdminAddress(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	cert, key := selfSigned(t, h.root)
 	h.editConfig(t, "admin_listen: 127.0.0.1:0", "admin_listen: 0.0.0.0:0")
@@ -138,6 +146,7 @@ func TestServeTerminatesTLSOnAPublicAdminAddress(t *testing.T) {
 }
 
 func TestServeBindsAdminToAPrivateUnixSocket(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix socket permissions are POSIX")
 	}

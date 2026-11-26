@@ -94,6 +94,7 @@ func secretBody(token string) string {
 }
 
 func TestPlantedSecretsAppearOnlyWhereTheyAreMeantTo(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	up := newLeakyUpstream(t)
 	down := httptest.NewServer(nil)

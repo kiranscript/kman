@@ -43,6 +43,7 @@ func wantStage(t *testing.T, out, next string) {
 }
 
 func TestPlainKmanNamesTheNextCommandFromNothingToReady(t *testing.T) {
+	t.Parallel()
 	notInContainer(t)
 	h := newHome(t)
 	wantStage(t, h.plain(t), "kman init")
@@ -77,6 +78,7 @@ func TestPlainKmanNamesTheNextCommandFromNothingToReady(t *testing.T) {
 }
 
 func TestAKeySurvivesARestartAndItsSecretIsShownOnce(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)

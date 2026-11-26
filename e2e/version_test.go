@@ -24,6 +24,7 @@ func git(t *testing.T, args ...string) string {
 }
 
 func TestVersionNamesTheCommitAndItsDate(t *testing.T) {
+	t.Parallel()
 	commit := git(t, "rev-parse", "HEAD")
 	unix := git(t, "log", "-1", "--format=%ct")
 	var secs int64

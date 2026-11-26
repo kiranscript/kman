@@ -32,6 +32,7 @@ func (h *home) openIncidents(t *testing.T) []incidentShown {
 // and resolved, and a later use opens a new one that revoking the canary with
 // --incident resolves as confirmed, with the timeline and audit entries right.
 func TestACanaryOpensAnIncidentThatIsAcknowledgedAndResolvedByCLI(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "")
 	pager := newSink(t, 200)
 	p.h.addWebhook(t, "pager", pager)

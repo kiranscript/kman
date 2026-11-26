@@ -91,6 +91,7 @@ func next(t *testing.T, lines <-chan feedEvent, try func(), ok func(feedEvent) b
 // with a key that does not exist, marked as such. It never shows an address
 // until the install turns client addresses on.
 func TestEventsFollowShowsRequestsAsTheyHappenThroughTheRealBinary(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows cannot send SIGINT to another process")
 	}
@@ -180,6 +181,7 @@ func TestEventsFollowShowsRequestsAsTheyHappenThroughTheRealBinary(t *testing.T)
 
 // A kman that is told to stop does not wait for a client that is following.
 func TestKmanStopsWhileAClientFollowsTheFeed(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows cannot send SIGTERM to another process")
 	}

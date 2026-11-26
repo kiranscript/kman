@@ -1,0 +1,12 @@
+# The other half of ./.github/actions/setup-go: on a push to main, writes the
+# job's Go caches for the next run to restore. Elsewhere it does nothing.
+name: Save the Go caches
+description: On a push to main, saves the caches ./.github/actions/setup-go restored.
+runs:
+  using: composite
+  steps:
+    - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ env.GO_CACHE_PATHS }}
+        key: ${{ env.GO_CACHE_KEY }}
