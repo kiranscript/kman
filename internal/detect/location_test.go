@@ -411,7 +411,7 @@ func TestAThousandNewPlacesInOneBatchAreRaisedInBoundedTime(t *testing.T) {
 	}
 	began := time.Now()
 	r.mustWrite(batch...)
-	if took := time.Since(began); took > 10*time.Second {
+	if took := time.Since(began); took > 10*time.Second && !raceDetector {
 		t.Errorf("1000 requests, each new in network, ASN and client, took %v in the writer's transaction", took)
 	}
 	ds := r.detections(1)
