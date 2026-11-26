@@ -41,7 +41,9 @@ The screen follows [lazygit](https://github.com/jesseduffield/lazygit): numbered
 | `?` | help |
 | `q`, `Ctrl+C` | quit |
 
-A created key's secret is shown once, on a screen of its own. Only Enter closes it, `c` asks the terminal to copy it (OSC 52, which not every terminal allows), and it is gone from memory when it is closed.
+For keys approaching a cap, Needs attention shows the percentage used and whether the cap is daily or monthly. The key detail shows the remaining allowance after charges and in-flight reservations.
+
+A created key's secret is shown once, on a screen of its own. Only Enter closes it, `c` asks the terminal to copy it (OSC 52, which not every terminal allows), and it is gone from memory when it is closed. The screen also gives the SDK base URL on the kman host, including the bound proxy port. Older servers only supply the SDK path.
 
 Colour uses the terminal's own 16 colours. `NO_COLOR` turns it off and keeps bold and inverse. Every status has a glyph and a word as well as a colour.
 

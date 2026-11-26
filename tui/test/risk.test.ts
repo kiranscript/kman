@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Key } from '../src/api.js';
-import { keyRisks } from '../src/risk.js';
+import { upstream } from './fakes.js';
+import { keyRisks, upstreamAttention, upstreamRisks } from '../src/risk.js';
 
 const now = Date.parse('2026-11-17T12:00:00Z');
 const day = 86_400_000;
@@ -74,4 +75,14 @@ describe('attention order', () => {
     expect(names.indexOf('soon')).toBeLessThan(names.indexOf('later'));
     expect(names.indexOf('full')).toBeLessThan(names.indexOf('half'));
   });
+});
+
+it('keeps local plaintext visible on the upstream without crowding out actionable warnings', () => {
+  for (const host of ['127.0.0.1', '127.1.2.3', '::1', '0:0:0:0:0:0:0:1', 'localhost.']) {
+    const u = { ...upstream, host, tls: false };
+    expect(upstreamRisks(u).map((r) => r.short)).toContain('plain http');
+    expect(upstreamAttention([u])).toEqual([]);
+    expect(upstreamAttention([{ ...u, credentials: [] }])[0]?.risks.map((r) => r.short)).toEqual(['no credential']);
+  }
+  expect(upstreamAttention([{ ...upstream, tls: false, host: '127.0.0.1.example' }])).toHaveLength(1);
 });

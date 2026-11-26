@@ -45,6 +45,7 @@ export function useTick(ms: number): number {
 }
 
 export interface Notice {
+  untilReconnect?: boolean;
   text: string;
   tone: 'ok' | 'error' | 'info';
 }

@@ -17,7 +17,7 @@ import { Hint, Panel } from './ui/parts.js';
 import { editText } from './ui/TextField.js';
 import { color } from './ui/theme.js';
 import { AUDIT_LIMIT, useAdmin } from './useAdmin.js';
-import { AuditMain, KeyMain, StartMain, StatusMain, UPSTREAM_COMMAND, UpstreamMain } from './views/detail.js';
+import { AuditMain, KeyMain, StartMain, StatusMain, UpstreamMain } from './views/detail.js';
 import type { Scroll } from './views/detail.js';
 import { attentionItems, AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
 
@@ -26,6 +26,7 @@ export interface AppProps {
   /** The admin address, for the header. Never the token. */
   url: string;
   configDir?: string;
+  tokenFromEnv?: boolean;
   intervalMs?: number;
   /** How long a success notice stays, in milliseconds. */
   noticeMs?: number;
@@ -52,7 +53,7 @@ type Mode =
 export const MIN_COLUMNS = 80;
 export const MIN_ROWS = 24;
 
-export function App({ client, url, configDir, intervalMs, size, copy, noticeMs = 6000, secretGuardMs }: AppProps) {
+export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, copy, noticeMs = 6000, secretGuardMs }: AppProps) {
   const { exit } = useApp();
   const win = useWindowSize();
   const { columns, rows } = size ?? win;
@@ -92,6 +93,11 @@ export function App({ client, url, configDir, intervalMs, size, copy, noticeMs =
     const t = setTimeout(() => setNotice(undefined), noticeMs);
     return () => clearTimeout(t);
   }, [notice, noticeMs, working]);
+
+  // A successful poll resolves connection notices. Failed mutations still need acknowledgement.
+  useEffect(() => {
+    if (link.state === 'ok') setNotice((current) => current?.untilReconnect ? undefined : current);
+  }, [link]);
 
   const visible = useMemo(() => visibleKeys(data.keys, filter), [data.keys, filter]);
   const selectedId = visible.some((k) => k.id === keySel) ? keySel : visible[0]?.id;
@@ -154,8 +160,10 @@ export function App({ client, url, configDir, intervalMs, size, copy, noticeMs =
     const step = (cur: number, count: number) =>
       count === 0 ? 0 : Math.max(0, Math.min(count - 1, to === 'first' ? 0 : to === 'last' ? count - 1 : cur + to));
     if (tab === 'keys') {
-      const cur = Math.max(0, visible.findIndex((k) => k.id === selectedId));
-      setKeySel(visible[step(cur, visible.length)]?.id);
+      setKeySel((previous) => {
+        const cur = Math.max(0, visible.findIndex((k) => k.id === previous));
+        return visible[step(cur, visible.length)]?.id;
+      });
     } else if (tab === 'status') {
       setAttentionSel((c) => step(c, items.length));
     } else if (tab === 'upstreams') {
@@ -239,7 +247,7 @@ export function App({ client, url, configDir, intervalMs, size, copy, noticeMs =
   /** Changes need kman to answer, so while it does not, say so instead of opening a dialog that must fail. */
   function offline(): boolean {
     if (link.state !== 'down') return false;
-    setNotice({ tone: 'error', text: 'kman is not answering, so nothing can be changed now. r tries again.' });
+    setNotice({ tone: 'error', untilReconnect: true, text: 'kman is not answering, so nothing can be changed now. r tries again.' });
     return true;
   }
 
@@ -290,6 +298,14 @@ export function App({ client, url, configDir, intervalMs, size, copy, noticeMs =
         return;
       }
 
+      // Ink can deliver repeated printable keys in one chunk and arrows in one React batch.
+      const up = key.upArrow || /^k+$/.test(input);
+      if (up || key.downArrow || /^j+$/.test(input)) {
+        const count = key.upArrow || key.downArrow ? 1 : input.length;
+        const delta = up ? -count : count;
+        if (detail) return setScrollTop((t) => Math.max(0, Math.min(scrollMax, t + delta)));
+        return move(delta);
+      }
       if (input === 'q') return exit();
       if (input === '?') {
         setNotice(undefined);
@@ -300,8 +316,6 @@ export function App({ client, url, configDir, intervalMs, size, copy, noticeMs =
       if (detail) {
         const by = (n: number) => setScrollTop((t) => Math.max(0, Math.min(scrollMax, t + n)));
         if (key.escape || key.return) return setDetail(false);
-        if (key.upArrow || input === 'k') return by(-1);
-        if (key.downArrow || input === 'j') return by(1);
         if (key.pageUp) return by(-Math.max(1, viewRows - 1));
         if (key.pageDown) return by(Math.max(1, viewRows - 1));
         if (key.home || input === 'g') return setScrollTop(0);
@@ -310,7 +324,7 @@ export function App({ client, url, configDir, intervalMs, size, copy, noticeMs =
       if (input === 'r') {
         setNotice({ tone: 'info', text: 'Refreshing…' });
         void refresh().then((why) =>
-          setNotice(why ? { tone: 'error', text: `Could not refresh: ${why}` } : { tone: 'ok', text: 'Refreshed.' }),
+          setNotice(why ? { tone: 'error', untilReconnect: true, text: `Could not refresh: ${why}` } : { tone: 'ok', text: 'Refreshed.' }),
         );
         return;
       }
@@ -321,8 +335,6 @@ export function App({ client, url, configDir, intervalMs, size, copy, noticeMs =
       if (key.rightArrow || input === 'l') return goTab(TABS[(at + 1) % TABS.length]!.id);
       if (key.leftArrow || input === 'h') return goTab(TABS[(at + TABS.length - 1) % TABS.length]!.id);
 
-      if (key.upArrow || input === 'k') return move(-1);
-      if (key.downArrow || input === 'j') return move(1);
       // A page is what the list shows, less one row, so one row of the old page is still in view.
       if (key.pageUp) return move(-Math.max(1, pageRows() - 1));
       if (key.pageDown) return move(Math.max(1, pageRows() - 1));
@@ -449,9 +461,10 @@ export function App({ client, url, configDir, intervalMs, size, copy, noticeMs =
             <Text>{link.error}</Text>
             <Text>Admin address: {url}</Text>
             {configDir && <Text>Config directory: {configDir}</Text>}
+            {tokenFromEnv && <Text>KMAN_ADMIN_TOKEN supplied this token. Unset it to use a saved login, or replace it, then restart.</Text>}
             <Text dimColor>Save a current token using the address above:</Text>
             <Text>kman login --admin-url &lt;address&gt;{configDir && ' --config-dir <directory>'}</Text>
-            <Text dimColor>If KMAN_ADMIN_TOKEN is set, replace or unset it. Then restart the TUI.</Text>
+            {!tokenFromEnv && <Text dimColor>Then restart the TUI.</Text>}
           </Box>
         </Panel>
       </Centered>
@@ -500,7 +513,10 @@ export function App({ client, url, configDir, intervalMs, size, copy, noticeMs =
           error={dialogError}
           onConfirm={() => void revoke(mode.key)}
           onReady={setRevokeReady}
-          onCancel={() => setMode({ kind: 'none' })}
+          onCancel={() => {
+            setMode({ kind: 'none' });
+            setNotice({ tone: 'info', text: `Revoke cancelled for ${keyLabel(mode.key)}.` });
+          }}
         />
       </Centered>
     );
@@ -553,7 +569,7 @@ export function App({ client, url, configDir, intervalMs, size, copy, noticeMs =
         attn ? (
           <KeyMain key={attn.id} keyData={attn} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} />
         ) : attnItem?.noUpstream ? (
-          <UpstreamMain upstream={undefined} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} none={NO_UPSTREAM} command={UPSTREAM_COMMAND} />
+          <UpstreamMain upstream={undefined} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} none={NO_UPSTREAM} />
         ) : attnUp ? (
           <UpstreamMain key={attnUp.id} upstream={attnUp} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} />
         ) : data.keys.length === 0 ? (
@@ -581,7 +597,6 @@ export function App({ client, url, configDir, intervalMs, size, copy, noticeMs =
           height={lay.mainH}
           scroll={scroll}
           none={NO_UPSTREAM}
-          command={UPSTREAM_COMMAND}
         />
       ) : (
         <AuditMain
@@ -715,7 +730,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, revokeReady, 
     { k: '?', label: 'help', always: true },
     { k: 'q', label: 'quit', always: true },
   ];
-  const create = canChange && canCreate ? [{ k: 'n', label: 'new key', rank: 4 }] : [];
+  const create = canChange && canCreate ? [{ k: 'n', label: 'new key', rank: tab === 'keys' && key ? 3 : 4 }] : [];
   // Only offered when the detail has more than it shows: otherwise there is nothing to go to.
   const open = selectable && scrollable ? [{ k: 'Enter', label: 'details', rank: 3.6 }] : [];
   // Moving over the rows and reaching the other panels outrank a secondary action like c IPs.
@@ -730,8 +745,8 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, revokeReady, 
     return [
       ...select,
       ...open,
-      // Revoke is documented in help and confirmed in a dialog, so it goes before the panel keys do.
-      ...(canChange ? [...create, ...act, ...(key && key.status !== 'revoked' ? [{ k: 'x', label: 'revoke', rank: 3.1 }] : [])] : []),
+      // Keep the selected key’s actions visible before the global create shortcut.
+      ...(canChange ? [...create, ...act, ...(key && key.status !== 'revoked' ? [{ k: 'x', label: 'revoke', rank: 4.5 }] : [])] : []),
       ...(key && !offline ? [{ k: 'c', label: 'IPs', rank: 3 }] : []),
       ...(filtered ? [{ k: 'Esc', label: 'clear filter', always: true }] : hasKeys ? [{ k: '/', label: 'filter', rank: 6 }] : []),
       ...common,

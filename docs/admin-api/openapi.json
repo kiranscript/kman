@@ -742,6 +742,10 @@
           "key": {
             "$ref": "#/components/schemas/Key"
           },
+          "proxy_url": {
+            "description": "The running proxy origin on the kman host, including its bound port.",
+            "type": "string"
+          },
           "sdk_base_path": {
             "description": "Appended to kman's proxy URL to make an SDK's base URL.",
             "type": "string"

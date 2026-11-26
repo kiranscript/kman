@@ -80,9 +80,11 @@ export function SecretDialog({ created, width, onClose, onCopy = osc52, armMs = 
         ) : (
           <Text dimColor>Use the secret above as this upstream's key.</Text>
         )}
-        {/* The proxy address is not in the admin API, so name its default, and always say where requests go. */}
+        {/* Older servers omit the bound address. */}
         <Text dimColor>
-          Base URL: kman's proxy address{created.sdk_base_path ? ` + ${created.sdk_base_path}` : ''} (http://127.0.0.1:8080 by default)
+          {created.proxy_url
+            ? `Base URL on the kman host: ${created.proxy_url}${created.sdk_base_path ?? ''}`
+            : `Base URL: kman's proxy address${created.sdk_base_path ? ` + ${created.sdk_base_path}` : ''} (http://127.0.0.1:8080 by default)`}
         </Text>
       </Box>
       <Box marginTop={1} flexDirection="column">

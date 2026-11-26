@@ -80,6 +80,35 @@ describe('App', () => {
     m.unmount();
   });
 
+  it('applies every list movement when terminal input arrives in a burst', async () => {
+    const m = mount(fakeClient(['a', 'b', 'c', 'd'].map((id) => key({ id }))));
+    await loaded(m);
+    await m.press('2');
+    await m.press('jjj');
+    expect(m.screen()).toContain('Key: d');
+    await m.press('\x1b[A'.repeat(3));
+    expect(m.screen()).toContain('Key: a');
+    await m.press('/');
+    await m.press('jjj');
+    expect(m.screen()).toContain('No key matches "jjj"');
+    m.unmount();
+  });
+
+  it('clears a failed refresh when the next automatic poll succeeds', async () => {
+    const client = fakeClient();
+    const app = render(<App client={client} url="unix:/test" size={SIZE} intervalMs={80} />);
+    try {
+      await until(() => !!app.lastFrame()?.includes('● live'), 'first poll');
+      client.fail = new ApiError('unreachable', 'connection refused');
+      app.stdin.write('r');
+      await until(() => !!app.lastFrame()?.includes('Could not refresh'), 'failed refresh');
+      client.fail = undefined;
+      await until(() => !!app.lastFrame()?.includes('● live') && !app.lastFrame()?.includes('Could not refresh'), 'automatic recovery');
+    } finally {
+      app.unmount();
+    }
+  });
+
   it('keeps the selection on the key when the list re-sorts', async () => {
     const m = mount();
     await loaded(m);
@@ -686,7 +715,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('2');
       // What can be done to the selected key is dropped last; scrolling and selecting go first.
-      for (const hint of ['↑↓ select', 'd disable', '1-4 panels', '/ filter', '? help', 'q quit']) expect(lines(m).at(-1)).toContain(hint);
+      for (const hint of ['↑↓ select', 'd disable', 'x revoke', '1-4 panels', '/ filter', '? help', 'q quit']) expect(lines(m).at(-1)).toContain(hint);
       await m.press('d');
       expect(m.screen()).toContain('Disable this key?');
       expect(m.screen()).toContain('you can enable it again');
@@ -835,7 +864,7 @@ describe('App', () => {
       await until(() => m.screen().includes('refused this token'), 'the refusal');
       expect(lines(m).some((l) => l.includes('kman login --admin-url <address>'))).toBe(true);
       expect(m.screen()).toContain('Admin address: http://127.0.0.1:8081');
-      expect(m.screen()).toContain('replace or unset it');
+      expect(m.screen()).not.toContain('KMAN_ADMIN_TOKEN supplied');
       m.unmount();
     });
   });
@@ -1736,6 +1765,18 @@ describe('App', () => {
     await until(() => m2.screen().includes('kmn_secretsecretsecret'), 'the secret');
     expect(m2.screen()).toContain("Base URL: kman's proxy address (http://127.0.0.1:8080 by default)");
     m2.unmount();
+  });
+
+  it('displays the server-provided proxy address with the SDK base path', async () => {
+    const client = fakeClient();
+    const create = client.createKey;
+    client.createKey = async (input) => ({ ...(await create(input)), proxy_url: 'https://proxy.test:8443' });
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('n');
+    await m.press(CTRL_S);
+    expect(m.screen()).toContain('Base URL on the kman host: https://proxy.test:8443/v1');
+    m.unmount();
   });
 
   it('says a refresh failed when it did, and keeps saying so until a key press', async () => {

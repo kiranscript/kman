@@ -99,6 +99,8 @@ var _ API = (*Service)(nil)
 // Options configures New.
 type Options struct {
 	Store *store.Store
+	// ProxyURL returns the bound proxy origin as reached from the server host.
+	ProxyURL func() string
 	// Now is the clock: admin never reads the wall clock itself.
 	Now func() time.Time
 	// Rand is where new secrets come from. It defaults to crypto/rand; the
@@ -162,6 +164,9 @@ type Service struct {
 	alerts  Alerter
 	update  func() UpdateStatus
 
+	// The proxy address is available once serve has bound its listeners.
+	proxyURL func() string
+
 	// bus is where live event streams subscribe, and streams are the ones open.
 	bus          *events.Bus
 	streamBuffer int
@@ -178,7 +183,7 @@ type Service struct {
 
 // New returns the admin service over opts.Store.
 func New(opts Options) *Service {
-	s := &Service{store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices, spend: opts.Spend, alerts: opts.Alerts, update: opts.Update, bus: opts.Events, streamBuffer: opts.StreamBuffer, streams: newStreams()}
+	s := &Service{proxyURL: opts.ProxyURL, store: opts.Store, now: opts.Now, rand: opts.Rand, vault: opts.Vault, presets: opts.Presets, apply: opts.Apply, prices: opts.Prices, policy: opts.NormalizePolicy, publish: opts.ApplyPrices, spend: opts.Spend, alerts: opts.Alerts, update: opts.Update, bus: opts.Events, streamBuffer: opts.StreamBuffer, streams: newStreams()}
 	s.settle = make(chan struct{}, 1)
 	if s.rand == nil {
 		s.rand = rand.Reader

@@ -50,8 +50,9 @@ unset virtual_key
 **3. Key lifecycle.** On the real install with the test upstream added, seed the pair once. Discard their generated secrets. Launch or return to `node tui/dist/cli.js`.
 
 ```sh
-kman key create service-checkout-east --upstream openai >/dev/null
-kman key create service-checkout-west --upstream openai >/dev/null
+read -rp 'Upstream name used for the first key: ' upstream_name
+kman key create service-checkout-east --upstream "$upstream_name" >/dev/null
+kman key create service-checkout-west --upstream "$upstream_name" >/dev/null
 ```
 
 After canceling revoke, check that west is active. At the end, Audit should show one disable, one enable, and one revoke for west. East should remain active. Cross-check both statuses with `kman key list`. To inspect a revoked key individually with the CLI, use its ID.
@@ -78,3 +79,7 @@ On Linux with Node 24, the initial build and typecheck passed. The baseline suit
 The terminal walkthrough verified empty-install guidance, a copied key returning HTTP 200 through the local proxy, and the spend warning in the seeded demo. The west-key actions appeared in Audit and east stayed active. Stopping and restarting the server exercised both cached and cold-start recovery. A refused token showed the endpoint and override guidance. Filter and confirmation checks covered all four terminal sizes, including a monochrome run.
 
 Dialogs now retain their input when resizing moves them beside the list. The login hint now identifies the admin address and explains how to recover from a token override. Human observations and terminal-emulator clipboard permissions remain for Phase 2.
+
+## Phase 2 observations
+
+The [Opus operator session](phase-2-opus.md) records outcomes for all four tasks, observed friction, and Phase 3 retest criteria. Give human participants the worksheet before sharing these observations.

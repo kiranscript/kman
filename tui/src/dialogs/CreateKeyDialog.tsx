@@ -3,7 +3,7 @@ import { useState } from 'react';
 import type { CreateKeyInput, KeyPolicy, Upstream } from '../api.js';
 import { fitMiddle, padEnd, parseDays, parseDollars, wrapLines } from '../format.js';
 import { editField, TextField } from '../ui/TextField.js';
-import { Panel, Wrapped } from '../ui/parts.js';
+import { Panel, UpstreamSetup, Wrapped } from '../ui/parts.js';
 import { color } from '../ui/theme.js';
 
 const NAME_RE = /^[a-z0-9][a-z0-9._-]{0,62}$/;
@@ -139,7 +139,7 @@ export function CreateKeyDialog({ upstreams, defaultDays, busy, error, errorLine
       <Panel title="New virtual key" width={64}>
         <Box flexDirection="column">
           <Text>A key belongs to an upstream, and there is none yet.</Text>
-          <Text dimColor>Add one first: kman upstream add openai --preset openai</Text>
+          <UpstreamSetup />
         </Box>
       </Panel>
     );

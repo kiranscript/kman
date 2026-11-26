@@ -155,3 +155,13 @@ export function fittingScrollHint(start: number, shown: number, count: number, r
   const full = scrollHint(start, shown, count);
   return [...full].length <= room ? full : scrollHint(start, shown, count, true);
 }
+
+/** Setup instructions shared by the empty install, the upstream panel and the key form. */
+export function UpstreamSetup() {
+  return (
+    <Box flexDirection="column">
+      <Text bold>kman upstream add openai --preset openai</Text>
+      <Text dimColor>Custom endpoint? Set --host and --port. For plain HTTP add --no-tls.</Text>
+    </Box>
+  );
+}

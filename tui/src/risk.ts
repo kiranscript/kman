@@ -1,6 +1,7 @@
 // "Key at risk" (GLOSSARY): a virtual key whose settings or state would make a
 // leak more costly. v0.1.0 has no address locks, so the signals are no spend
 // cap, close to a cap, and about to expire (or already expired).
+import { BlockList, isIP } from 'node:net';
 import type { Key, SpendPeriod, Upstream } from './api.js';
 import { daysCeil, daysLeft } from './format.js';
 
@@ -11,6 +12,7 @@ export interface Risk {
   label: string;
   /** Two words at most, for a list row: "near cap", "expiring". */
   short: string;
+  listLabel?: string;
   /** How pressing it is among risks of one severity: higher is sooner. */
   weight: number;
 }
@@ -55,9 +57,9 @@ export function keyRisks(key: Key, now: number): Risk[] {
   if (!cap) {
     risks.push({ severity: 'info', label: 'no spend cap', short: 'no cap', weight: 0 });
   } else if (cap.ratio >= 1) {
-    risks.push({ severity: 'danger', label: `at its ${cap.period} cap`, short: 'at cap', weight: 1500 });
+    risks.push({ severity: 'danger', label: `at its ${cap.period} cap`, short: 'at cap', listLabel: `${Math.round(cap.ratio * 100)}% ${cap.period}`, weight: 1500 });
   } else if (cap.ratio >= NEAR_CAP) {
-    risks.push({ severity: 'warn', label: `${Math.round(cap.ratio * 100)}% of its ${cap.period} cap`, short: 'near cap', weight: cap.ratio * 1000 });
+    risks.push({ severity: 'warn', label: `${Math.round(cap.ratio * 100)}% of its ${cap.period} cap`, short: 'near cap', listLabel: `${Math.round(cap.ratio * 100)}% ${cap.period}`, weight: cap.ratio * 1000 });
   }
 
   const unmetered = key.spend?.today.unmetered_requests ?? 0;
@@ -114,11 +116,21 @@ export interface UpstreamAttention {
   top: Severity;
 }
 
+const loopback = new BlockList();
+loopback.addSubnet('127.0.0.0', 8);
+loopback.addAddress('::1', 'ipv6');
+
+function isLoopbackHost(host: string): boolean {
+  if (/^localhost\.?$/i.test(host)) return true;
+  const family = isIP(host);
+  return family !== 0 && loopback.check(host, family === 6 ? 'ipv6' : 'ipv4');
+}
+
 /** What is wrong with an upstream: no credential (its keys cannot work), plain http, a newer preset. */
-export function upstreamRisks(u: Upstream): Risk[] {
+export function upstreamRisks(u: Upstream, includeLocalTransport = true): Risk[] {
   const risks: Risk[] = [];
   if (u.credentials.length === 0) risks.push({ severity: 'danger', label: 'no credential: its keys cannot work', short: 'no credential', weight: 2000 });
-  if (u.tls === false) risks.push({ severity: 'warn', label: 'plain http: traffic is not encrypted', short: 'plain http', weight: 1000 });
+  if (u.tls === false && (includeLocalTransport || !isLoopbackHost(u.host))) risks.push({ severity: 'warn', label: 'plain http: traffic is not encrypted', short: 'plain http', weight: 1000 });
   if (u.update_available) risks.push({ severity: 'info', label: 'a newer preset exists', short: 'update', weight: 0 });
   return risks;
 }
@@ -126,7 +138,8 @@ export function upstreamRisks(u: Upstream): Risk[] {
 /** Upstreams with something to look at, worst first. */
 export function upstreamAttention(upstreams: Upstream[]): UpstreamAttention[] {
   return upstreams
-    .map((upstream) => ({ upstream, risks: upstreamRisks(upstream) }))
+    // The upstream panel still identifies plaintext on local connections.
+    .map((upstream) => ({ upstream, risks: upstreamRisks(upstream, false) }))
     .filter((a) => a.risks.length > 0)
     .map((a) => ({ ...a, top: worst(a.risks) ?? 'info' }))
     .sort((a, b) => order[a.top] - order[b.top] || weightOf(b) - weightOf(a) || a.upstream.name.localeCompare(b.upstream.name));

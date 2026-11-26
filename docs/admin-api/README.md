@@ -872,6 +872,7 @@ Response 200: [Whoami](#whoami).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `key` | [Key](#key) | yes |  |
+| `proxy_url` | string | no | The running proxy origin on the kman host, including its bound port. |
 | `sdk_base_path` | string | no | Appended to kman's proxy URL to make an SDK's base URL. |
 | `sdk_env` | string | no | The variable an SDK for its upstream reads the key from. |
 | `secret` | string | yes | The virtual key itself (kmn_...). kman keeps only its hash, so it is shown only this once. |
