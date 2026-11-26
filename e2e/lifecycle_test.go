@@ -16,6 +16,7 @@ func (p *proxied) thing() (status int, errCode string, body string) {
 // Each of these is the very next request after the command returns: nothing
 // waits, and the server is not restarted.
 func TestDisablingAndRevokingAKeyStopTheNextRequest(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-json-twice")
 	if status, _, _ := p.thing(); status != 201 {
 		t.Fatalf("a good key: %d", status)
@@ -48,6 +49,7 @@ func TestDisablingAndRevokingAKeyStopTheNextRequest(t *testing.T) {
 }
 
 func TestAnExpiredKeyStopsTheNextRequest(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-json")
 	p.h.mustRun(t, "key", "update", "my-app", "--ttl", "3s")
 	if status, _, _ := p.thing(); status != 201 {
@@ -67,6 +69,7 @@ func TestAnExpiredKeyStopsTheNextRequest(t *testing.T) {
 }
 
 func TestNoKeyMayBeCreatedOrExtendedPastTheMaximumLifetime(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "")
 	if _, stderr, code := p.h.run(t, "key", "create", "long", "--upstream", "mock", "--ttl", "400d"); code == 0 || !strings.Contains(stderr, "maximum key lifetime") {
 		t.Errorf("create past the maximum: exit %d, %s", code, stderr)

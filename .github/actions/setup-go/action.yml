@@ -1,0 +1,50 @@
+# Go from go.mod, with the build, test and module caches of the last main
+# push for this job. actions/setup-go's own cache keeps one entry per go.sum,
+# written by whichever job finishes first and never refreshed, so a job got
+# another job's builds (cross-compile's, say, for the race job) and none of
+# its test results. Here each job has its own entry, restored on every run
+# and written again on each push to main (save-go-cache, the job's last
+# step). Pull requests only read: their builds would crowd main's out of the
+# 10 GB the repository gets. Go's caches are content-addressed, so an older
+# entry is never wrong, only less complete.
+name: Set up Go
+description: Go from go.mod, with this job's caches from the last main push.
+inputs:
+  cache:
+    description: The job's cache name. Jobs that build different things keep different caches.
+    required: true
+  extra-paths:
+    description: More directories to keep with the Go caches, one per line, such as staticcheck's cache.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      with:
+        go-version-file: go.mod
+        cache: false
+    - name: Name the cache
+      shell: bash
+      env:
+        NAME: ${{ inputs.cache }}
+        EXTRA: ${{ inputs.extra-paths }}
+        SUMS: ${{ hashFiles('go.mod', '**/go.sum') }}
+      run: |
+        prefix="go-$NAME-$RUNNER_OS-$RUNNER_ARCH-$(go env GOVERSION)"
+        {
+          echo "GO_CACHE_PREFIX=$prefix"
+          echo "GO_CACHE_KEY=$prefix-$SUMS-$GITHUB_SHA"
+          echo "GO_CACHE_SUMS_PREFIX=$prefix-$SUMS-"
+          echo "GO_CACHE_PATHS<<EOF"
+          go env GOCACHE GOMODCACHE
+          printf '%s\n' "$EXTRA" | sed '/^[[:space:]]*$/d'
+          echo "EOF"
+        } >> "$GITHUB_ENV"
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ env.GO_CACHE_PATHS }}
+        key: ${{ env.GO_CACHE_KEY }}
+        restore-keys: |
+          ${{ env.GO_CACHE_SUMS_PREFIX }}
+          ${{ env.GO_CACHE_PREFIX }}-

@@ -13,6 +13,7 @@ import (
 // kman scan needs no install, no server and no network: this home has none, and
 // its proxy variables point at nothing.
 func TestScanFindsAKeyOnAMachineThatNeverRanKman(t *testing.T) {
+	t.Parallel()
 	notInContainer(t)
 	h := newHome(t)
 	id := token.NewKeyID()
@@ -64,6 +65,7 @@ func TestScanFindsAKeyOnAMachineThatNeverRanKman(t *testing.T) {
 }
 
 func TestScanNamesTheRealKeyAndRevokingItEndsIt(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-json")
 	id := p.h.showKey(t, "my-app").ID
 	file := filepath.Join(p.h.root, "leaked.log")
@@ -80,6 +82,7 @@ func TestScanNamesTheRealKeyAndRevokingItEndsIt(t *testing.T) {
 }
 
 func TestExposureListsAnOpenKeyAndStrictFailsUntilItIsLocked(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-json")
 	stdout, stderr, code := p.h.run(t, "exposure")
 	if code != 0 || !strings.Contains(stdout, "my-app") || !strings.Contains(stdout, "open to every address") {

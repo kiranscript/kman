@@ -12,6 +12,13 @@
 # job below, and also runs with go test. Two gates of SPEC §17 join later, with
 # the code they check: templ generate with no diff (the dashboard, M3), and the
 # secret-leak sweep (after v0.1.0).
+#
+# Speed: every job starts at once, so a run takes as long as its slowest job.
+# Go's build and test caches come from the last push to main
+# (.github/actions/setup-go); the jobs that run only on pull requests, or
+# build much what the test job builds, read the Linux test job's. go test
+# reuses a package's result when nothing it builds from or reads changed;
+# gates that must run every time say -count=1.
 name: CI
 
 on:
@@ -40,15 +47,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      - uses: ./.github/actions/setup-go
         with:
-          go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
+          cache: lint
+          extra-paths: ${{ runner.temp }}/staticcheck
       - name: go vet
         run: |
           go vet ./...
           go -C tools vet ./...
       - name: staticcheck
+        env:
+          STATICCHECK_CACHE: ${{ runner.temp }}/staticcheck
         run: |
           go tool -modfile=tools/go.mod staticcheck ./...
           go -C tools tool staticcheck ./...
@@ -58,6 +67,7 @@ jobs:
         run: |
           go mod tidy -diff
           go -C tools mod tidy -diff
+      - uses: ./.github/actions/save-go-cache
 
   test:
     strategy:
@@ -72,15 +82,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      - uses: ./.github/actions/setup-go
         with:
-          go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
+          cache: test
       - name: Unit, gate and e2e tests
         run: go test ./...
       - name: Tool tests
         if: runner.os == 'Linux'
         run: go -C tools test ./...
+      - uses: ./.github/actions/save-go-cache
 
   sdk-e2e:
     # SPEC §17: the pinned official SDKs, through the real binary. KMAN_E2E_SDK
@@ -94,10 +104,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      - uses: ./.github/actions/setup-go
         with:
-          go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
+          cache: test
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -124,10 +133,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      - uses: ./.github/actions/setup-go
         with:
-          go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
+          cache: test
       - name: Canary deadline gate
         run: go test -count=1 -v -run '^TestCanaryDeadlineGate$' ./e2e
 
@@ -140,20 +148,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      - uses: ./.github/actions/setup-go
         with:
-          go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
+          cache: race
       - name: go test -race
         env:
           CGO_ENABLED: "1" # -race needs cgo
         run: go test -race ./...
+      - uses: ./.github/actions/save-go-cache
 
   cross-compile:
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64]
+    # One job for the five targets: with the cache each build takes seconds,
+    # less than starting a runner for it.
     runs-on: ubuntu-latest
     steps:
       - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
@@ -162,15 +168,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      - uses: ./.github/actions/setup-go
         with:
-          go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
-      - name: Build ${{ matrix.target }}
+          cache: cross-compile
+      - name: Build linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64
         env:
           CGO_ENABLED: "0"
-          TARGET: ${{ matrix.target }}
-        run: GOOS="${TARGET%/*}" GOARCH="${TARGET#*/}" go build -trimpath -o /dev/null ./cmd/kman
+        run: |
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            echo "::group::$target"
+            GOOS="${target%/*}" GOARCH="${target#*/}" go build -trimpath -o /dev/null ./cmd/kman
+            echo "::endgroup::"
+          done
+      - uses: ./.github/actions/save-go-cache
 
   bench:
     if: github.event_name == 'pull_request'
@@ -183,24 +193,48 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      - uses: ./.github/actions/setup-go
         with:
-          go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
+          cache: test
       - name: Benchmark the base and the head
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -o pipefail
-          bench() { go test -run '^$' -bench . -benchmem -count 10 ./...; }
+          : > "$RUNNER_TEMP/base.txt"
+          : > "$RUNNER_TEMP/head.txt"
+          # Only the benchmarks the change can move: a package's run when the
+          # pull request touches the package, a package of this module it
+          # imports, go.mod or go.sum, or the gate itself (this file, tools).
+          # The others would time the same code twice.
+          pkgs=()
+          while read -r pkg dir; do
+            grep -qsE '^func Benchmark' "$dir"/*_test.go || continue
+            mapfile -t deps < <(go list -deps -test -f '{{.Dir}}' "$pkg" | awk -v root="$PWD/" 'index($0, root) == 1')
+            if ! git diff --quiet "$BASE_SHA" HEAD -- go.mod go.sum tools .github/workflows/ci.yml "${deps[@]}"; then
+              pkgs+=("$pkg")
+            fi
+          done < <(go list -f '{{.ImportPath}} {{.Dir}}' ./...)
+          if [ "${#pkgs[@]}" -eq 0 ]; then
+            echo "The change reaches no package with benchmarks."
+            exit 0
+          fi
+          printf 'Benchmarking %s\n' "${pkgs[@]}"
+          # 250ms a run, ten runs a side: still hundreds of thousands of
+          # iterations of the slowest benchmark per run, and a quarter of the
+          # time the default second takes.
+          bench() { go test -run '^$' -bench . -benchmem -benchtime 250ms -count 10 "$@"; }
           git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
           if [ -f "$RUNNER_TEMP/base/go.mod" ]; then
-            (cd "$RUNNER_TEMP/base" && bench) | tee "$RUNNER_TEMP/base.txt"
+            # The packages the base has; a new one is compared against nothing.
+            mapfile -t basepkgs < <(cd "$RUNNER_TEMP/base" && go list -e -f '{{if not .Error}}{{.ImportPath}}{{end}}' "${pkgs[@]}" | grep .)
+            if [ "${#basepkgs[@]}" -gt 0 ]; then
+              (cd "$RUNNER_TEMP/base" && bench "${basepkgs[@]}") | tee "$RUNNER_TEMP/base.txt"
+            fi
           else
             echo "The base has no Go module yet; comparing against nothing."
-            : > "$RUNNER_TEMP/base.txt"
           fi
-          bench | tee "$RUNNER_TEMP/head.txt"
+          bench "${pkgs[@]}" | tee "$RUNNER_TEMP/head.txt"
       - name: benchstat
         run: go tool -modfile=tools/go.mod benchstat "$RUNNER_TEMP/base.txt" "$RUNNER_TEMP/head.txt"
       - name: Benchmark gate (allocations, or a slowdown over 10%)
@@ -221,10 +255,9 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      - uses: ./.github/actions/setup-go
         with:
-          go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
+          cache: test
       - name: Flag price data for review
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -245,42 +278,49 @@ jobs:
     # and the credential mount it makes for a service in a helper namespace
     # never reaches the service, so the container makes / shared first, as
     # systemd itself does on a host.
+    #
+    # The container installs systemd while the job builds the tests: it
+    # starts first, from the Azure mirror the runners themselves use, and the
+    # test binary reaches it through the bind mount once built.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: audit
+      - name: Start systemd in a container
+        env:
+          IMAGE: ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+        run: |
+          mkdir -p "$RUNNER_TEMP/kman-systemd"
+          docker run -d --name systemd --privileged --cgroupns=private \
+            -e container=docker --tmpfs /run --tmpfs /run/lock \
+            -v "$RUNNER_TEMP/kman-systemd:/kman:ro" \
+            "$IMAGE" bash -c 'sed -i "s|http://\(archive\|security\).ubuntu.com|http://azure.archive.ubuntu.com|" /etc/apt/sources.list.d/ubuntu.sources &&
+              apt-get update -qq -o Acquire::Languages=none &&
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends -o Dpkg::Options::=--force-unsafe-io systemd dbus >/dev/null &&
+              mount --make-rshared / &&
+              exec /usr/lib/systemd/systemd'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      - uses: ./.github/actions/setup-go
         with:
-          go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
+          cache: test
       - name: Build the vault tests
         env:
           CGO_ENABLED: "0"
         run: go test -c -o "$RUNNER_TEMP/kman-systemd/vault.test" ./internal/vault
-      - name: Boot systemd in a container
-        env:
-          IMAGE: ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+      - name: Wait for systemd to boot
         run: |
-          docker run -d --name systemd --privileged --cgroupns=private \
-            -e container=docker --tmpfs /run --tmpfs /run/lock \
-            -v "$RUNNER_TEMP/kman-systemd:/kman:ro" \
-            "$IMAGE" bash -c 'apt-get update -qq &&
-              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends systemd dbus >/dev/null &&
-              mount --make-rshared / &&
-              exec /usr/lib/systemd/systemd'
-          for _ in $(seq 1 90); do
+          for _ in $(seq 1 180); do
             state=$(docker exec systemd systemctl is-system-running 2>/dev/null || true)
             case "$state" in running|degraded)
               if docker exec systemd test -S /run/dbus/system_bus_socket; then
                 echo "systemd is $state, with a system bus"; exit 0
               fi ;;
             esac
-            sleep 2
+            sleep 1
           done
           echo "systemd did not boot (last state: ${state:-none})"
           docker logs systemd | tail -50
@@ -296,6 +336,8 @@ jobs:
   tui:
     # ADR 0009: the terminal client builds, type-checks and tests on its own, and its
     # API client is run against the real binary so its types cannot drift from the API.
+    # A pull request that touches neither the client nor the Go that serves the
+    # API (docs alone, say) has nothing to test here, and the steps skip.
     runs-on: ubuntu-latest
     steps:
       - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
@@ -304,14 +346,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+          fetch-depth: 2
+      - name: Does the change reach the client?
+        id: changed
+        run: |
+          # On a pull request HEAD is the merge commit, and HEAD^1 the base.
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] &&
+            git diff --quiet HEAD^1 HEAD -- tui cmd internal go.mod go.sum .github/workflows/ci.yml .github/actions; then
+            echo "The change does not reach the client or the admin API."
+            echo "tui=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "tui=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changed.outputs.tui == 'true'
+        uses: ./.github/actions/setup-go
         with:
-          go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+          cache: test
+      - if: steps.changed.outputs.tui == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
+          cache: npm
+          cache-dependency-path: tui/package-lock.json
       - name: Install, type-check, build, test
+        if: steps.changed.outputs.tui == 'true'
         working-directory: tui
         run: |
           npm ci
@@ -319,6 +377,7 @@ jobs:
           npm run build
           npm test
       - name: The client against a real kman
+        if: steps.changed.outputs.tui == 'true'
         working-directory: tui
         run: |
           go build -o "$RUNNER_TEMP/kman" ../cmd/kman

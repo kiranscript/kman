@@ -36,6 +36,7 @@ var snippets = []struct {
 }
 
 func TestTheSDKDocIsCurrent(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join("..", "docs", "sdks.md")
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -97,6 +98,7 @@ func presetTable() string {
 // uses, with only the environment kman's quickstart tells an app to set, gets the
 // transcript's answer through kman and is metered.
 func TestTheSDKDocSnippetsRunThroughKman(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, transcript, profile string
 		base, keyVar, baseVar     string // the base path, and the variables the snippet reads

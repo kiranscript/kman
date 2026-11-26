@@ -40,6 +40,25 @@ jobs:
       - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: audit
+      # The systemd container for the .deb's steps below installs systemd
+      # while GoReleaser builds, from the Azure mirror the runners use. As in
+      # ci.yml's systemd-creds job: systemd-run --wait needs a system bus
+      # (dbus), and credentials reach a service only once / is a shared mount,
+      # which systemd leaves alone under a container manager. The .deb and
+      # the steps reach it through the bind mount once they exist.
+      - name: Start systemd in a container
+        env:
+          IMAGE: ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+        run: |
+          mkdir -p "$RUNNER_TEMP/deb"
+          docker run -d --name systemd --privileged --cgroupns=private \
+            -e container=docker --tmpfs /run --tmpfs /run/lock \
+            -v "$RUNNER_TEMP/deb:/deb:ro" \
+            "$IMAGE" bash -c 'sed -i "s|http://\(archive\|security\).ubuntu.com|http://azure.archive.ubuntu.com|" /etc/apt/sources.list.d/ubuntu.sources &&
+              apt-get update -qq -o Acquire::Languages=none &&
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends -o Dpkg::Options::=--force-unsafe-io systemd dbus curl >/dev/null &&
+              mount --make-rshared / &&
+              exec /usr/lib/systemd/systemd'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -121,33 +140,23 @@ jobs:
           done
 
       # The steps in docs/operator-guide/systemd.md, run as written against
-      # the .deb in a container booted with systemd. As in ci.yml's
-      # systemd-creds job: systemd-run --wait needs a system bus (dbus), and
-      # credentials reach a service only once / is a shared mount, which
-      # systemd leaves alone under a container manager.
+      # the .deb in the container booted with systemd at the start.
       - name: The documented systemd steps run kman from the .deb
-        env:
-          IMAGE: ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
         run: |
-          mkdir -p "$RUNNER_TEMP/deb"
           cp dist/kman_*_amd64.deb "$RUNNER_TEMP/deb/kman.deb"
           sh scripts/doc-steps.sh docs/operator-guide/systemd.md systemd > "$RUNNER_TEMP/deb/steps.sh"
-          docker run -d --name systemd --privileged --cgroupns=private \
-            -e container=docker --tmpfs /run --tmpfs /run/lock \
-            -v "$RUNNER_TEMP/deb:/deb:ro" \
-            "$IMAGE" bash -c 'apt-get update -qq &&
-              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends systemd dbus curl >/dev/null &&
-              mount --make-rshared / &&
-              exec /usr/lib/systemd/systemd'
           booted=
-          for _ in $(seq 1 90); do
+          for _ in $(seq 1 180); do
             state=$(docker exec systemd systemctl is-system-running 2>/dev/null || true)
             case "$state" in running|degraded)
               if docker exec systemd test -S /run/dbus/system_bus_socket; then booted=1; break; fi ;;
             esac
-            sleep 2
+            sleep 1
           done
-          test -n "$booted"
+          if [ -z "$booted" ]; then
+            echo "systemd did not boot (last state: ${state:-none})"
+            exit 1
+          fi
           docker exec systemd apt-get install -y -qq /deb/kman.deb
           docker exec systemd systemd-analyze verify /usr/lib/systemd/system/kman.service
           docker exec systemd sh -eux /deb/steps.sh

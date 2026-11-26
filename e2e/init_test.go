@@ -12,6 +12,7 @@ import (
 var adminToken = regexp.MustCompile(`\bkma_[0-9A-Za-z]{49}\b`)
 
 func TestInitSetsUpAnInstallWithoutAskingAnything(t *testing.T) {
+	t.Parallel()
 	notInContainer(t)
 	h := newHome(t)
 	stdout, stderr := h.mustRun(t, "init")
@@ -81,6 +82,7 @@ func (h *home) keygen(t *testing.T, name string) string {
 }
 
 func TestInitInAContainerWithNoKeySourceRefusesAndPrintsTheDockerSteps(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"init"}, {"init", "--key-source", "file"}, {"init", "--key-source", "passphrase"}, {"init", "--key-source", "env"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			h := newHome(t).with("container=docker")
@@ -116,6 +118,7 @@ func nothingWritten(t *testing.T, h *home) {
 }
 
 func TestInitInAContainerUsesTheMountedKeyAndNeverSavesTheToken(t *testing.T) {
+	t.Parallel()
 	h := newHome(t)
 	key := h.keygen(t, "secret.key")
 	h = h.with("container=docker", "KMAN_MASTER_KEY_FILE="+key)
@@ -139,6 +142,7 @@ func TestInitInAContainerUsesTheMountedKeyAndNeverSavesTheToken(t *testing.T) {
 }
 
 func TestInitWithNoSaveTokenPrintsButDoesNotSave(t *testing.T) {
+	t.Parallel()
 	notInContainer(t)
 	h := newHome(t)
 	stdout, _ := h.mustRun(t, "init", "--no-save-token")
@@ -151,6 +155,7 @@ func TestInitWithNoSaveTokenPrintsButDoesNotSave(t *testing.T) {
 }
 
 func TestInitTakesTheDataDirectoryFromAFlag(t *testing.T) {
+	t.Parallel()
 	notInContainer(t)
 	h := newHome(t)
 	data := filepath.Join(h.root, "elsewhere", "data")
@@ -168,6 +173,7 @@ func TestInitTakesTheDataDirectoryFromAFlag(t *testing.T) {
 }
 
 func TestInitRefusesADataDirectoryHoldingTheMasterKey(t *testing.T) {
+	t.Parallel()
 	notInContainer(t)
 	h := newHome(t)
 	_, stderr, code := h.run(t, "init", "--data-dir", h.configDir())
@@ -178,6 +184,7 @@ func TestInitRefusesADataDirectoryHoldingTheMasterKey(t *testing.T) {
 }
 
 func TestInitRefusesToRunTwice(t *testing.T) {
+	t.Parallel()
 	notInContainer(t)
 	h := newHome(t)
 	h.mustRun(t, "init")
@@ -196,6 +203,7 @@ func TestInitRefusesToRunTwice(t *testing.T) {
 }
 
 func TestEachKeySourceInitsAndServes(t *testing.T) {
+	t.Parallel()
 	notInContainer(t)
 	for _, tc := range []struct {
 		name  string
@@ -243,6 +251,7 @@ func TestEachKeySourceInitsAndServes(t *testing.T) {
 }
 
 func TestServeRefusesAnotherMasterKey(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	other := h.keygen(t, "other.key")
 	h.with("KMAN_MASTER_KEY_FILE="+other).refused(t, "does not unwrap the data key")

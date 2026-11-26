@@ -67,6 +67,7 @@ func eventually(t *testing.T, addr, token string, re *regexp.Regexp) string {
 }
 
 func TestMetricsAreServedBehindTheAdminTokenAndOnTheOptInListener(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	h.appendConfig(t, "metrics_listen: 127.0.0.1:0\n")
 	s := h.serve(t)
@@ -165,6 +166,7 @@ func TestMetricsAreServedBehindTheAdminTokenAndOnTheOptInListener(t *testing.T) 
 }
 
 func TestThereIsNoMetricsListenerUnlessConfigured(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	time.Sleep(200 * time.Millisecond)

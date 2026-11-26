@@ -118,6 +118,7 @@ var sdkClients = map[string]string{
 // with the virtual key as their API key, and kman's address as their base URL, and
 // no other change. The transcripts' notes say where each came from.
 func TestOfficialSDKsWorkThroughKman(t *testing.T) {
+	t.Parallel()
 	for _, rt := range sdkRuntimes {
 		t.Run(rt.name, func(t *testing.T) {
 			command := rt.command(t)

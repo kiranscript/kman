@@ -27,6 +27,7 @@ func (h *home) listPrices(t *testing.T) priceListed {
 }
 
 func TestAPriceOverrideSurvivesARestartAndIsAudited(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)

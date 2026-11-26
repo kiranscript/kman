@@ -9,6 +9,7 @@ import (
 )
 
 func TestRekeyKeepsCredentialsAndRefusesARunningServer(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)
@@ -55,6 +56,7 @@ func TestRekeyKeepsCredentialsAndRefusesARunningServer(t *testing.T) {
 }
 
 func TestRekeyRunsAfterAServerWasKilled(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)
@@ -75,6 +77,7 @@ func TestRekeyRunsAfterAServerWasKilled(t *testing.T) {
 }
 
 func TestServeRefusesWhileAnotherProcessHoldsTheDatabaseExclusively(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	// What kman rekey holds, from another process: serve must not start under it.
 	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(h.dataDir(), "kman.db"))+"?_pragma=locking_mode(EXCLUSIVE)&_txlock=immediate")

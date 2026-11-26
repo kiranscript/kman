@@ -44,6 +44,7 @@ func (k *sink) count(parts ...string) int {
 // its use alerts with where it was planted and where it came from (once, then a
 // count), an ignored address does not fire it, and a reset arms it again.
 func TestACanaryFiresAnAlertThatNamesItAndWhereItWasPlanted(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "")
 	hung, ok := newSink(t, 0), newSink(t, 200)
 	p.h.addWebhook(t, "hung", hung)

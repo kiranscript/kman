@@ -14,6 +14,7 @@ import (
 // home and config location pointed at empty directories and no network
 // settings, then checks it printed only a key and wrote nothing anywhere.
 func TestKeygenPrintsAFreshMasterKeyAndStoresNothing(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	env := []string{"PATH=" + os.Getenv("PATH")}
 	for _, name := range []string{"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "APPDATA", "LOCALAPPDATA", "USERPROFILE", "TMPDIR", "TEMP", "TMP"} {

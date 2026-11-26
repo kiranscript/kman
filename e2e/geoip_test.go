@@ -79,6 +79,7 @@ func geoipProxied(t *testing.T) (*proxied, *home) {
 }
 
 func TestAKeyLockedToNetworksFailsFromAnywhereElseThroughTheRealBinary(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-json")
 	// The test client is 127.0.0.1.
 	p.setPolicy(`{"allowed_cidrs":["203.0.113.0/24"]}`)
@@ -95,6 +96,7 @@ func TestAKeyLockedToNetworksFailsFromAnywhereElseThroughTheRealBinary(t *testin
 }
 
 func TestAKeyLockedToCountriesFailsFromAnywhereElseThroughTheRealBinary(t *testing.T) {
+	t.Parallel()
 	p, _ := geoipProxied(t)
 
 	p.setPolicy(`{"allowed_countries":["de"]}`)
@@ -112,6 +114,7 @@ func TestAKeyLockedToCountriesFailsFromAnywhereElseThroughTheRealBinary(t *testi
 
 // With no database, a country lock is refused where it is set, with what to do.
 func TestACountryLockIsRefusedAtConfigurationTimeWithNoDatabase(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-json")
 	stdout, stderr, code := p.h.run(t, "key", "update", "my-app", "--policy", `{"allowed_countries":["US"]}`)
 	if code == 0 {
@@ -134,6 +137,7 @@ func TestACountryLockIsRefusedAtConfigurationTimeWithNoDatabase(t *testing.T) {
 // Taking the databases out of kman.yaml while a key is locked to countries must
 // not leave the key unlocked: kman will not start.
 func TestKmanWillNotStartWithCountryLockedKeysAndNoDatabase(t *testing.T) {
+	t.Parallel()
 	p, h := geoipProxied(t)
 	p.setPolicy(`{"allowed_countries":["US"]}`)
 	if resp, body := p.send("POST", "/v1/things", strings.NewReader(`{"name":"x"}`)); resp.StatusCode != 201 {
@@ -155,6 +159,7 @@ func TestKmanWillNotStartWithCountryLockedKeysAndNoDatabase(t *testing.T) {
 }
 
 func TestKmanWillNotStartWithAGeoIPDatabaseThatIsNotThere(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	h.appendConfig(t, "\ngeoip:\n  country_db: "+filepath.Join(h.dataDir(), "nowhere.mmdb")+"\n")
 	_, stderr, code := h.run(t, "serve")
@@ -164,6 +169,7 @@ func TestKmanWillNotStartWithAGeoIPDatabaseThatIsNotThere(t *testing.T) {
 }
 
 func TestGeoIPUpdateGoesWhereItIsToldAndNoWhereElse(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	source, requests := dbipMirror(t)
 	if n := requests.Load(); n != 0 {
@@ -185,6 +191,7 @@ func TestGeoIPUpdateGoesWhereItIsToldAndNoWhereElse(t *testing.T) {
 // A key's places come from its requests, forwarded and refused, through the real
 // binary: the GeoIP lookup, the event writer and kman key places (#84).
 func TestKeyPlacesSaysWhereAKeyWasUsedFromThroughTheRealBinary(t *testing.T) {
+	t.Parallel()
 	p, h := geoipProxied(t)
 	if resp, body := p.send("POST", "/v1/things", strings.NewReader(`{"name":"x"}`)); resp.StatusCode != 201 {
 		t.Fatalf("= %d %s", resp.StatusCode, body)

@@ -44,6 +44,7 @@ func (h *home) addOpenAI(t *testing.T) string {
 }
 
 func TestAnUpstreamFromAPresetSurvivesARestart(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)
@@ -66,6 +67,7 @@ func TestAnUpstreamFromAPresetSurvivesARestart(t *testing.T) {
 }
 
 func TestACredentialReachesNoOutputOfTheRealBinary(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)
@@ -108,6 +110,7 @@ func TestACredentialReachesNoOutputOfTheRealBinary(t *testing.T) {
 }
 
 func TestServeRefusesACredentialThatDoesNotDecrypt(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)

@@ -77,6 +77,7 @@ func (p *proxied) chat(body string) (*http.Response, string) {
 }
 
 func TestSpendIsMeteredAndShownBesideTheCaps(t *testing.T) {
+	t.Parallel()
 	p := behindKmanAs(t, "openai-chat", "openai")
 	p.setPrices("gpt-4o-mini", "gpt-4o-mini-2024-07-18")
 	p.setPolicy(`{"daily_cap_micro":5000000,"monthly_cap_micro":50000000}`)
@@ -103,6 +104,7 @@ func TestSpendIsMeteredAndShownBesideTheCaps(t *testing.T) {
 
 // Spend reaches the store when kman stops, and is read back when it starts.
 func TestSpendSurvivesARestart(t *testing.T) {
+	t.Parallel()
 	p := behindKmanAs(t, "openai-chat", "openai")
 	p.setPrices("gpt-4o-mini", "gpt-4o-mini-2024-07-18")
 	p.chat(chatRequest)
@@ -122,6 +124,7 @@ func TestSpendSurvivesARestart(t *testing.T) {
 
 // F1 through the real binary: no top-level model is not a way past a cap.
 func TestRegression_F1_ANoModelRequestIsRefusedOnACappedKey(t *testing.T) {
+	t.Parallel()
 	p := behindKmanAs(t, "", "openai")
 	p.setPolicy(`{"daily_cap_micro":5000000}`)
 	for _, body := range []string{`{"messages":[]}`, `[{"model":"gpt-4o-mini"}]`, `not json`} {
@@ -136,6 +139,7 @@ func TestRegression_F1_ANoModelRequestIsRefusedOnACappedKey(t *testing.T) {
 }
 
 func TestAnUnpricedModelIsRefusedWithTheCommandToPriceIt(t *testing.T) {
+	t.Parallel()
 	p := behindKmanAs(t, "", "openai")
 	p.setPolicy(`{"daily_cap_micro":5000000}`)
 	resp, b := p.chat(`{"model":"gpt-unpriced-1"}`)
@@ -147,6 +151,7 @@ func TestAnUnpricedModelIsRefusedWithTheCommandToPriceIt(t *testing.T) {
 
 // F2 through the real binary: a flood of 429s doesn't use up a cap.
 func TestRegression_F2_UpstreamErrorsDoNotChargeACap(t *testing.T) {
+	t.Parallel()
 	p := behindKmanAs(t, "openai-429", "openai")
 	p.setPrices("gpt-4o-mini")
 	p.setPolicy(`{"daily_cap_micro":2100}`) // room for one reservation, and no more
@@ -163,6 +168,7 @@ func TestRegression_F2_UpstreamErrorsDoNotChargeACap(t *testing.T) {
 // The decision made for #41: a 2xx with no usage is charged as an estimate, so that
 // it runs through a cap and can't be a way round one.
 func TestASuccessWithNoUsageIsChargedAsAnEstimateAndRunsDownTheCap(t *testing.T) {
+	t.Parallel()
 	p := behindKmanAs(t, "openai-no-usage", "openai")
 	p.setPrices("gpt-4o-mini")
 	want := reservationFor(chatRequest)
@@ -185,6 +191,7 @@ func TestASuccessWithNoUsageIsChargedAsAnEstimateAndRunsDownTheCap(t *testing.T)
 // connection is cut, so it can't take the half for the whole, and the key is charged
 // the whole reservation as an estimate.
 func TestAStreamKilledMidwayCutsTheAppAndChargesTheReservation(t *testing.T) {
+	t.Parallel()
 	p := behindKmanAs(t, "openai-killed", "openai")
 	p.setPrices("gpt-4o-mini")
 	body := `{"model":"gpt-4o-mini","stream":true,"messages":[{"role":"user","content":"Say hello"}]}`

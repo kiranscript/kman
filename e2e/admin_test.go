@@ -38,6 +38,7 @@ func (h *home) login(t *testing.T, s *server) {
 }
 
 func TestAnAdminTokenIsCreatedUsedRevokedAndAudited(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)
@@ -104,6 +105,7 @@ func TestAnAdminTokenIsCreatedUsedRevokedAndAudited(t *testing.T) {
 }
 
 func TestTheAdminAPIServesItsOpenAPIDocument(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	if code := get(t, s.admin, "/admin/v1/openapi.json"); code != 200 {
@@ -115,6 +117,7 @@ func TestTheAdminAPIServesItsOpenAPIDocument(t *testing.T) {
 }
 
 func TestLogoutForgetsTheSavedToken(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)
@@ -126,6 +129,7 @@ func TestLogoutForgetsTheSavedToken(t *testing.T) {
 }
 
 func TestPriceListShowsTheEmbeddedTableAndItsAge(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)
@@ -152,6 +156,7 @@ func TestPriceListShowsTheEmbeddedTableAndItsAge(t *testing.T) {
 // fetch through any standard client would arrive here, and the gate
 // TestPricingCannotReachTheNetwork covers a dial of its own.
 func TestPriceCommandsMakeNoOutboundCall(t *testing.T) {
+	t.Parallel()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

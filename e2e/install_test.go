@@ -206,6 +206,7 @@ func (in *installer) installed() bool {
 }
 
 func TestInstallVerifiesTheChecksumsSignatureWithCosignAgainstTheTagIdentity(t *testing.T) {
+	t.Parallel()
 	r := newRelease(t, "v0.1.0")
 	in := newInstaller(t, verifier{name: "cosign"}, verifier{name: "gh", attestation: true})
 	_, stderr, err := in.run(r.serve(t))
@@ -236,6 +237,7 @@ func TestInstallVerifiesTheChecksumsSignatureWithCosignAgainstTheTagIdentity(t *
 }
 
 func TestInstallVerifiesTheArchiveAttestationWithGhWhenCosignIsAbsent(t *testing.T) {
+	t.Parallel()
 	r := newRelease(t, "v0.2.0-rc.1")
 	in := newInstaller(t, verifier{name: "gh", attestation: true})
 	_, stderr, err := in.run(r.serve(t), "KMAN_VERSION=v0.2.0-rc.1")
@@ -262,6 +264,7 @@ func TestInstallVerifiesTheArchiveAttestationWithGhWhenCosignIsAbsent(t *testing
 }
 
 func TestInstallRefusesAnArchiveWhoseChecksumDiffers(t *testing.T) {
+	t.Parallel()
 	r := newRelease(t, "v0.1.0")
 	r.files[r.archive] = append(r.files[r.archive], 0)
 	in := newInstaller(t, verifier{name: "cosign"})
@@ -278,6 +281,7 @@ func TestInstallRefusesAnArchiveWhoseChecksumDiffers(t *testing.T) {
 }
 
 func TestInstallRefusesAnArchiveMissingFromChecksums(t *testing.T) {
+	t.Parallel()
 	r := newRelease(t, "v0.1.0")
 	r.files["checksums.txt"] = []byte(strings.Repeat("0", 64) + "  kman_0.1.0_plan9_amd64.tar.gz\n")
 	in := newInstaller(t, verifier{name: "cosign"})
@@ -291,6 +295,7 @@ func TestInstallRefusesAnArchiveMissingFromChecksums(t *testing.T) {
 
 // A failed check never falls through to another verifier or to installing.
 func TestInstallRefusesWhenTheSignatureDoesNotVerify(t *testing.T) {
+	t.Parallel()
 	r := newRelease(t, "v0.1.0")
 	in := newInstaller(t, verifier{name: "cosign", code: 1}, verifier{name: "gh", attestation: true})
 	_, stderr, err := in.run(r.serve(t))
@@ -306,6 +311,7 @@ func TestInstallRefusesWhenTheSignatureDoesNotVerify(t *testing.T) {
 }
 
 func TestInstallWarnsLoudlyWithoutAVerifier(t *testing.T) {
+	t.Parallel()
 	r := newRelease(t, "v0.1.0")
 	// A gh too old to have "gh attestation" is no verifier.
 	in := newInstaller(t, verifier{name: "gh", attestation: false})
@@ -324,6 +330,7 @@ func TestInstallWarnsLoudlyWithoutAVerifier(t *testing.T) {
 }
 
 func TestInstallFailsClosedWithoutAVerifierWhenASignatureIsRequired(t *testing.T) {
+	t.Parallel()
 	r := newRelease(t, "v0.1.0")
 	in := newInstaller(t)
 	_, stderr, err := in.run(r.serve(t), "KMAN_REQUIRE_SIGNATURE=1")
@@ -336,6 +343,7 @@ func TestInstallFailsClosedWithoutAVerifierWhenASignatureIsRequired(t *testing.T
 }
 
 func TestInstallRefusesATagThatIsNotAVersion(t *testing.T) {
+	t.Parallel()
 	r := newRelease(t, "v0.1.0")
 	in := newInstaller(t, verifier{name: "cosign"})
 	if _, stderr, err := in.run(r.serve(t), "KMAN_VERSION=main"); err == nil {

@@ -194,6 +194,7 @@ func getTLS(t *testing.T, addr, certFile string) int {
 }
 
 func TestServeBindsBothListenersToLoopback(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	for name, addr := range map[string]string{"proxy": s.proxy, "admin": s.admin} {
@@ -208,6 +209,7 @@ func TestServeBindsBothListenersToLoopback(t *testing.T) {
 }
 
 func TestServeShutsDownGracefullyOnSignal(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows cannot send SIGINT or SIGTERM to another process")
 	}

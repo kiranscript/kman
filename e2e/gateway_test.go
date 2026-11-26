@@ -11,6 +11,7 @@ import (
 )
 
 func TestARequestThroughKmanReachesTheUpstreamWithTheCredential(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-json")
 
 	const uri = "/v1/things?a=1&a=2&odd=%20+x;y"
@@ -46,6 +47,7 @@ func TestARequestThroughKmanReachesTheUpstreamWithTheCredential(t *testing.T) {
 }
 
 func TestAStreamPassesThroughTheRealBinary(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-stream")
 	resp, body := p.send("POST", "/v1/stream", strings.NewReader("{}"))
 	want := "data: {\"n\":1}\n\ndata: {\"n\":2}\n\ndata: [DONE]\n\n"
@@ -55,6 +57,7 @@ func TestAStreamPassesThroughTheRealBinary(t *testing.T) {
 }
 
 func TestABadChecksumNeverReachesTheUpstream(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "")
 	last := "0"
 	if strings.HasSuffix(p.secret, last) {
@@ -73,6 +76,7 @@ func TestABadChecksumNeverReachesTheUpstream(t *testing.T) {
 }
 
 func TestAKeyStillWorksAfterARestart(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-json")
 	stopServer(t, p.s)
 	s := p.h.serve(t)
@@ -86,6 +90,7 @@ func TestAKeyStillWorksAfterARestart(t *testing.T) {
 }
 
 func TestABodyOverTheLimitIsRefusedByTheRealBinary(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "")
 	const limit = 32 << 20
 	resp, body := p.send("POST", "/v1/things", io.LimitReader(zeroes{}, limit+1))
@@ -103,6 +108,7 @@ func (zeroes) Read(p []byte) (int, error) {
 }
 
 func TestARedirectOffTheUpstreamIsBlocked(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "redirect-away")
 	resp, body := p.send("GET", "/v1/things", nil)
 	wantError(t, resp, body, 502, "upstream_unavailable")
@@ -128,6 +134,7 @@ func closedPort(t *testing.T) int {
 
 // When an upstream is down the logs say so, and hold no secret or query string.
 func TestAnUpstreamThatIsDownIsA502AndLeaksNothing(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	s := h.serve(t)
 	h.login(t, s)
@@ -155,6 +162,7 @@ func TestAnUpstreamThatIsDownIsA502AndLeaksNothing(t *testing.T) {
 // hands it to the proxy. Go ignores proxies for loopback addresses, so a real
 // upstream on loopback couldn't tell.
 func TestTheProxyInTheEnvironmentIsNotUsed(t *testing.T) {
+	t.Parallel()
 	var hits atomic.Int64
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hits.Add(1)
@@ -178,6 +186,7 @@ func TestTheProxyInTheEnvironmentIsNotUsed(t *testing.T) {
 // What a metered profile reads, it reads on the way past: an app gets the upstream's
 // response byte for byte. This runs without the SDKs, on every OS.
 func TestAMeteredResponsePassesThroughTheRealBinaryUnchanged(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, profile, uri, body string
 		want                     string // the body the upstream must get

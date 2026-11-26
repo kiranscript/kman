@@ -12,6 +12,7 @@ func (p *proxied) setPolicy(policy string) {
 }
 
 func TestAKeysPathAllowlistAndRateLimitHoldThroughTheRealBinary(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-json")
 	p.setPolicy(`{"allowed_paths":["POST /v1/things"],"rpm_limit":1}`)
 
@@ -34,6 +35,7 @@ func TestAKeysPathAllowlistAndRateLimitHoldThroughTheRealBinary(t *testing.T) {
 }
 
 func TestAModelAllowlistHoldsThroughTheRealBinary(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "") // a mock that expects nothing
 	p.setPolicy(`{"allowed_models":["gpt-4o"]}`)
 
@@ -49,6 +51,7 @@ func TestAModelAllowlistHoldsThroughTheRealBinary(t *testing.T) {
 }
 
 func TestAnAddressSendingInvalidKeysIsThrottledThroughTheRealBinary(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "")
 	header := http.Header{"Authorization": {"Bearer kmn_aaaaaaaa_" + strings.Repeat("b", 49)}}
 	var last *http.Response

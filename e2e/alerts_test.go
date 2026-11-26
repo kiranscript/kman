@@ -99,6 +99,7 @@ func (h *home) addWebhook(t *testing.T, name string, k *sink) string {
 }
 
 func TestAlertsReachAWebhookSignedAndAHungChannelHoldsUpNoOther(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "")
 	hung, ok := newSink(t, 0), newSink(t, 200)
 	p.h.addWebhook(t, "hung", hung)
@@ -155,6 +156,7 @@ func TestAlertsReachAWebhookSignedAndAHungChannelHoldsUpNoOther(t *testing.T) {
 }
 
 func TestAnAlertThatCouldNotBeDeliveredIsSentAfterARestart(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "")
 	down := newSink(t, 503)
 	p.h.addWebhook(t, "pager", down)
@@ -185,6 +187,7 @@ func TestAnAlertThatCouldNotBeDeliveredIsSentAfterARestart(t *testing.T) {
 }
 
 func TestAChannelTestSendsAlertAndSaysWhenItFails(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "")
 	ok := newSink(t, 200)
 	p.h.addWebhook(t, "pager", ok)
@@ -204,6 +207,7 @@ func TestAChannelTestSendsAlertAndSaysWhenItFails(t *testing.T) {
 // warning: every key on that upstream is failing. The alert names the upstream
 // and the credential, and holds no secret.
 func TestAProviderRefusingKmansCredentialIsAWarningThatHoldsNoSecret(t *testing.T) {
+	t.Parallel()
 	p := behindKmanAs(t, "openai-401", "openai")
 	k := newSink(t, 200)
 	secret := p.h.addWebhook(t, "pager", k)

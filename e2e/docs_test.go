@@ -11,6 +11,7 @@ import (
 
 // The README shows the quickstart's lines, and they must stay the same lines.
 func TestTheREADMEQuickstartIsTheQuickstart(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("doc-steps.sh needs a Unix shell")
 	}
@@ -23,6 +24,7 @@ func TestTheREADMEQuickstartIsTheQuickstart(t *testing.T) {
 // The commands docs/policy.md shows are accepted, one after the other, by a
 // running kman. Each replaces the key's whole policy, as it says.
 func TestThePolicyDocExamplesAreAccepted(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the examples are for a Unix shell")
 	}

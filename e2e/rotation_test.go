@@ -52,6 +52,7 @@ func (p *proxied) rotate(args ...string) rotated {
 // E2E containment: rotate with a grace keeps both secrets for the grace, with no
 // restart and no wait for anything but the grace itself, and then only the new one.
 func TestRotatingWithAGraceKeepsBothSecretsForTheGraceAndThenOnlyTheNewOne(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-json-thrice")
 	id := p.h.showKey(t, "my-app").ID
 	old := p.secret
@@ -79,6 +80,7 @@ func TestRotatingWithAGraceKeepsBothSecretsForTheGraceAndThenOnlyTheNewOne(t *te
 }
 
 func TestRotatingWithNoGraceStopsTheOldSecretAtTheNextRequest(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-json")
 	old := p.secret
 	got := p.rotate()
@@ -92,6 +94,7 @@ func TestRotatingWithNoGraceStopsTheOldSecretAtTheNextRequest(t *testing.T) {
 // F4: keman's rotation made a new key, which reset the spend and the learning
 // period. kman rotates the secret and keeps the key, so nothing resets.
 func TestRegression_F4_RotationKeepsTheKeyItsSpendAndItsPolicy(t *testing.T) {
+	t.Parallel()
 	p := behindKmanAs(t, "openai-chat", "openai")
 	p.setPrices("gpt-4o-mini")
 	p.setPolicy(`{"daily_cap_micro":5000000}`)
@@ -124,6 +127,7 @@ func TestRegression_F4_RotationKeepsTheKeyItsSpendAndItsPolicy(t *testing.T) {
 
 // E2E containment: a credential compromise rotates every key on the credential.
 func TestACredentialCompromiseRotatesEveryKeyOnTheCredential(t *testing.T) {
+	t.Parallel()
 	p := behindKman(t, "generic-json-twice")
 	other := p.h.createKey(t, "other-app", "mock")
 	mine := p.secret

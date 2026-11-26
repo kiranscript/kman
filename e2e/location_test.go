@@ -16,6 +16,7 @@ import (
 // channel with the key, the new place and what is usual, and a refused request
 // from a fourth is counted on it too.
 func TestANewCountryAfterTheLearningPeriodOpensAnIncidentThroughTheRealBinary(t *testing.T) {
+	t.Parallel()
 	h := installed(t)
 	dir := t.TempDir()
 	// The test client is 127.0.0.1; it names the address a request came from in
