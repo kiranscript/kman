@@ -12,8 +12,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/kirank55/kman/internal/store"
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/store"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 // rekeyActor is the audit actor of a rekey.

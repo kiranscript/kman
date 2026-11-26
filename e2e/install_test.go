@@ -19,7 +19,7 @@ import (
 
 // The signing identity of SPEC §15, which install.sh must pin exactly.
 const (
-	identityPrefix = "https://github.com/kirank55/kman/.github/workflows/release.yml@refs/tags/"
+	identityPrefix = "https://github.com/kiranscript/kman/.github/workflows/release.yml@refs/tags/"
 	issuer         = "https://token.actions.githubusercontent.com"
 )
 
@@ -76,7 +76,7 @@ func tarball(t *testing.T, binary string) []byte {
 	return buf.Bytes()
 }
 
-// serve starts a server shaped like github.com/kirank55/kman/releases.
+// serve starts a server shaped like github.com/kiranscript/kman/releases.
 func (r *release) serve(t *testing.T) string {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -249,7 +249,7 @@ func TestInstallVerifiesTheArchiveAttestationWithGhWhenCosignIsAbsent(t *testing
 	for _, want := range []string{
 		"gh attestation verify ",
 		r.archive,
-		"--repo kirank55/kman",
+		"--repo kiranscript/kman",
 		"--bundle ",
 		"kman_0.2.0-rc.1.intoto.jsonl",
 		"--cert-identity " + identityPrefix + "v0.2.0-rc.1 ",

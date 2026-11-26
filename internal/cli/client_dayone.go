@@ -8,7 +8,7 @@ import (
 	"mime"
 	"net/http"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 func (c *client) Prune(ctx context.Context, req admin.PruneRequest) (admin.PruneResult, error) {

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Print the Homebrew formula for a release (SPEC §3: a best-effort formula
-# in kirank55/homebrew-tap). It installs the release archive for the
+# in kiranscript/homebrew-tap). It installs the release archive for the
 # machine, pinned by the SHA-256 in the release's checksums.txt, so a
 # formula Homebrew accepts is one cosign already covers.
 #
@@ -28,7 +28,7 @@ archive() {
 		echo "homebrew-formula: $checksums has no SHA-256 for $name" >&2
 		exit 1
 	fi
-	printf '      url "https://github.com/kirank55/kman/releases/download/%s/%s"\n' "$tag" "$name"
+	printf '      url "https://github.com/kiranscript/kman/releases/download/%s/%s"\n' "$tag" "$name"
 	printf '      sha256 "%s"\n' "$sum"
 }
 
@@ -38,11 +38,11 @@ linux_arm64=$(archive linux_arm64)
 linux_amd64=$(archive linux_amd64)
 
 cat <<FORMULA
-# Written by kirank55/kman's release workflow for $tag, from the release's
+# Written by kiranscript/kman's release workflow for $tag, from the release's
 # signed checksums.txt. The next release replaces it; do not edit.
 class Kman < Formula
   desc "Key manager and proxy for LLM API keys"
-  homepage "https://github.com/kirank55/kman"
+  homepage "https://github.com/kiranscript/kman"
   version "$version"
 
   on_macos do

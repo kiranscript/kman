@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 func (in *install) seedHistory(t *testing.T, daysBack int) { in.seedHistoryAt(t, in.now, daysBack) }

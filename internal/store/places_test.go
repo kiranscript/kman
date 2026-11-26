@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 func places(t *testing.T, s *store.Store, key, kind string) []store.PlaceRow {

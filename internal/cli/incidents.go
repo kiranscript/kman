@@ -13,7 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 // defaultIncidentsLimit is how many incidents kman incidents lists, and --follow

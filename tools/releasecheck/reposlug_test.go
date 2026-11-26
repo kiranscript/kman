@@ -81,12 +81,16 @@ func setRepo(t *testing.T, dir string, args ...string) (string, error) {
 }
 
 // The current slug is the Go module path's owner and name.
-const slug = "kirank55/kman"
+const slug = "kiranscript/kman"
+
+// owner is what must be gone after a move.
+var owner, _, _ = strings.Cut(slug, "/")
 
 func TestSetRepoMovesEveryPlaceTheRepoIsNamed(t *testing.T) {
+	const moved = "example-owner/kman" // a name the tree never uses
 	files := trackedText(t)
 	dir := copyTree(t, files)
-	if out, err := setRepo(t, dir, "kiranscript/kman"); err != nil {
+	if out, err := setRepo(t, dir, moved); err != nil {
 		t.Fatalf("set-repo: %v\n%s", err, out)
 	}
 	var left []string
@@ -99,8 +103,8 @@ func TestSetRepoMovesEveryPlaceTheRepoIsNamed(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i, line := range strings.Split(string(b), "\n") {
-			// kirank55/keman is the old project's repository, not this one.
-			if strings.Contains(line, "kirank55") && !strings.Contains(line, "kirank55/keman") && !strings.Contains(line, "noreply.github.com") {
+			// keman is the old project's repository, not this one.
+			if strings.Contains(line, owner) && !strings.Contains(line, owner+"/keman") && !strings.Contains(line, "noreply.github.com") {
 				left = append(left, f+":"+strconv.Itoa(i+1)+": "+strings.TrimSpace(line))
 			}
 		}
@@ -109,13 +113,13 @@ func TestSetRepoMovesEveryPlaceTheRepoIsNamed(t *testing.T) {
 		t.Errorf("the old owner is still named after set-repo:\n%s", strings.Join(left, "\n"))
 	}
 	for _, f := range []string{"go.mod", "tools/go.mod"} {
-		if b, _ := os.ReadFile(filepath.Join(dir, f)); !strings.Contains(string(b), "module github.com/kiranscript/kman") {
+		if b, _ := os.ReadFile(filepath.Join(dir, f)); !strings.Contains(string(b), "module github.com/"+moved) {
 			t.Errorf("%s was not moved: %q", f, b)
 		}
 	}
 	// Idempotent: nothing differs the second time.
 	before := snapshot(t, dir, files)
-	if out, err := setRepo(t, dir, "kiranscript/kman"); err != nil {
+	if out, err := setRepo(t, dir, moved); err != nil {
 		t.Fatalf("second set-repo: %v\n%s", err, out)
 	}
 	if after := snapshot(t, dir, files); after != before {
@@ -162,7 +166,7 @@ func snapshot(t *testing.T, dir string, files map[string][]byte) string {
 func TestTheReleasingGuideListsEveryFileThatNamesTheRepo(t *testing.T) {
 	guide := string(read(t, "docs/releasing.md"))
 	for f, b := range trackedText(t) {
-		if strings.HasSuffix(f, ".go") || !strings.Contains(string(b), "kirank55") {
+		if strings.HasSuffix(f, ".go") || !strings.Contains(string(b), owner) {
 			continue
 		}
 		if !strings.Contains(guide, "`"+f+"`") {

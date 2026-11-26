@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"reflect"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 // Service is what the API serves: every admin command, and the token check

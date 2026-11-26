@@ -12,7 +12,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/kirank55/kman/internal/alerts"
+	"github.com/kiranscript/kman/internal/alerts"
 )
 
 func TestAnAlertReachesASlackChannelWithTheKeyEvidenceAndCommands(t *testing.T) {

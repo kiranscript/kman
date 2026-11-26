@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 func cmdCredential(ctx context.Context, c *call) error {

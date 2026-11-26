@@ -1,6 +1,6 @@
 # kman with Docker Compose (SPEC §3). From the directory holding this file:
 #
-#   docker run --rm ghcr.io/kirank55/kman keygen > master.key
+#   docker run --rm ghcr.io/kiranscript/kman keygen > master.key
 #   docker compose run --rm kman init     # the admin token goes to your terminal, not the logs
 #   docker compose up -d
 #
@@ -11,7 +11,7 @@ name: kman
 services:
   kman:
     # Set KMAN_VERSION (such as 0.1.0) to pin a release.
-    image: ghcr.io/kirank55/kman:${KMAN_VERSION:-latest}
+    image: ghcr.io/kiranscript/kman:${KMAN_VERSION:-latest}
     command: ["serve"]
     environment:
       # kman's default directories live under $HOME (the volume below).

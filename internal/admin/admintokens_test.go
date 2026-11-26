@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 func TestACreatedTokenAuthenticatesAsItsName(t *testing.T) {

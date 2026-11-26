@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // The states and resolutions of an incident, as the API shows them.

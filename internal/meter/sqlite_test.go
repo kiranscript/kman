@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/meter"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // openStore is a store on a fresh database, with one key per id given.

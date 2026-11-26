@@ -10,7 +10,7 @@ import (
 	"testing"
 	"testing/synctest"
 
-	"github.com/kirank55/kman/internal/events"
+	"github.com/kiranscript/kman/internal/events"
 )
 
 // scrape runs the events through a Metrics and returns what /metrics says.

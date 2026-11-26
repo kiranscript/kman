@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // AuditEntry is one change in the audit log.

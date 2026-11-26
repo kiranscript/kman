@@ -52,7 +52,7 @@ func TestTheFormulaPinsEachArchiveByItsChecksum(t *testing.T) {
 		t.Fatalf("homebrew-formula.sh: %v\n%s", err, out)
 	}
 	for _, tg := range brewTargets {
-		url := fmt.Sprintf(`url "https://github.com/kirank55/kman/releases/download/v1.2.3/kman_1.2.3_%s.tar.gz"`, tg)
+		url := fmt.Sprintf(`url "https://github.com/kiranscript/kman/releases/download/v1.2.3/kman_1.2.3_%s.tar.gz"`, tg)
 		pinned := regexp.MustCompile(regexp.QuoteMeta(url) + `\s+sha256 "` + sums[tg] + `"`)
 		if !pinned.MatchString(out) {
 			t.Errorf("the formula does not install %s with sha256 %s:\n%s", tg, sums[tg], out)
@@ -121,7 +121,7 @@ func needsOf(j job) []string {
 
 const stableOnly = "${{ !contains(github.ref_name, '-') }}"
 
-// The formula is published to kirank55/homebrew-tap for stable releases
+// The formula is published to kiranscript/homebrew-tap for stable releases
 // only, and only once the verify job has checked the release's signature:
 // the formula pins the checksums that signature covers. The job pushes
 // with a deploy key for the tap alone, and its token stays read-only.
@@ -142,7 +142,7 @@ func TestTheReleasePublishesTheFormulaOnceVerified(t *testing.T) {
 	}
 	tap := false
 	for _, s := range stepsUsing(j, "actions/checkout") {
-		if s.With["repository"] == "kirank55/homebrew-tap" {
+		if s.With["repository"] == "kiranscript/homebrew-tap" {
 			tap = true
 			if s.With["ssh-key"] != "${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}" {
 				t.Errorf("the tap checkout ssh-key = %q, want the HOMEBREW_TAP_DEPLOY_KEY secret", s.With["ssh-key"])
@@ -150,7 +150,7 @@ func TestTheReleasePublishesTheFormulaOnceVerified(t *testing.T) {
 		}
 	}
 	if !tap {
-		t.Error("job homebrew does not check out kirank55/homebrew-tap")
+		t.Error("job homebrew does not check out kiranscript/homebrew-tap")
 	}
 	var script string
 	for _, s := range j.Steps {
@@ -185,7 +185,7 @@ func TestThePostReleaseJobsInstallTheFormulaUnquarantined(t *testing.T) {
 	for _, s := range j.Steps {
 		script += s.Run + "\n"
 	}
-	for _, want := range []string{"brew install kirank55/tap/kman", "com.apple.quarantine", `grep -Fx "kman $TAG"`, "brew test kirank55/tap/kman"} {
+	for _, want := range []string{"brew install kiranscript/tap/kman", "com.apple.quarantine", `grep -Fx "kman $TAG"`, "brew test kiranscript/tap/kman"} {
 		if !strings.Contains(script, want) {
 			t.Errorf("job brew does not run %q", want)
 		}

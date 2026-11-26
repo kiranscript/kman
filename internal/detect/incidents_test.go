@@ -11,8 +11,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/kirank55/kman/internal/detect"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/detect"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 var t0 = time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)

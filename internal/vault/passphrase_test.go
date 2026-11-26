@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 // prompter answers each prompt with the next passphrase and keeps every

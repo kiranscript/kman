@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // The rules Exposure checks. A key can break more than one, and each is its own

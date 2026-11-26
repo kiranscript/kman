@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // Actor is who kman records as having made a change it decided on itself.

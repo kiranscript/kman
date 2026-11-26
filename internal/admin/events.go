@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // The kinds of event the feed tells apart: what kman forwarded to an upstream

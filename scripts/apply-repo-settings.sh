@@ -19,7 +19,7 @@
 #   5. Private vulnerability reporting, which SECURITY.md sends reporters to.
 set -eu
 
-repo=${KMAN_REPO:-kirank55/kman}
+repo=${KMAN_REPO:-kiranscript/kman}
 apply=false
 case ${1:-} in
 --apply) apply=true ;;

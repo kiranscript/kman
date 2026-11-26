@@ -1,3 +1,3 @@
-module github.com/kirank55/kman
+module github.com/kiranscript/kman
 
 go 1.27.0

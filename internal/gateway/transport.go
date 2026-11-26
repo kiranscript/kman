@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 // newTransport is how kman reaches upstreams. It uses no ambient proxy, because

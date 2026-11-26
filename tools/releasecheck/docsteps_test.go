@@ -52,7 +52,7 @@ func TestTheDockerGuideGivesTheSpecsDockerSteps(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := strings.Join([]string{
-		"docker run --rm ghcr.io/kirank55/kman keygen > master.key",
+		"docker run --rm ghcr.io/kiranscript/kman keygen > master.key",
 		"docker compose run --rm kman init",
 		"docker compose up -d",
 	}, "\n") + "\n"

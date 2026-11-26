@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // Run delivers the outbox until ctx ends. Each live channel has a goroutine of

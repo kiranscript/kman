@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/store"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 // Alerter is the alert service, as admin uses it. The composition root passes

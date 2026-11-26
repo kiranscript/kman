@@ -8,17 +8,23 @@ Everything in the repository is ready: the `v0.1.0` fixture (`internal/store/fix
 
 ### 0. Decisions only you can make
 
-- **Repository name.** The tree says `kirank55/kman` everywhere. If the repository is now (or will be) `kiranscript/kman`, or anything else, decide before the tag: the signing identity (`https://github.com/<owner>/<name>/.github/workflows/release.yml@refs/tags/<tag>`) is the repository the release ran in, and installers pin it. Step 1 does the rename.
+- **Repository name.** The tree says `kiranscript/kman` everywhere. If the repository will move to another owner or name, decide before the tag: the signing identity (`https://github.com/<owner>/<name>/.github/workflows/release.yml@refs/tags/<tag>`) is the repository the release ran in, and installers pin it. Step 1 does the rename.
 - **A licence.** There is no `LICENSE` file. A public repository without one grants nobody any rights to the code. Archives pick up a `LICENSE*` file when one is committed, and the image has no licence label. Add one before step 3.
 - **`last4`.** SPEC §1.3 and the stored credential `last4` disagree (`docs/security-review-v0.1.0.md`, "Open items decided"). Amend the spec, or take `last4` out of schema `0001`, before the tag: the fixture and the schema are frozen by it.
 - **Date.** The changelog heading says `## [0.1.0] - 2026-11-11`. Change the date if you tag on another day (the section is the release notes either way). If you do, nothing else changes.
 
 ### 1. Name the repository, in one command
 
-Skip this if the name stays `kirank55/kman`. Otherwise rename or transfer the repository on GitHub, then:
+Every command below uses `REPO`:
 
 ```sh
-export REPO=kiranscript/kman                    # the new owner/name, used by every command below
+export REPO=kiranscript/kman
+```
+
+Skip the rest of this step if the name stays as it is. Otherwise rename or transfer the repository on GitHub, then:
+
+```sh
+export REPO=<owner>/<name>                      # the new one
 git remote set-url origin "https://github.com/$REPO.git"
 sh scripts/set-repo.sh "$REPO"                  # rewrites every place listed below
 git diff --stat                                 # read it
@@ -31,8 +37,8 @@ git commit -am "Rename the repository to $REPO"       # then a pull request into
 - Go: `go.mod`, `tools/go.mod`, `gates/testdata/planted/go.mod` and every `.go` file (the module path in imports, plus `e2e` and `tools/releasecheck` tests that pin URLs and the signing identity).
 - Release machinery: `.github/workflows/release.yml` (the image, the tap checkout, the identity in the header), `.github/workflows/release-snapshot.yml`, `scripts/apply-repo-settings.sh` (the default `KMAN_REPO`), `scripts/homebrew-formula.sh`, `install.sh` (the repository it downloads from and the identity it pins), `packaging/kman.service`, `examples/compose/compose.yaml`.
 - Docs: `README.md`, `SECURITY.md`, `SPEC.md`, `AGENTS.md`, `CHANGELOG.md`, `docs/verify.md`, `docs/releasing.md`, `docs/quickstart.md`, `docs/v0.1.0-scope.md`, `docs/operator-guide/install.md`, `docs/operator-guide/docker.md`, `docs/operator-guide/systemd.md`.
-- Not in the tree, and the script cannot touch: the GitHub repository name itself, the `homebrew-tap` repository (step 5), the Actions secrets, the local `git remote`. GitHub redirects the old name after a rename, but `go install`, the signing identity and `ghcr.io/<owner>/kman` do not follow a redirect, so do not rely on it.
-- Not changed on purpose: `maintainer: kirank55 <kirank55@users.noreply.github.com>` in `.goreleaser.yaml` is a person's noreply address, not the repository. Edit it by hand if the person changes.
+- Not in the tree, and the script cannot touch: the GitHub repository name itself, the `homebrew-tap` repository (step 5), the Actions secrets, the local `git remote`. GitHub redirects the old name after a rename, but `go install`, the signing identity and `ghcr.io/<owner>/kman` do not follow a redirect, so do not rely on it. Renaming an account also frees its old username: whoever registers it can take over the old URLs.
+- Not changed on purpose: `maintainer: kiranscript <59312528+kiranscript@users.noreply.github.com>` in `.goreleaser.yaml` is a person's noreply address, not the repository. Edit it by hand if the person changes.
 
 Then merge the work onto `main`: PR #57 (`m1-contain` into `main`) and this ticket's branch. CI has not run on the branch yet, so expect to fix what it finds: every job, including `systemd-creds`, `sdk-e2e` and the release snapshot, must be green on `main`. SPEC §15 step 1.
 
@@ -129,12 +135,12 @@ The settings and the tap are steps 4 and 5 above. In summary, `scripts/apply-rep
 
 Pushing `vX.Y.Z` or `vX.Y.Z-rc.N` runs `.github/workflows/release.yml`:
 
-1. **release.** Runs govulncheck and the tag's `CHANGELOG.md` section (the `## [X.Y.Z]` heading), which becomes the release notes. Then GoReleaser (`.goreleaser.yaml`) builds the five archives and the source archive with an SPDX 2.3 SBOM for each, the `.deb` and `.rpm` for amd64 and arm64 (with `packaging/kman.service`), and `checksums.txt` signed by cosign. It pushes the image `ghcr.io/kirank55/kman`, signed by digest, all into a draft release. The job attests the archives, the SBOMs and the image, attaches every attestation as `kman_<version>.intoto.jsonl`, and publishes the draft. `latest` (the image tag and the GitHub release) goes only to a tag without `-`.
+1. **release.** Runs govulncheck and the tag's `CHANGELOG.md` section (the `## [X.Y.Z]` heading), which becomes the release notes. Then GoReleaser (`.goreleaser.yaml`) builds the five archives and the source archive with an SPDX 2.3 SBOM for each, the `.deb` and `.rpm` for amd64 and arm64 (with `packaging/kman.service`), and `checksums.txt` signed by cosign. It pushes the image `ghcr.io/kiranscript/kman`, signed by digest, all into a draft release. The job attests the archives, the SBOMs and the image, attaches every attestation as `kman_<version>.intoto.jsonl`, and publishes the draft. `latest` (the image tag and the GitHub release) goes only to a tag without `-`.
 2. **verify.** Runs the commands in `docs/verify.md` between `verify:begin` and `verify:end`, exactly as written (`scripts/verify-release.sh`).
 3. **rebuild.** Rebuilds the tag from a fresh checkout and compares its archives and packages with the published `checksums.txt` (`scripts/compare-checksums.sh`).
 4. **install.** Runs `install.sh` from the tag on Linux and macOS with `KMAN_REQUIRE_SIGNATURE=1`, once with gh and once with cosign, plus a plain install of the latest stable release.
-5. **homebrew.** For a stable tag, once **verify** has passed: renders `Formula/kman.rb` from the published `checksums.txt` (`scripts/homebrew-formula.sh`) and pushes it to `kirank55/homebrew-tap` with the deploy key.
-6. **brew.** On macOS, `brew install kirank55/tap/kman`, checks that nothing it installed carries `com.apple.quarantine`, and runs the formula's test.
+5. **homebrew.** For a stable tag, once **verify** has passed: renders `Formula/kman.rb` from the published `checksums.txt` (`scripts/homebrew-formula.sh`) and pushes it to `kiranscript/homebrew-tap` with the deploy key.
+6. **brew.** On macOS, `brew install kiranscript/tap/kman`, checks that nothing it installed carries `com.apple.quarantine`, and runs the formula's test.
 
 A pull request that touches the release config runs `.github/workflows/release-snapshot.yml`. It is the same GoReleaser run in snapshot mode, unsigned and unpublished, and it checks that the image runs as UID 65532. It also runs the documented setup steps against what it built: the Compose steps in `docs/operator-guide/docker.md` with the snapshot image, and the systemd steps in `docs/operator-guide/systemd.md` with the `.deb` in a container booted with systemd. It installs the `.rpm` on Fedora and renders the formula from the snapshot's checksums.
 

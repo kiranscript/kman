@@ -8,7 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 func cmdPrice(ctx context.Context, c *call) error {

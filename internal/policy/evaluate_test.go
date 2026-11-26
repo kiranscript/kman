@@ -3,7 +3,7 @@ package policy_test
 import (
 	"testing"
 
-	"github.com/kirank55/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/policy"
 )
 
 func compile(t *testing.T, raw string) *policy.Compiled {

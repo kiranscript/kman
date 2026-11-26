@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/detect"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/detect"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 func TestRecordedFiringsIsDetectsBoundOnDetectionRows(t *testing.T) {

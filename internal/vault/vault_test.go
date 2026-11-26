@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 // fixedSource is a key source that hands out a copy of one master key and

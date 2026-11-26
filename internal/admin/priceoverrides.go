@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // PriceOverrideRates are an override's optional prices, per million tokens in

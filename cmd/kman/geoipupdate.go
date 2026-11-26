@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/kirank55/kman/internal/policy/geoip"
+	"github.com/kiranscript/kman/internal/policy/geoip"
 )
 
 // defaultGeoIPSource is where kman geoip update downloads DB-IP Lite from. It is

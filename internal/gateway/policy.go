@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kirank55/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/policy"
 )
 
 // policy holds a request to its key's policy: the upstream's path allowlist or

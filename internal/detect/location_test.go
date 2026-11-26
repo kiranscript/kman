@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/detect"
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/detect"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // A request from here, on key abcd1234 unless the event says otherwise.

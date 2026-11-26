@@ -3,7 +3,7 @@ package meter
 import (
 	"context"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // sqlite is the counters in the SQLite store: spend_daily, written only as

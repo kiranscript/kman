@@ -1,4 +1,4 @@
-module github.com/kirank55/kman/tools
+module github.com/kiranscript/kman/tools
 
 go 1.27.0
 

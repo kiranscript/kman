@@ -8,7 +8,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/kirank55/kman/internal/events"
+	"github.com/kiranscript/kman/internal/events"
 )
 
 func TestClientOfReducesAUserAgentToAProductAndItsMajorVersion(t *testing.T) {

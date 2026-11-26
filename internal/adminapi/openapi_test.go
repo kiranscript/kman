@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kirank55/kman/internal/adminapi"
+	"github.com/kiranscript/kman/internal/adminapi"
 )
 
 var update = flag.Bool("update", false, "rewrite the committed OpenAPI document")

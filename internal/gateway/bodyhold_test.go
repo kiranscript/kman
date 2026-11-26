@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/gateway"
+	"github.com/kiranscript/kman/internal/gateway"
 )
 
 // The security review (docs/security-review-v0.1.0.md, finding S-1): a virtual

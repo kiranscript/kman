@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/policy"
 )
 
 func TestAnEmptyPolicyNormalizesToTheEmptyObjectAtTheCurrentVersion(t *testing.T) {

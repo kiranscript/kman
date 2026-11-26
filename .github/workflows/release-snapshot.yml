@@ -64,7 +64,7 @@ jobs:
           test "$(grep -c '\.spdx\.json$' dist/checksums.txt)" = 6
       - name: The image runs kman as UID 65532
         run: |
-          image=$(docker images ghcr.io/kirank55/kman --format '{{.Repository}}:{{.Tag}}' | grep -- '-amd64$' | head -n1)
+          image=$(docker images ghcr.io/kiranscript/kman --format '{{.Repository}}:{{.Tag}}' | grep -- '-amd64$' | head -n1)
           test -n "$image"
           test "$(docker inspect --format '{{.Config.User}}' "$image")" = 65532:65532
           docker run --rm "$image" version
@@ -73,8 +73,8 @@ jobs:
       # with the snapshot image standing in for the published one.
       - name: The documented Compose steps run kman
         run: |
-          image=$(docker images ghcr.io/kirank55/kman --format '{{.Repository}}:{{.Tag}}' | grep -- '-amd64$' | head -n1)
-          docker tag "$image" ghcr.io/kirank55/kman:latest
+          image=$(docker images ghcr.io/kiranscript/kman --format '{{.Repository}}:{{.Tag}}' | grep -- '-amd64$' | head -n1)
+          docker tag "$image" ghcr.io/kiranscript/kman:latest
           work="$RUNNER_TEMP/compose"
           mkdir -p "$work"
           cp examples/compose/compose.yaml "$work/"

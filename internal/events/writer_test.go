@@ -8,7 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/kirank55/kman/internal/events"
+	"github.com/kiranscript/kman/internal/events"
 )
 
 // sink records the batches it is given, and fails while failing is set.

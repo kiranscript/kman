@@ -24,7 +24,7 @@ On Linux or macOS, with an OpenAI API key to hand. `kman serve` stays in the for
 <!-- quickstart:begin -->
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kirank55/kman/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/kiranscript/kman/main/install.sh | sh
 kman init
 kman serve
 kman upstream add openai --preset openai

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/profiles"
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 const openAIStream = `data: {"id":"c1","object":"chat.completion.chunk","model":"gpt-4o-mini","service_tier":"default","choices":[{"delta":{"content":"\"usage\":{\"prompt_tokens\":999}"}}],"usage":null}

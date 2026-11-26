@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 func counting() (b [32]byte) {

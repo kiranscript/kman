@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 func TestBackupWritesAnOwnerOnlyCopyOfTheDatabaseAndSaysWhatItNeeds(t *testing.T) {

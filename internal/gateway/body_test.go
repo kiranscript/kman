@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/gateway"
+	"github.com/kiranscript/kman/internal/gateway"
 )
 
 func limitedTo(n int64) func(*gateway.Options) {

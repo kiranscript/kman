@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // Limits on known sources, so that they cannot silence everything: a network no

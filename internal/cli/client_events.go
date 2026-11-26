@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 func (c *client) Events(ctx context.Context, req admin.EventQuery) (admin.EventPage, error) {

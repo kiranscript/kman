@@ -3,7 +3,7 @@ package token_test
 import (
 	"testing"
 
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 func TestHashEqualMatchesOnlyTheSameSecret(t *testing.T) {

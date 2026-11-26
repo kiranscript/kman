@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/kirank55/kman/internal/profiles"
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 const chat = "/v1/chat/completions"

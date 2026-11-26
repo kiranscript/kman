@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/kirank55/kman/gates"
+	"github.com/kiranscript/kman/gates"
 )
 
 // planted loads the fixture module under testdata/planted, whose packages

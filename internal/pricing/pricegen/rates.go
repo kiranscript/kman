@@ -6,7 +6,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/kirank55/kman/internal/pricing"
+	"github.com/kiranscript/kman/internal/pricing"
 )
 
 // field is one kind of token price.

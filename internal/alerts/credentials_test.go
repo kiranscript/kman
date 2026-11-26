@@ -8,9 +8,9 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/kirank55/kman/internal/alerts"
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/alerts"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // warningLane runs a bus whose ordinary events the credential warnings listen to.

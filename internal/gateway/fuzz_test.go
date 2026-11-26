@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/gateway"
+	"github.com/kiranscript/kman/internal/gateway"
 )
 
 // FuzzAKeyGoesNoFurtherThanKman sends a working key however the fuzzer likes,

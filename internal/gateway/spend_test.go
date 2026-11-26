@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/gateway"
-	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/pricing"
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/gateway"
+	"github.com/kiranscript/kman/internal/meter"
+	"github.com/kiranscript/kman/internal/pricing"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 // The prices of these tests: an input token costs 1 µ$ and an output token 2 µ$,

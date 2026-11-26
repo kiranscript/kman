@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/gateway"
-	"github.com/kirank55/kman/internal/limiter"
-	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/policy"
-	"github.com/kirank55/kman/internal/registry"
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/gateway"
+	"github.com/kiranscript/kman/internal/limiter"
+	"github.com/kiranscript/kman/internal/meter"
+	"github.com/kiranscript/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 // withPolicy is a key holding the policy, as admin would publish it.

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/kirank55/kman/internal/profiles"
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 // forward sends the request to the upstream with the credential in place of the

@@ -7,9 +7,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/gateway"
-	"github.com/kirank55/kman/internal/policy/geoip"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/gateway"
+	"github.com/kiranscript/kman/internal/policy/geoip"
 )
 
 // places is a Geo that knows a few addresses, and counts what it is asked.

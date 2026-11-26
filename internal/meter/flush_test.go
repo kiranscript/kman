@@ -8,7 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/kirank55/kman/internal/meter"
+	"github.com/kiranscript/kman/internal/meter"
 )
 
 func rowsOf(t *testing.T, c *meter.Memory) map[string]meter.Row {

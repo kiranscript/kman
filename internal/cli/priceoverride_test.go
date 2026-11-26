@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 // addAcme adds a custom upstream with no credential.

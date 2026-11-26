@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/gateway"
-	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/gateway"
+	"github.com/kiranscript/kman/internal/meter"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 // watched is a bus with one subscriber, running until the test ends.

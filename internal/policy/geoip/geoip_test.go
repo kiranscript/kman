@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/policy/geoip"
-	"github.com/kirank55/kman/internal/policy/geoip/geoiptest"
+	"github.com/kiranscript/kman/internal/policy/geoip"
+	"github.com/kiranscript/kman/internal/policy/geoip/geoiptest"
 )
 
 func addr(s string) netip.Addr { return netip.MustParseAddr(s) }

@@ -11,7 +11,7 @@ Run these in order. `kman serve` stays in the foreground, so open a second termi
 <!-- quickstart:begin -->
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kirank55/kman/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/kiranscript/kman/main/install.sh | sh
 kman init
 kman serve
 kman upstream add openai --preset openai

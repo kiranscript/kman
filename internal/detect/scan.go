@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 // Severity is how much a finding matters.

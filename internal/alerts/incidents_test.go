@@ -10,10 +10,10 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/kirank55/kman/internal/alerts"
-	"github.com/kirank55/kman/internal/detect"
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/alerts"
+	"github.com/kiranscript/kman/internal/detect"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // engine is the incident engine over the install, alerting through its service,

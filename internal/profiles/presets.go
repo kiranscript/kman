@@ -3,7 +3,7 @@ package profiles
 import (
 	"slices"
 
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 const bearer = "Authorization: Bearer {key}"

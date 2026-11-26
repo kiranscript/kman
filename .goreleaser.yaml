@@ -78,8 +78,8 @@ nfpms:
     file_name_template: "{{ .ConventionalFileName }}"
     formats: [deb, rpm]
     vendor: kman
-    homepage: https://github.com/kirank55/kman
-    maintainer: kirank55 <kirank55@users.noreply.github.com>
+    homepage: https://github.com/kiranscript/kman
+    maintainer: kiranscript <59312528+kiranscript@users.noreply.github.com>
     description: A key manager and proxy for LLM API keys.
     bindir: /usr/bin
     mtime: "{{ .CommitDate }}"
@@ -132,14 +132,14 @@ dockers_v2:
   - id: kman
     ids: [kman]
     dockerfile: Dockerfile
-    images: ["ghcr.io/kirank55/kman"]
+    images: ["ghcr.io/kiranscript/kman"]
     tags:
       - "{{ .Version }}"
       - "{{ if not .Prerelease }}latest{{ end }}"
     platforms: [linux/amd64, linux/arm64]
     labels:
       org.opencontainers.image.title: kman
-      org.opencontainers.image.source: https://github.com/kirank55/kman
+      org.opencontainers.image.source: https://github.com/kiranscript/kman
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.created: "{{ .CommitDate }}"
@@ -148,7 +148,7 @@ dockers_v2:
     # refuses index annotations ("not supported for single platform export"),
     # so there they go on the manifest only. GoReleaser templates the keys.
     annotations:
-      "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.source": https://github.com/kirank55/kman
+      "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.source": https://github.com/kiranscript/kman
       "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.revision": "{{ .FullCommit }}"
       "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.version": "{{ .Version }}"
       "{{ if .IsSnapshot }}manifest{{ else }}index,manifest{{ end }}:org.opencontainers.image.created": "{{ .CommitDate }}"

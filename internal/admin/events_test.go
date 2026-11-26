@@ -10,10 +10,10 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/profiles"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // feedFixture is an install with a key named my-app and five stored events: a

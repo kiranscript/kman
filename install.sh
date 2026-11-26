@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install kman from a GitHub release (SPEC §15).
 #
-#   curl -fsSL https://raw.githubusercontent.com/kirank55/kman/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/kiranscript/kman/main/install.sh | sh
 #
 # It always checks the archive's SHA-256 against the release's checksums.txt,
 # then verifies the release's signature with cosign or, failing that, gh,
@@ -15,13 +15,13 @@
 #                           else ~/.local/bin)
 #   KMAN_REQUIRE_SIGNATURE  1 refuses to install unless a signature verified
 #   KMAN_RELEASES_URL       the releases base URL, for a mirror or a test
-#                           (default: https://github.com/kirank55/kman/releases);
-#                           the signature identity stays pinned to kirank55/kman
+#                           (default: https://github.com/kiranscript/kman/releases);
+#                           the signature identity stays pinned to kiranscript/kman
 #
 # On Windows, download the zip from the release page instead.
 set -eu
 
-repo=kirank55/kman
+repo=kiranscript/kman
 releases=${KMAN_RELEASES_URL:-https://github.com/$repo/releases}
 issuer=https://token.actions.githubusercontent.com
 

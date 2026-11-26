@@ -288,8 +288,8 @@ func TestTheImage(t *testing.T) {
 		t.Fatalf("got %d dockers_v2 images, want one", len(g.DockersV2))
 	}
 	d := g.DockersV2[0]
-	if !slices.Equal(d.Images, []string{"ghcr.io/kirank55/kman"}) {
-		t.Errorf("images = %v, want ghcr.io/kirank55/kman", d.Images)
+	if !slices.Equal(d.Images, []string{"ghcr.io/kiranscript/kman"}) {
+		t.Errorf("images = %v, want ghcr.io/kiranscript/kman", d.Images)
 	}
 	if !slices.Equal(d.Platforms, []string{"linux/amd64", "linux/arm64"}) {
 		t.Errorf("platforms = %v, want linux/amd64 and linux/arm64", d.Platforms)

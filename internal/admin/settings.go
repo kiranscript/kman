@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // Settings are what an operator changes while kman runs (SPEC §3), as

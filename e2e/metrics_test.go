@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 var metricsListening = regexp.MustCompile(`msg="metrics listening" addr=(\S+)`)

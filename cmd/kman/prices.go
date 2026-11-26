@@ -4,8 +4,8 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/pricing"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/pricing"
 )
 
 // builtinPrices is the embedded price table as admin serves it. admin may not

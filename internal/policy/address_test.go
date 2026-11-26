@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/policy"
 )
 
 func TestAddressLocksAreKeptAndNormalized(t *testing.T) {

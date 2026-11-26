@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kirank55/kman/internal/policy"
-	"github.com/kirank55/kman/internal/store"
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/store"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 // Upstream is one upstream as the request path reads it.

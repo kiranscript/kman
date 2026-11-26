@@ -10,9 +10,9 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/kirank55/kman/internal/alerts"
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/alerts"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // priorityLane runs a bus whose priority lane the service listens to.

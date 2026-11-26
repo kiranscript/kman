@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/gateway"
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/gateway"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 func TestHeadersAnUpstreamMustNotSeeAreStripped(t *testing.T) {

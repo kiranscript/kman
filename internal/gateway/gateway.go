@@ -10,13 +10,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/limiter"
-	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/policy/geoip"
-	"github.com/kirank55/kman/internal/profiles"
-	"github.com/kirank55/kman/internal/registry"
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/limiter"
+	"github.com/kiranscript/kman/internal/meter"
+	"github.com/kiranscript/kman/internal/policy/geoip"
+	"github.com/kiranscript/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 // Routes is where the gateway finds a key: the registry's snapshot. A key the

@@ -7,7 +7,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/kirank55/kman/internal/events"
+	"github.com/kiranscript/kman/internal/events"
 )
 
 // run starts b's dispatcher and returns a func that stops it and waits.

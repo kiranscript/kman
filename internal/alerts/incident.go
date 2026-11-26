@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // AlertIncident is the incident engine's producer (SPEC §9, §10): detect calls

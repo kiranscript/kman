@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/profiles"
 )
 
 // overrides is an install with a small built-in table, recording what the
