@@ -3,7 +3,9 @@ package alerts_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -600,4 +602,84 @@ func TestRepeatUsesOfADisabledKeyAreCountedAndStillSayHowManyWereHeldBack(t *tes
 			t.Fatalf("got %d alerts, want a third saying 199 more uses were held back:\n%v", len(got), got)
 		}
 	})
+}
+
+// A batch that fails leaves the throttle as it was: retrying its events one by
+// one queues the same alerts, and later says the same uses were held back, as if
+// it had never failed (#129).
+func TestAFailedBatchLeavesTheThrottleAsItWas(t *testing.T) {
+	// run handles the same events, failing the last of the second batch the first
+	// time it is tried when failOnce is set, and returns the alerts, sorted.
+	run := func(t *testing.T, failOnce bool) (alerted []string, txs int64) {
+		synctest.Test(t, func(t *testing.T) {
+			failed := false
+			in := newInstall(t, func(o *alerts.Options) {
+				o.ThrottleWindow = 10 * time.Minute
+				o.CanaryIncident = func(_ *store.Tx, keyID string, _ time.Time, _ store.Evidence) (int64, bool, error) {
+					if failOnce && !failed && keyID == "cafe0003" {
+						failed = true
+						return 0, false, errors.New("the incident cannot be recorded just now")
+					}
+					return 0, false, nil
+				}
+			})
+			in.channel("ch_1", "slack", "hooks.test", "low", true, "")
+			for _, id := range []string{"cafe0001", "cafe0002", "cafe0003"} {
+				in.withCanary(id, "decoy-"+id, "the wiki")
+			}
+			in.withKey("abcd1234", "ci-bot")
+			in.withKey("beef5678", "other")
+			canary := func(id string) events.Event { return canaryUse(id, "203.0.113.7") }
+			disabled := func(id string) events.Event { return disabledUse(id, "203.0.113.8") }
+			// The first batch, of 64: cafe0001 and abcd1234 alert, and 62 uses of
+			// cafe0001 are held back.
+			var es []events.Event
+			for range 63 {
+				es = append(es, canary("cafe0001"))
+			}
+			es = append(es, disabled("abcd1234"))
+			// The second batch adds to what the first held, starts the throttle of
+			// two more keys, and ends with the event that fails.
+			for range 3 {
+				es = append(es, canary("cafe0001"), canary("cafe0002"), disabled("abcd1234"), disabled("beef5678"))
+			}
+			es = append(es, canary("cafe0003"))
+			bus, stop := in.backlog(es...)
+			defer stop()
+			synctest.Wait()
+			time.Sleep(11 * time.Minute)
+			// The next alert of each says what was held back.
+			for _, e := range []events.Event{canary("cafe0001"), canary("cafe0002"), canary("cafe0003"), disabled("abcd1234"), disabled("beef5678")} {
+				bus.Emit(e)
+				synctest.Wait()
+			}
+			for _, r := range in.net.received("hooks.test") {
+				alerted = append(alerted, r.Body)
+			}
+			slices.Sort(alerted)
+			txs = in.svc.PriorityTransactions()
+			if failed != failOnce {
+				t.Errorf("the batch failed: %v, want %v", failed, failOnce)
+			}
+		})
+		return alerted, txs
+	}
+	want, wantTxs := run(t, false)
+	got, gotTxs := run(t, true)
+	if gotTxs <= wantTxs {
+		t.Fatalf("%d transactions with a failed batch and %d without: nothing was retried", gotTxs, wantTxs)
+	}
+	all := strings.Join(want, "\n")
+	// Each of the five alerts at first and again after the window.
+	if len(want) != 10 {
+		t.Fatalf("%d alerts without a failure, want 10:\n%s", len(want), all)
+	}
+	for held, n := range map[string]int{"65 more uses": 1, "2 more uses": 2, "3 more uses": 1} {
+		if c := strings.Count(all, held); c != n {
+			t.Errorf("%q is said %d times without a failure, want %d:\n%s", held, c, n, all)
+		}
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("with a failed batch the alerts are\n%s\nwant\n%s", strings.Join(got, "\n"), all)
+	}
 }
