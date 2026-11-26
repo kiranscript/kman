@@ -24,7 +24,7 @@ const changelog = `# Changelog
 
 - Contain.
 
-[0.1.0]: https://github.com/kirank55/kman/releases/tag/v0.1.0
+[0.1.0]: https://github.com/kiranscript/kman/releases/tag/v0.1.0
 `
 
 // releaseNotes runs scripts/release-notes.sh for tag against a changelog.

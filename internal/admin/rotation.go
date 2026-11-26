@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/store"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 // Rotation's limits (SPEC §4). A retired secret's hash is kept for detection

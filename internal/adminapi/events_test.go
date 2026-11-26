@@ -10,13 +10,14 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/adminapi"
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/adminapi"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 func TestTheAPIListsStoredEventsNewestFirstAndBindsTheFilters(t *testing.T) {
@@ -259,5 +260,51 @@ func TestAStreamTellsItsClientHowManyEventsItMissed(t *testing.T) {
 	}
 	close(c)
 	for range f.msgs {
+	}
+}
+
+// endingStream is a stream that has lost nothing until it is made to end.
+type endingStream struct {
+	admin.EventStream
+	c      chan admin.Event
+	missed atomic.Int64
+}
+
+func (s *endingStream) Events() <-chan admin.Event { return s.c }
+func (s *endingStream) Missed() int64              { return s.missed.Load() }
+func (*endingStream) Err() error                   { return nil }
+func (*endingStream) Close()                       {}
+
+// end drops n events and closes the stream.
+func (s *endingStream) end(n int64) {
+	s.missed.Store(n)
+	close(s.c)
+}
+
+type endingService struct {
+	adminapi.Service
+	st *endingStream
+}
+
+func (s endingService) StreamEvents(context.Context, admin.EventStreamQuery) (admin.EventStream, error) {
+	return s.st, nil
+}
+
+// Events lost right before a stream ends have no event or keepalive after them
+// to carry the count, and the client is still told (#129).
+func TestAStreamTellsItsClientWhatItMissedAtTheVeryEnd(t *testing.T) {
+	s := newServer(t)
+	st := &endingStream{c: make(chan admin.Event)}
+	s.url = newHTTPServer(t, endingService{Service: s.svc, st: st})
+	f := follow(t, s, "")
+	if m := <-f.msgs; m.comment == "" {
+		t.Fatalf("first message %+v, want the comment that opens the stream", m)
+	}
+	st.end(3)
+	if m := f.next(t); m.event != "dropped" || m.data != `{"missed":3}` {
+		t.Errorf("message %+v, want the count of what was missed", m)
+	}
+	for m := range f.msgs {
+		t.Errorf("after the count came %+v, want the end of the stream", m)
 	}
 }

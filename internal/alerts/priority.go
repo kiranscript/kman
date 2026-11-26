@@ -8,8 +8,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // The error codes of a refusal that takes the priority lane, as gateway sets
@@ -24,7 +24,8 @@ const (
 // event store (SPEC §9). Subscribe with events.SubOptions{PriorityOnly: true}.
 //
 // A key in use is a stream of events, so one key alerts once per
-// ThrottleWindow, and the next alert says how many uses it held back. A canary
+// ThrottleWindow, and the next alert says how many uses it held back, and of
+// which incident when that is not the alert's own (#125). A canary
 // differs in one way: the first use after it was armed always alerts, window or
 // not, since a reset is the operator saying "tell me again". The canary's own
 // row says whether that is this use, so it survives a restart, and a use from
@@ -184,37 +185,52 @@ func (s *Service) priorityUse(tx *store.Tx, held, pending map[string]*throttled,
 	// that opened or escalated its incident (a use after the last one was
 	// resolved), alerts: the rest are counted for the next alert.
 	if inWindow && !firedNow && !news {
-		pending[id] = &throttled{at: t.at, suppressed: t.suppressed + 1}
+		pending[id] = &throttled{at: t.at, suppressed: t.suppressed + 1, incident: t.incident}
 		return false, nil
 	}
-	suppressed := 0
+	var h heldBack
 	if t != nil {
-		suppressed = t.suppressed
+		h.uses = t.suppressed
+		// A canary's entry outlives its incident: what was held back under one
+		// that has since been resolved is not this new incident's (#125).
+		if t.incident != incident {
+			h.incident = t.incident
+		}
 	}
-	a := usedKeyAlert(e, canary, suppressed, incident)
+	a := usedKeyAlert(e, canary, h, incident)
 	if err := nameKey(tx, &a); err != nil {
 		return false, err
 	}
 	if err := s.NotifyTx(tx, a); err != nil {
 		return false, err
 	}
-	pending[id] = &throttled{at: now}
+	pending[id] = &throttled{at: now, incident: incident}
 	return true, nil
 }
 
 // maxThrottled bounds the keys RunPriority remembers.
 const maxThrottled = 4096
 
+// throttled is when a throttle entry last alerted, how many uses it has held
+// back since, and the incident those uses count under, 0 for none.
 type throttled struct {
 	at         time.Time
 	suppressed int
+	incident   int64
+}
+
+// heldBack is what an alert says of the uses held back before it. incident is
+// the one they count under when it is not the alert's own, and 0 otherwise.
+type heldBack struct {
+	uses     int
+	incident int64
 }
 
 // usedKeyAlert is the alert for the use of a disabled key or a canary. It holds
 // where the request came from and its method, never anything the request said:
 // the path is the caller's to write, so it stays out of what goes to a channel.
 // canary is the canary's row when the use was of one that has a row.
-func usedKeyAlert(e events.Event, canary *store.Canary, held int, incident int64) Alert {
+func usedKeyAlert(e events.Event, canary *store.Canary, held heldBack, incident int64) Alert {
 	a := Alert{Kind: "disabled_key", Severity: High, Priority: true, Title: "A disabled key was used", KeyID: e.KeyID, Time: e.Time}
 	if e.Canary {
 		a.Kind, a.Severity, a.Title = "canary", Critical, "A canary key was used"
@@ -241,8 +257,12 @@ func usedKeyAlert(e events.Event, canary *store.Canary, held int, incident int64
 	if knownMethods[e.Method] { // a method is a token the caller picks, so only the standard ones are named
 		a.Evidence = append(a.Evidence, Fact{"Method", e.Method})
 	}
-	if held > 0 {
-		a.Evidence = append(a.Evidence, Fact{"Held back", strconv.Itoa(held) + " more uses since the last alert"})
+	if held.uses > 0 {
+		uses := strconv.Itoa(held.uses) + " more uses"
+		if held.incident != 0 {
+			uses += " of incident #" + strconv.FormatInt(held.incident, 10)
+		}
+		a.Evidence = append(a.Evidence, Fact{"Held back", uses + " since the last alert"})
 	}
 	a.Commands = []string{"kman key show " + e.KeyID}
 	if e.Canary {

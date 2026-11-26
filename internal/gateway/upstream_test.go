@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/gateway"
+	"github.com/kiranscript/kman/internal/gateway"
 )
 
 // redirecting is an upstream that answers every request with a redirect, which

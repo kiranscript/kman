@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // withDataKey is a store holding a data key, as an alert channel needs.

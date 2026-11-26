@@ -7,8 +7,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/kirank55/kman/internal/profiles"
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 // fuzzRead holds a reader to what must be true of any response at all: it doesn't

@@ -3,7 +3,7 @@ package alerts
 import (
 	"strconv"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // auditAction is how an audit action is alerted on.

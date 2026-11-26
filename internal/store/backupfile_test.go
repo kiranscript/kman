@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 func TestBackupIsAConsistentCopyThatOpensWithTheSameData(t *testing.T) {

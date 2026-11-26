@@ -3,7 +3,7 @@ package meter_test
 import (
 	"testing"
 
-	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/profiles"
 )
 
 // BenchmarkReserveSettle is the meter's share of a request: a reservation

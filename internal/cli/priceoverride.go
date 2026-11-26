@@ -14,7 +14,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 // parseMillionths reads a decimal with no more than six places, such as 2.50,

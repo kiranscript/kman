@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // DefaultCredentialWarningWindow is how often one upstream's refused credential

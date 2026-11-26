@@ -3,15 +3,22 @@ package cli_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"runtime"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/cli"
-	"github.com/kirank55/kman/internal/detect"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/cli"
+	"github.com/kiranscript/kman/internal/detect"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // withIncident is an install with a key named my-app and incident 1 for it: a
@@ -528,6 +535,101 @@ func TestIncidentsFollowDoesNotReprintIncidentsPastTheLimit(t *testing.T) {
 	<-done
 	if strings.Contains(stdout.String(), "#1") {
 		t.Errorf("follow reprinted an older incident as a change:\n%s", stdout.String())
+	}
+}
+
+// An open incident that newer ones push out of the watched window is not a
+// change: it is neither printed nor fetched again on every poll, and it is
+// still told once it is resolved out there (#126).
+func TestIncidentsFollowWithOpenDoesNotRepeatAnIncidentPushedOutOfTheWindow(t *testing.T) {
+	const window = 200 // followWindow
+	// One incident to a page, so the two pushed out take turns.
+	defer cli.SetFollowPage(1)()
+	in, _ := withIncident(t)
+	n := 1
+	open := func() { // another key's incident, the next id
+		t.Helper()
+		n++
+		var created admin.CreatedKey
+		in.kmanJSON(t, &created, "key", "create", fmt.Sprintf("app-%d", n), "--upstream", "openai")
+		in.detect(t, created.Key.ID, "new_country", store.SeverityHigh, store.Evidence{Country: "DE"})
+	}
+	for n < window {
+		open()
+	}
+	api, err := url.Parse(in.url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var polls, gets atomic.Int64 // listings asked for, and fetches of incident 1
+	proxy := httputil.NewSingleHostReverseProxy(api)
+	counted := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/admin/v1/incidents":
+			polls.Add(1)
+		case "/admin/v1/incidents/1":
+			gets.Add(1)
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	defer counted.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stdout, stderr := &syncBuffer{}, &syncBuffer{}
+	env := in.env(map[string]string{"KMAN_ADMIN_URL": counted.URL, "KMAN_ADMIN_TOKEN": in.owner}, "", stdout, stderr)
+	env.FollowEvery = time.Millisecond
+	done := make(chan int)
+	go func() {
+		done <- cli.Run(ctx, []string{"incidents", "--follow", "--open", "--limit", "1", "--json"}, env)
+	}()
+	defer func() { cancel(); <-done }()
+	until := func(what string, ok func() bool) {
+		t.Helper()
+		start := time.Now()
+		for !ok() {
+			if time.Since(start) > 10*time.Second {
+				t.Fatalf("waited for %s:\n%s%s", what, stdout.String(), stderr.String())
+			}
+			runtime.Gosched()
+		}
+	}
+	morePolls := func() {
+		t.Helper()
+		then := polls.Load()
+		until("more polls", func() bool { return polls.Load() >= then+10 })
+	}
+	printed := func(id int64) (states []string) {
+		for line := range strings.Lines(stdout.String()) {
+			var i admin.Incident
+			if strings.HasSuffix(line, "\n") && json.Unmarshal([]byte(line), &i) == nil && i.ID == id {
+				states = append(states, i.State)
+			}
+		}
+		return states
+	}
+	morePolls() // the window holds every incident, 1 the oldest
+
+	open()
+	open() // 1 and 2 are pushed out
+	until("the newest incident", func() bool { return len(printed(int64(n))) == 1 })
+	morePolls()
+	if got := printed(1); len(got) != 0 {
+		t.Errorf("incident 1, open and pushed out, was printed %d times", len(got))
+	}
+	if got := gets.Load(); got > 1 {
+		t.Errorf("incident 1 was fetched %d times, want at most once", got)
+	}
+
+	in.kman(t, "incident", "ack", "2")
+	until("the change to incident 2", func() bool { return len(printed(2)) > 0 })
+	in.kman(t, "incident", "resolve", "1")
+	until("incident 1's resolution", func() bool { return len(printed(1)) > 0 })
+	morePolls()
+	if got := printed(1); !slices.Equal(got, []string{"resolved"}) {
+		t.Errorf("incident 1 was printed as %v, want its resolution once", got)
+	}
+	if got := printed(2); !slices.Equal(got, []string{"acknowledged"}) {
+		t.Errorf("incident 2 was printed as %v, want its acknowledgement once", got)
 	}
 }
 

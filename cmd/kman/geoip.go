@@ -8,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kirank55/kman/internal/policy"
-	"github.com/kirank55/kman/internal/policy/geoip"
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/policy/geoip"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 // GeoIPConfig is the geoip section of kman.yaml: where the GeoIP databases are,

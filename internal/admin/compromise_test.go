@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/profiles"
 )
 
 const replacement = "sk-live-replacement-0123456789abcdefQRST"

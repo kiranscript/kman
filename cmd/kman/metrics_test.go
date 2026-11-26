@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 func TestMetricsListenIsOptInAndMustBeHostAndPort(t *testing.T) {

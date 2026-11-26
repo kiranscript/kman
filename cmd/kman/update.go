@@ -15,14 +15,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/events"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/events"
 )
 
 // releasesURL is the one address kman asks about updates (ADR 0008). Only
 // `kman version --check` and, when the operator opted in with update_check,
 // the daily check in `kman serve` ever request it.
-const releasesURL = "https://api.github.com/repos/kirank55/kman/releases/latest"
+const releasesURL = "https://api.github.com/repos/kiranscript/kman/releases/latest"
 
 // checkEvery is how often the opt-in check asks.
 const checkEvery = 24 * time.Hour

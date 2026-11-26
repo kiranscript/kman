@@ -10,7 +10,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/kirank55/kman/internal/alerts"
+	"github.com/kiranscript/kman/internal/alerts"
 )
 
 // answers makes a host answer with these statuses in turn, then 200.

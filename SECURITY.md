@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-**Report it privately**, through GitHub's private vulnerability reporting: open the [Security tab](https://github.com/kirank55/kman/security) of this repository and choose **Report a vulnerability**, or go straight to <https://github.com/kirank55/kman/security/advisories/new>. Please do not open a public issue or pull request for a vulnerability.
+**Report it privately**, through GitHub's private vulnerability reporting: open the [Security tab](https://github.com/kiranscript/kman/security) of this repository and choose **Report a vulnerability**, or go straight to <https://github.com/kiranscript/kman/security/advisories/new>. Please do not open a public issue or pull request for a vulnerability.
 
 Say what you found, the version (`kman version`), and how to reproduce it. A proof of concept helps; a real credential or a real key never does, so use made-up ones.
 

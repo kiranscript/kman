@@ -2,6 +2,6 @@
 package cli
 
 import (
-	_ "github.com/kirank55/kman/internal/admin"
-	_ "github.com/kirank55/kman/internal/store"
+	_ "github.com/kiranscript/kman/internal/admin"
+	_ "github.com/kiranscript/kman/internal/store"
 )

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -13,7 +14,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 // defaultIncidentsLimit is how many incidents kman incidents lists, and --follow
@@ -25,6 +26,10 @@ const defaultFollowEvery = 2 * time.Second
 
 // followWindow is how many of the newest incidents --follow watches.
 const followWindow = 200
+
+// followPage is how many open incidents one request asks for when --follow
+// --open looks past its window: the most kman gives. Tests make it smaller.
+var followPage = 500
 
 func cmdIncidents(ctx context.Context, c *call) error {
 	fs := c.flags("incidents [--open] [--key <name or key id>] [--limit n] [--follow] [--json]\n\n"+
@@ -173,6 +178,97 @@ func incidentsFollow(ctx context.Context, c *call, cl *client, l login, req admi
 			seen[i.ID] = i
 		}
 	}
+	// report prints i if it is news: not seen before, or changed since.
+	report := func(i admin.Incident) error {
+		old, ok := seen[i.ID]
+		seen[i.ID] = i // the newest, so the next firing is measured from the last one
+		if ok && incidentSignature(old) == incidentSignature(i) && !firedAfterQuiet(old, i) {
+			return nil
+		}
+		return print(i)
+	}
+	// With --open, beyond holds the open incidents that have left the window,
+	// pushed out by newer ones. A poll does not fetch each of them: it asks for
+	// one page of open incidents among them, below swept and then from the top
+	// again, which says which of those changed and which are open no longer.
+	beyond := map[int64]bool{}
+	var swept int64
+	fetch := func(id int64) error {
+		d, err := cl.GetIncident(ctx, admin.IncidentRef{ID: id})
+		if err != nil {
+			return err
+		}
+		if d.State == admin.IncidentResolved {
+			delete(beyond, id)
+		} else {
+			beyond[id] = true
+		}
+		return report(d.Incident)
+	}
+	sweep := func() error {
+		if len(beyond) == 0 {
+			return nil
+		}
+		ids := slices.Sorted(maps.Keys(beyond))
+		n, _ := slices.BinarySearch(ids, swept)
+		if n == 0 {
+			n = len(ids)
+		}
+		top := ids[n-1]
+		q := req
+		q.Before, q.Limit = top+1, followPage
+		page, err := cl.ListIncidents(ctx, q)
+		if err != nil {
+			return err
+		}
+		swept = 0 // the page's lowest id: it lists every open incident from there to top
+		if page.More && len(page.Incidents) > 0 {
+			swept = page.Incidents[len(page.Incidents)-1].ID
+		}
+		listed := map[int64]admin.Incident{}
+		for _, i := range page.Incidents {
+			listed[i.ID] = i
+		}
+		from, _ := slices.BinarySearch(ids, swept)
+		for _, id := range ids[from:n] {
+			if i, ok := listed[id]; ok {
+				err = report(i)
+			} else {
+				err = fetch(id)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	poll := func() error {
+		list, err := cl.ListIncidents(ctx, watch)
+		if err != nil {
+			return err
+		}
+		current := map[int64]bool{}
+		for _, i := range slices.Backward(list.Incidents) {
+			current[i.ID] = true
+			delete(beyond, i.ID)
+			if err := report(i); err != nil {
+				return err
+			}
+		}
+		if !req.Open {
+			return nil
+		}
+		// An incident that has just left the list was resolved, which is still
+		// news, or was pushed out of the window while open.
+		for _, id := range slices.Sorted(maps.Keys(seen)) {
+			if !current[id] && !beyond[id] && seen[id].State != admin.IncidentResolved {
+				if err := fetch(id); err != nil {
+					return err
+				}
+			}
+		}
+		return sweep()
+	}
 	timer := time.NewTimer(every)
 	defer timer.Stop()
 	for {
@@ -181,47 +277,11 @@ func incidentsFollow(ctx context.Context, c *call, cl *client, l login, req admi
 			return nil
 		case <-timer.C:
 		}
-		list, err := cl.ListIncidents(ctx, watch)
-		if err != nil {
+		if err := poll(); err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
 			return c.explain(err, l)
-		}
-		current := map[int64]bool{}
-		for _, i := range slices.Backward(list.Incidents) {
-			current[i.ID] = true
-			old, ok := seen[i.ID]
-			seen[i.ID] = i // the newest, so the next firing is measured from the last one
-			if ok && incidentSignature(old) == incidentSignature(i) && !firedAfterQuiet(old, i) {
-				continue
-			}
-			if err := print(i); err != nil {
-				return err
-			}
-		}
-		// With --open an incident that is resolved leaves the list; it is still news.
-		if req.Open {
-			var gone []int64
-			for id, old := range seen {
-				if !current[id] && old.State != admin.IncidentResolved {
-					gone = append(gone, id)
-				}
-			}
-			sort.Slice(gone, func(a, b int) bool { return gone[a] < gone[b] })
-			for _, id := range gone {
-				d, err := cl.GetIncident(ctx, admin.IncidentRef{ID: id})
-				if err != nil {
-					if ctx.Err() != nil {
-						return nil
-					}
-					return c.explain(err, l)
-				}
-				seen[id] = d.Incident
-				if err := print(d.Incident); err != nil {
-					return err
-				}
-			}
 		}
 		timer.Reset(every)
 	}

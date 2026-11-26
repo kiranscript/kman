@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/cli"
+	"github.com/kiranscript/kman/internal/cli"
 )
 
 func TestExitCodes(t *testing.T) {

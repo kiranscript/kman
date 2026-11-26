@@ -375,9 +375,9 @@ func (tx *Tx) ListEvents(f EventFilter, limit int) ([]StoredEvent, error) {
 	return out, nil
 }
 
-// listEventsQuery is ListEvents' query and its arguments. Filtered by key, it
-// is served by events_by_key in id order, so a busy key's newest page is read
-// without sorting all of the key's events.
+// listEventsQuery is ListEvents' query and its arguments. It reads the events in
+// id order, by events_by_key when filtered by key, and stops at the limit, so
+// the newest page is read without sorting every event that matches.
 func listEventsQuery(f EventFilter, limit int) (string, []any) {
 	var where []string
 	var args []any
@@ -399,18 +399,14 @@ func listEventsQuery(f EventFilter, limit int) (string, []any) {
 	if f.BlockedCode != "" {
 		add("e.blocked_code = ?", f.BlockedCode)
 	}
-	// With a key, the unary plus keeps SQLite off events_key_ts for the time
-	// bounds: it walks events_by_key newest first and checks the time as it
-	// goes, where events_key_ts would read the whole window and sort it.
-	ts := "e.ts"
-	if f.KeyID != "" {
-		ts = "+e.ts"
-	}
+	// The unary plus keeps SQLite off the indexes on ts for the time bounds: it
+	// walks the ids newest first and checks the time as it goes, where
+	// events_ts or events_key_ts would read the whole window and sort it.
 	if !f.Since.IsZero() {
-		add(ts+" >= ?", toMilli(f.Since))
+		add("+e.ts >= ?", toMilli(f.Since))
 	}
 	if !f.Until.IsZero() {
-		add(ts+" < ?", toMilli(f.Until))
+		add("+e.ts < ?", toMilli(f.Until))
 	}
 	if f.BeforeID > 0 {
 		add("e.id < ?", f.BeforeID)

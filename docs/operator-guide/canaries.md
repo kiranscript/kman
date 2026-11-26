@@ -57,7 +57,7 @@ It arrives within 5 seconds under load, even if another channel is not answering
 
 A canary's use also opens an [incident](incidents.md) for the canary, which the alert names (`kman incident show N`). The incident is critical, so it never expires: more uses count on it, and you end it with `kman incident resolve N`, or with `kman key revoke <canary> --incident N` when you retire the canary because of it.
 
-The **first** use after a canary was armed always alerts. While it stays fired, further uses are counted and alert at most once every 10 minutes, and the next alert says how many it held back, so a leak that is being hammered is one message and a count, not a flood. Once you have found and fixed the leak:
+The **first** use after a canary was armed always alerts. While it stays fired, further uses are counted and alert at most once every 10 minutes, and the next alert says how many it held back (and of which incident, when that alert opens a new one), so a leak that is being hammered is one message and a count, not a flood. Once you have found and fixed the leak:
 
 ```sh
 kman canary reset deploy-env

@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/pricing"
-	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/meter"
+	"github.com/kiranscript/kman/internal/pricing"
+	"github.com/kiranscript/kman/internal/profiles"
 )
 
 // F1, keman's first cap bypass: a body with no top-level model skipped the caps

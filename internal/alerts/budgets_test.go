@@ -7,9 +7,9 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/kirank55/kman/internal/alerts"
-	"github.com/kirank55/kman/internal/policy"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/alerts"
+	"github.com/kiranscript/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // limitsOf is what the composition root hands the alerts service: a key's

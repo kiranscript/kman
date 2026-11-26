@@ -31,12 +31,12 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/policy"
-	"github.com/kirank55/kman/internal/profiles"
-	"github.com/kirank55/kman/internal/registry"
-	"github.com/kirank55/kman/internal/store"
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/store"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 // fixedNow is the time every fixture is made at.

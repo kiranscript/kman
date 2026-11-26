@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 func (c *client) ListIncidents(ctx context.Context, req admin.IncidentQuery) (admin.IncidentList, error) {

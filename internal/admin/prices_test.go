@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 func priced(t *testing.T, generated time.Time) (*install, *admin.Service) {

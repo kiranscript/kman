@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"net/netip"
 
-	"github.com/kirank55/kman/internal/policy/geoip"
+	"github.com/kiranscript/kman/internal/policy/geoip"
 )
 
 // WriteError writes the error for a code, for the test of the error table:

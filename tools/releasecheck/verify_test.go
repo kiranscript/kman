@@ -78,7 +78,7 @@ func TestTheVerifyDocsCheckEveryChannelAgainstTheTagIdentity(t *testing.T) {
 		t.Fatal("docs/verify.md has no verify:begin/end block")
 	}
 	block := doc[begin:end]
-	const identity = "https://github.com/kirank55/kman/.github/workflows/release.yml@refs/tags/$TAG"
+	const identity = "https://github.com/kiranscript/kman/.github/workflows/release.yml@refs/tags/$TAG"
 	for _, want := range []string{
 		"cosign verify-blob checksums.txt",
 		"--bundle checksums.txt.sigstore.json",
@@ -90,8 +90,8 @@ func TestTheVerifyDocsCheckEveryChannelAgainstTheTagIdentity(t *testing.T) {
 		"--predicate-type https://spdx.dev/Document/v2.3",
 		"--cert-identity \"" + identity + "\"",
 		"gh release verify \"$TAG\"",
-		"cosign verify \"ghcr.io/kirank55/kman:$V\"",
-		"gh attestation verify \"oci://ghcr.io/kirank55/kman:$V\"",
+		"cosign verify \"ghcr.io/kiranscript/kman:$V\"",
+		"gh attestation verify \"oci://ghcr.io/kiranscript/kman:$V\"",
 	} {
 		if !strings.Contains(block, want) {
 			t.Errorf("the verify block lacks %q", want)

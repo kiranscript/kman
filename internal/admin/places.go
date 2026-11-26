@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // PlaceQuery names a key, and optionally the kind of place to list.

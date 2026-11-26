@@ -4,7 +4,7 @@
 # and the signing identity. Run it before the tag, never after: a release
 # signs as the repository it was built in.
 #
-#   sh scripts/set-repo.sh kiranscript/kman
+#   sh scripts/set-repo.sh <owner>/<name>
 #
 # The current name is the module path in go.mod. The tap's owner moves with
 # the repository's, its name (homebrew-tap) does not. docs/releasing.md lists
@@ -13,7 +13,7 @@ set -eu
 
 new=${1:-}
 if ! printf '%s\n' "$new" | grep -Eq '^[a-z0-9]([a-z0-9-]*[a-z0-9])?/[a-z0-9][a-z0-9._-]*$' || [ "${new#*/..}" != "$new" ]; then
-	echo "usage: set-repo.sh <owner/name>, lowercase, such as kiranscript/kman (GHCR needs lowercase)" >&2
+	echo "usage: set-repo.sh <owner/name>, lowercase, such as octocat/kman (GHCR needs lowercase)" >&2
 	exit 1
 fi
 
@@ -26,8 +26,8 @@ fi
 old_owner=${old%%/*}
 new_owner=${new%%/*}
 
-# Every tracked text file that names the old owner. kirank55/keman, the
-# earlier project, is a different repository, and no rule below matches it.
+# Every tracked text file that names the old owner. keman, the earlier
+# project, is a different repository, and no rule below matches it.
 files=$(git grep -lI -F -e "$old" -e "$old_owner/homebrew-tap" -e "$old_owner/tap/" || true)
 for f in $files; do
 	tmp=$(mktemp)

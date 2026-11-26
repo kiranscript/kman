@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 func (c *client) RotateKey(ctx context.Context, req admin.RotateKeyRequest) (admin.RotatedKey, error) {

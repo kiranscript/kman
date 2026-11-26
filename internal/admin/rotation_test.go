@@ -8,10 +8,10 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/profiles"
-	"github.com/kirank55/kman/internal/store"
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/store"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 const hour = time.Hour

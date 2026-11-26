@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/kirank55/kman/internal/gateway"
-	"github.com/kirank55/kman/internal/profiles"
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/gateway"
+	"github.com/kiranscript/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 // reports collects what the gateway read from each response.

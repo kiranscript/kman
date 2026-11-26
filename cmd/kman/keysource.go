@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 // keySource turns the config's key_source into a vault key source. prompt

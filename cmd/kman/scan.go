@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/kirank55/kman/internal/detect"
+	"github.com/kiranscript/kman/internal/detect"
 )
 
 const scanUsage = "usage: kman scan [--json] <path>...\n" +

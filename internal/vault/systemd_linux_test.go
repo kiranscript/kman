@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 // TestTheSystemdCredsSourceUnderSystemd encrypts a master key with

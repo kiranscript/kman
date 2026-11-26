@@ -1,6 +1,6 @@
 # Run kman with Docker Compose
 
-The image is `ghcr.io/kirank55/kman`: distroless, running as UID 65532, for linux/amd64 and linux/arm64. [Verify it](../verify.md) before you run it.
+The image is `ghcr.io/kiranscript/kman`: distroless, running as UID 65532, for linux/amd64 and linux/arm64. [Verify it](../verify.md) before you run it.
 
 The Compose example is [`examples/compose/compose.yaml`](../../examples/compose/compose.yaml). It:
 
@@ -14,7 +14,7 @@ The Compose example is [`examples/compose/compose.yaml`](../../examples/compose/
 In an empty directory, download the example:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/kirank55/kman/main/examples/compose/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/kiranscript/kman/main/examples/compose/compose.yaml
 ```
 
 Then make a master key, set kman up, and start it. CI runs these exact commands against every change to the image or the example.
@@ -22,7 +22,7 @@ Then make a master key, set kman up, and start it. CI runs these exact commands 
 <!-- compose:begin -->
 
 ```sh
-docker run --rm ghcr.io/kirank55/kman keygen > master.key
+docker run --rm ghcr.io/kiranscript/kman keygen > master.key
 docker compose run --rm kman init
 docker compose up -d
 ```
@@ -60,7 +60,7 @@ The proxy is published on `http://127.0.0.1:8080`, so an app on the host uses `O
 
 ```sh
 docker compose stop kman
-docker run --rm ghcr.io/kirank55/kman keygen > master.key.next
+docker run --rm ghcr.io/kiranscript/kman keygen > master.key.next
 docker compose run --rm -v "$PWD/master.key.next:/next.key:ro" kman rekey --new-key-file /next.key
 mv master.key.next master.key
 docker compose up -d

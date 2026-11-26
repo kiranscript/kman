@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/cli"
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/cli"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 // summaryOf runs plain kman's summary with this environment.

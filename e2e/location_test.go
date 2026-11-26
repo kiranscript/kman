@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/policy/geoip/geoiptest"
+	"github.com/kiranscript/kman/internal/policy/geoip/geoiptest"
 )
 
 // #89 through the real binary: a key used from one country is, during its

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 // catalog is one preset, "acme", at version 1, and its next version: another

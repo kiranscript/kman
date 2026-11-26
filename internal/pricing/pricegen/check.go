@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kirank55/kman/internal/pricing"
+	"github.com/kiranscript/kman/internal/pricing"
 )
 
 // Flag is something CI points a reviewer at.

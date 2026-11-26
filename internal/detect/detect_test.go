@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/detect"
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/detect"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 func mint(t *testing.T, kind token.Kind) token.Minted {

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 // keepOnKman applies the redirect rule to a response: kman follows no redirect,

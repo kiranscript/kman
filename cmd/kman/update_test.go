@@ -52,7 +52,7 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-const latestV02 = `{"tag_name":"v0.2.0","html_url":"https://github.com/kirank55/kman/releases/tag/v0.2.0","published_at":"2026-11-10T09:00:00Z","draft":false,"prerelease":false}`
+const latestV02 = `{"tag_name":"v0.2.0","html_url":"https://github.com/kiranscript/kman/releases/tag/v0.2.0","published_at":"2026-11-10T09:00:00Z","draft":false,"prerelease":false}`
 
 // withVersion makes the binary say it is version v for the test.
 func withVersion(t *testing.T, v string) {
@@ -82,15 +82,15 @@ func TestVersionCheckAsksGitHubOnlyWhenRunAndReportsANewerRelease(t *testing.T) 
 		t.Fatalf("version --check made %d requests, want 1", n)
 	}
 	out := stdout.String()
-	for _, want := range []string{"kman v0.1.0", "v0.2.0", "newer", "https://github.com/kirank55/kman/releases/tag/v0.2.0"} {
+	for _, want := range []string{"kman v0.1.0", "v0.2.0", "newer", "https://github.com/kiranscript/kman/releases/tag/v0.2.0"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("version --check printed %q, which lacks %q", out, want)
 		}
 	}
 
 	req := rs.last
-	if req.URL.Path != "/repos/kirank55/kman/releases/latest" || req.Method != "GET" {
-		t.Errorf("asked %s %s, want GET /repos/kirank55/kman/releases/latest", req.Method, req.URL.Path)
+	if req.URL.Path != "/repos/kiranscript/kman/releases/latest" || req.Method != "GET" {
+		t.Errorf("asked %s %s, want GET /repos/kiranscript/kman/releases/latest", req.Method, req.URL.Path)
 	}
 	if ua := req.Header.Get("User-Agent"); ua != "kman/v0.1.0" {
 		t.Errorf("User-Agent = %q, want only the program and its version", ua)

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/pricing"
+	"github.com/kiranscript/kman/internal/pricing"
 )
 
 var now = time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)

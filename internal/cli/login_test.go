@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/adminapi"
+	"github.com/kiranscript/kman/internal/adminapi"
 )
 
 func TestLoginSavesTheURLAndTokenAndLogoutRemovesThem(t *testing.T) {

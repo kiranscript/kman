@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 func FuzzParse(f *testing.F) {

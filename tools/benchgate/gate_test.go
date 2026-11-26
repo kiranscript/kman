@@ -11,7 +11,7 @@ import (
 // with ns/op from nsPerOp and the given allocs/op.
 func bench(name string, allocs int, nsPerOp ...float64) string {
 	var b strings.Builder
-	b.WriteString("goos: linux\ngoarch: amd64\npkg: github.com/kirank55/kman/internal/gateway\n")
+	b.WriteString("goos: linux\ngoarch: amd64\npkg: github.com/kiranscript/kman/internal/gateway\n")
 	for _, ns := range nsPerOp {
 		fmt.Fprintf(&b, "%s-8\t1000000\t%.0f ns/op\t64 B/op\t%d allocs/op\n", name, ns, allocs)
 	}
@@ -86,7 +86,7 @@ func TestBenchmarksOnOneSideAreNotesNotFailures(t *testing.T) {
 }
 
 func TestNoBenchmarksPasses(t *testing.T) {
-	r := compare(t, "PASS\nok  \tgithub.com/kirank55/kman/internal/token\t0.01s\n", "")
+	r := compare(t, "PASS\nok  \tgithub.com/kiranscript/kman/internal/token\t0.01s\n", "")
 	if len(r.Failures) != 0 || len(r.Notes) != 0 {
 		t.Errorf("report = %+v, want it empty", r)
 	}

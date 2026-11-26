@@ -14,7 +14,7 @@ It needs systemd 250 or later (Debian 12, Ubuntu 22.04, RHEL 9, Fedora 36 and la
 
 ## Install
 
-Download the package for your machine from the [releases page](https://github.com/kirank55/kman/releases), check it against `checksums.txt`, and install it:
+Download the package for your machine from the [releases page](https://github.com/kiranscript/kman/releases), check it against `checksums.txt`, and install it:
 
 ```sh
 apt install ./kman_0.1.0_amd64.deb        # Debian, Ubuntu

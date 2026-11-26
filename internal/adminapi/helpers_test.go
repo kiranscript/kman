@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/adminapi"
-	"github.com/kirank55/kman/internal/policy"
-	"github.com/kirank55/kman/internal/profiles"
-	"github.com/kirank55/kman/internal/store"
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/adminapi"
+	"github.com/kiranscript/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/store"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 var t0 = time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)

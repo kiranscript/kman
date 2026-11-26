@@ -30,6 +30,41 @@ export interface Layout {
 
 const PANELS: Tab[] = ['status', 'keys', 'upstreams', 'audit'];
 
+/** The lines Status's summary is sure of above its list: one when there are no keys to count. */
+export const summaryRows = (noKeys: boolean) => (noKeys ? 1 : 3);
+
+/** Whether Keys, when focused, gives its last row to the filter. */
+export const hasFilterRow = (filter: string, filtering: boolean) => filtering || filter !== '';
+
+/** What of a panel decides how its rows are shared. */
+export type ListPanel =
+  | { tab: 'status'; items: number; noKeys: boolean }
+  | { tab: 'keys'; filterRow: boolean }
+  | { tab: 'upstreams' | 'audit' };
+
+/**
+ * What a panel `height` rows high gives its list, when it is the focused one: the
+ * `rows` of it on screen at once, and for Status the `header` line above them. The
+ * panels draw by this and PgUp/PgDn move by it, so a page is what is shown (#117).
+ */
+export function listArea(height: number, panel: ListPanel): { header: number; rows: number } {
+  const inside = height - 2; // less the border
+  // A strip has no border: its one line is the list's.
+  if (panel.tab === 'keys') return { header: 0, rows: height <= 1 ? 1 : Math.max(0, inside - (panel.filterRow ? 1 : 0)) };
+  if (panel.tab !== 'status') return { header: 0, rows: Math.max(1, inside) };
+  const rows = Math.max(1, inside);
+  const reserve = summaryRows(panel.noKeys);
+  // The label sits on the list only when there is room; otherwise the border says it
+  // (`1 of 7 need attention`), and at least one selectable line is always kept.
+  const roomy = rows >= reserve + 2;
+  const header = panel.items > 0 && roomy ? 1 : 0;
+  // The list is sized to what it holds, an empty one being a single line, and the
+  // summary gets everything else, down to a few lines.
+  const needed = header + Math.max(1, panel.items);
+  const area = Math.min(needed, Math.max(header + 1, roomy ? rows - reserve : rows - 2));
+  return { header, rows: area - header };
+}
+
 /**
  * `want` is how many lines each panel could use (a number is the focused panel's): a
  * panel gets no more than that, plus its border, so a short list does not leave blank

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 func TestAKnownSourceReadsBackAndListsInstallWideBeforePerKey(t *testing.T) {

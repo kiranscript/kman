@@ -9,9 +9,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/kirank55/kman/internal/registry"
-	"github.com/kirank55/kman/internal/store"
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/store"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 // Credential is a credential as the admin API shows it. It never holds the

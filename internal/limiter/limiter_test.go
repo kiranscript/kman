@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/limiter"
+	"github.com/kiranscript/kman/internal/limiter"
 )
 
 type clock struct {

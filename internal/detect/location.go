@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/kirank55/kman/internal/policy"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // The location rules (SPEC §10, #89): after a key's learning period, its first

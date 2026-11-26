@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/policy"
 )
 
 // BenchmarkEvaluate is the policy's cost of one request, with the model read out

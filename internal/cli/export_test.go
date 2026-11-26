@@ -10,6 +10,14 @@ func SetExportPage(n int) func() {
 	return func() { exportPage = old }
 }
 
+// SetFollowPage makes incidents --follow --open ask for n incidents past its
+// window at a time, and returns a function that restores the page size.
+func SetFollowPage(n int) func() {
+	old := followPage
+	followPage = n
+	return func() { followPage = old }
+}
+
 // SetMissedEvery makes events --follow check for drops every d, and returns a
 // function that restores it.
 func SetMissedEvery(d time.Duration) func() {

@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/policy"
-	"github.com/kirank55/kman/internal/pricing"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/meter"
+	"github.com/kiranscript/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/pricing"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // startMeter makes the meter serve runs: over the SQLite counters, with the

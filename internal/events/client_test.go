@@ -8,16 +8,16 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/kirank55/kman/internal/events"
+	"github.com/kiranscript/kman/internal/events"
 )
 
 func TestClientOfReducesAUserAgentToAProductAndItsMajorVersion(t *testing.T) {
 	for _, c := range []struct{ name, ua, want string }{
 		// The User-Agents of the SDKs the e2e tests pin (e2e/testdata/sdk), as they
 		// send them: TestClientOfKnowsThePinnedSDKs keeps these at the pinned versions.
-		{"openai python", "OpenAI/Python 3.55.0", "openai-python/3"},
+		{"openai python", "OpenAI/Python 3.55.1", "openai-python/3"},
 		{"anthropic python", "Anthropic/Python 2.10.0", "anthropic-python/2"},
-		{"openai js", "OpenAI/JS 7.59.0", "openai-js/7"},
+		{"openai js", "OpenAI/JS 7.60.0", "openai-js/7"},
 		{"anthropic js", "Anthropic/JS 1.10.0", "anthropic-js/1"},
 		// Others an operator will meet.
 		{"openai python, an older major", "OpenAI/Python 1.51.0", "openai-python/1"},
@@ -184,7 +184,7 @@ var clientShape = regexp.MustCompile(`^(none|unknown|[a-z][a-z0-9_-]*(/[0-9]{1,4
 // else, and never a key.
 func FuzzClientOf(f *testing.F) {
 	for _, s := range []string{
-		"", "curl/8.5.0", "OpenAI/Python 3.55.0", "kmn_abc", "ek_kmn_abc", "a@b", "\x00", "\xff", "Mozilla/5.0 (X11)",
+		"", "curl/8.5.0", "OpenAI/Python 3.55.1", "kmn_abc", "ek_kmn_abc", "a@b", "\x00", "\xff", "Mozilla/5.0 (X11)",
 		strings.Repeat("x", 500), "my-app/1 kmn_zzz", "sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxx", "a b c", "/", "///", "a/", "a/ 1",
 		"ip-10-0-3-7", strings.Repeat("a", 256) + "@x", "x9k2/1", "qzxhtrblmwpnvks7/Abcdefghijklmnop 1", strings.Repeat(" ", 250) + "app/0412555",
 	} {
@@ -232,9 +232,9 @@ func FuzzClientOf(f *testing.F) {
 // table cannot drift from what the e2e tests run.
 func TestClientOfKnowsThePinnedSDKs(t *testing.T) {
 	pins := map[string]string{
-		"OpenAI/Python 3.55.0":    "openai-python/3",
+		"OpenAI/Python 3.55.1":    "openai-python/3",
 		"Anthropic/Python 2.10.0": "anthropic-python/2",
-		"OpenAI/JS 7.59.0":        "openai-js/7",
+		"OpenAI/JS 7.60.0":        "openai-js/7",
 		"Anthropic/JS 1.10.0":     "anthropic-js/1",
 	}
 	for ua, want := range pins {
@@ -257,9 +257,9 @@ func TestClientOfKnowsThePinnedSDKs(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, line := range []struct{ found, pinned string }{
-		{string(reqs), "openai==3.55.0"},
+		{string(reqs), "openai==3.55.1"},
 		{string(reqs), "anthropic==2.10.0"},
-		{pkg.Dependencies["openai"], "7.59.0"},
+		{pkg.Dependencies["openai"], "7.60.0"},
 		{pkg.Dependencies["@anthropic-ai/sdk"], "1.10.0"},
 	} {
 		if !strings.Contains(line.found, line.pinned) {
@@ -272,7 +272,7 @@ func TestClientOfKnowsThePinnedSDKs(t *testing.T) {
 // must stay cheap: one allocation, the client itself.
 func BenchmarkClientOf(b *testing.B) {
 	for _, c := range []struct{ name, ua string }{
-		{"sdk", "OpenAI/Python 3.55.0"},
+		{"sdk", "OpenAI/Python 3.55.1"},
 		{"browser", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
 		{"hostile", strings.Repeat("a", 100000)},
 	} {

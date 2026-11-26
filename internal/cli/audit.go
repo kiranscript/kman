@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"text/tabwriter"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 // exportPage is how many entries audit export asks for at a time.

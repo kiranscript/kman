@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // withUpstream is a store holding a data key and one upstream, as a
