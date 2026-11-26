@@ -297,8 +297,8 @@ jobs:
             -e container=docker --tmpfs /run --tmpfs /run/lock \
             -v "$RUNNER_TEMP/kman-systemd:/kman:ro" \
             "$IMAGE" bash -c 'sed -i "s|http://\(archive\|security\).ubuntu.com|http://azure.archive.ubuntu.com|" /etc/apt/sources.list.d/ubuntu.sources &&
-              apt-get update -qq -o Acquire::Languages=none &&
-              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends -o Dpkg::Options::=--force-unsafe-io systemd dbus >/dev/null &&
+              apt-get update -q -o Acquire::Languages=none -o Acquire::Retries=3 -o Acquire::http::Timeout=30 &&
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dpkg::Options::=--force-unsafe-io systemd dbus &&
               mount --make-rshared / &&
               exec /usr/lib/systemd/systemd'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -311,6 +311,20 @@ jobs:
         env:
           CGO_ENABLED: "0"
         run: go test -c -o "$RUNNER_TEMP/kman-systemd/vault.test" ./internal/vault
+      # The install and the boot are waited for apart: apt has taken longer
+      # than the boot's three minutes, and the logs then say how far it got.
+      - name: Wait for systemd to be installed
+        run: |
+          for _ in $(seq 1 420); do
+            if [ "$(docker exec systemd cat /proc/1/comm 2>/dev/null)" = systemd ]; then
+              echo "systemd is installed and started"; exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' systemd)" != true ]; then break; fi
+            sleep 1
+          done
+          echo "systemd was not installed and started"
+          docker logs systemd 2>&1 | tail -50
+          exit 1
       - name: Wait for systemd to boot
         run: |
           for _ in $(seq 1 180); do
