@@ -28,8 +28,8 @@ const defaultFollowEvery = 2 * time.Second
 const followWindow = 200
 
 // followPage is how many open incidents one request asks for when --follow
-// --open looks past its window: the most kman gives.
-const followPage = 500
+// --open looks past its window: the most kman gives. Tests make it smaller.
+var followPage = 500
 
 func cmdIncidents(ctx context.Context, c *call) error {
 	fs := c.flags("incidents [--open] [--key <name or key id>] [--limit n] [--follow] [--json]\n\n"+

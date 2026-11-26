@@ -543,6 +543,8 @@ func TestIncidentsFollowDoesNotReprintIncidentsPastTheLimit(t *testing.T) {
 // still told once it is resolved out there (#126).
 func TestIncidentsFollowWithOpenDoesNotRepeatAnIncidentPushedOutOfTheWindow(t *testing.T) {
 	const window = 200 // followWindow
+	// One incident to a page, so the two pushed out take turns.
+	defer cli.SetFollowPage(1)()
 	in, _ := withIncident(t)
 	n := 1
 	open := func() { // another key's incident, the next id
