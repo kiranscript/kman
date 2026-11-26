@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // maxClients is how many addresses KeyClients lists. The key's total is always

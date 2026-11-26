@@ -1,14 +1,14 @@
 # kman v1 (solo tier): specification
 
-kman is a self-hosted proxy that holds real upstream API keys and hands apps virtual keys that can be limited, watched, and killed, so a leaked key is worth less and is easy to contain. It is a fresh-code rebuild that supersedes [keman](https://github.com/kirank55/keman). This document is what gets built.
+kman is a self-hosted proxy that holds real upstream API keys and hands apps virtual keys that can be limited, watched, and killed, so a leaked key is worth less and is easy to contain. It is a fresh-code rebuild that supersedes [keman](https://github.com/kiranscript/keman). This document is what gets built.
 
 ## How to read this
 
 - **Terms** are defined in [`GLOSSARY.md`](GLOSSARY.md) and used exactly. A bold term below is a glossary term.
 - **Hard decisions** live in the ADRs under [`docs/adr/`](docs/adr/). This spec states what each one means for the build in a line or two and links to it. The ADR wins if the two ever disagree.
-- **Why** lives in the decision tickets on [the map](https://github.com/kirank55/kman/issues/1). They are history: where a ticket comment and this spec disagree, **this spec wins**. Every disagreement found while assembling it is listed in [Consistency fixes](#consistency-fixes).
+- **Why** lives in the decision tickets on [the map](https://github.com/kiranscript/kman/issues/1). They are history: where a ticket comment and this spec disagree, **this spec wins**. Every disagreement found while assembling it is listed in [Consistency fixes](#consistency-fixes).
 - **Requirements** are bullets. "Must" and "never" are tested; each milestone's [done criteria](#milestones-done-criteria-and-build-order) name the tests.
-- The [dashboard prototype](https://github.com/kirank55/kman/tree/prototype/dashboard) (`internal/dashboard/prototype/index.html`, variant B) is the visual reference for M3. It is never merged.
+- The [dashboard prototype](https://github.com/kiranscript/kman/tree/prototype/dashboard) (`internal/dashboard/prototype/index.html`, variant B) is the visual reference for M3. It is never merged.
 
 ## Contents
 
@@ -74,9 +74,9 @@ Import rule: transports import only `admin`. `admin` imports `store`, `registry`
 
 ## 3. Install, first run, and configuration
 
-**Platforms and channels** ([onboarding](https://github.com/kirank55/kman/issues/23), [release](https://github.com/kirank55/kman/issues/24)):
+**Platforms and channels** ([onboarding](https://github.com/kiranscript/kman/issues/23), [release](https://github.com/kiranscript/kman/issues/24)):
 - First-class: release archives for Linux and macOS (amd64, arm64) and Windows (amd64); `install.sh`; the GHCR image with a Compose example.
-- Best-effort: a Homebrew formula in `kirank55/homebrew-tap`; `.deb`/`.rpm` with a `kman.service` unit; `go install` (unsigned, no version stamp).
+- Best-effort: a Homebrew formula in `kiranscript/homebrew-tap`; `.deb`/`.rpm` with a `kman.service` unit; `go install` (unsigned, no version stamp).
 - Not code-signed by Apple or Microsoft. macOS users install with `install.sh` (no quarantine flag). The docs cover `xattr -d com.apple.quarantine` for browser downloads and the Windows SmartScreen warning.
 
 **`kman init`** asks nothing:
@@ -86,7 +86,7 @@ Import rule: transports import only `admin`. `admin` imports `store`, `registry`
 - Every choice is a flag (`--data-dir`, `--key-source file|systemd-creds|passphrase|env`).
 - In a container with no key source, `init` refuses and prints the Docker steps. In a container it never saves the token. `serve` never initialises an empty data directory by itself.
 
-**Docker:** `docker run --rm ghcr.io/kirank55/kman keygen > master.key`, then `docker compose run --rm kman init` (token to the terminal, not logs), then `docker compose up -d`. The Compose example mounts the key as a secret, keeps the data directory on a volume, uses a read-only root filesystem, and publishes admin on host `127.0.0.1:8081` only.
+**Docker:** `docker run --rm ghcr.io/kiranscript/kman keygen > master.key`, then `docker compose run --rm kman init` (token to the terminal, not logs), then `docker compose up -d`. The Compose example mounts the key as a secret, keeps the data directory on a volume, uses a read-only root filesystem, and publishes admin on host `127.0.0.1:8081` only.
 
 **systemd:** the packaged unit uses `DynamicUser=yes`, `StateDirectory=kman`, `ConfigurationDirectory=kman`, and `LoadCredentialEncrypted=` for the master key. Package scripts create nothing.
 
@@ -94,7 +94,7 @@ Import rule: transports import only `admin`. `admin` imports `store`, `registry`
 
 **The happy path** (under 5 minutes, and a CI test runs these exact lines from the docs):
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kirank55/kman/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/kiranscript/kman/main/install.sh | sh
 kman init
 kman serve
 kman upstream add openai --preset openai
@@ -140,7 +140,7 @@ then optionally `kman dashboard` and `kman canary create`. Plain `kman` prints a
 
 ## 5. Upstreams, presets, credentials, and secrets
 
-**Presets** ([price and preset data](https://github.com/kirank55/kman/issues/22)):
+**Presets** ([price and preset data](https://github.com/kiranscript/kman/issues/22)):
 - keman's 21 presets, as data in the binary, updated only by releases. Gemini gains its Live path in M4.
 - `upstream add --preset` copies the preset's host, TLS, path allowlist, auth shape, and SDK env name into the upstream, recording the preset and its version. An upgrade never changes an existing upstream.
 - When a newer preset differs, the status summary says so and `kman upstream sync <name>` shows the difference and applies it after a confirmation.
@@ -148,7 +148,7 @@ then optionally `kman dashboard` and `kman canary create`. Plain `kman` prints a
 
 **Upstreams and credentials** have full create, update, and delete. Delete is refused while active virtual keys depend on the item. Names are unique among items not deleted.
 
-**Secret handling** ([ADR 0003](docs/adr/0003-master-key-outside-the-data-dir.md), [secrets model](https://github.com/kirank55/kman/issues/9)):
+**Secret handling** ([ADR 0003](docs/adr/0003-master-key-outside-the-data-dir.md), [secrets model](https://github.com/kiranscript/kman/issues/9)):
 - Credentials are encrypted with a **data key** (AES-256-GCM, bound to the credential id as AAD). The data key is stored only wrapped under the **master key**.
 - **Key sources** (four adapters): file (default; also Docker and Kubernetes secret mounts), systemd-creds (`$CREDENTIALS_DIRECTORY`), env `KMAN_MASTER_KEY` (warns on every start), passphrase sealed with Argon2id (prompts on every start).
 - The master key is wiped once the data key is unwrapped. kman holds one decrypted copy of each credential as a wipeable `[]byte`, wiped on rotation or delete.
@@ -196,7 +196,7 @@ The default LLM allowlists exclude batch, files, fine-tune, and multipart audio 
 
 ## 8. Spend and pricing
 
-**Metering** ([spend model](https://github.com/kirank55/kman/issues/12)):
+**Metering** ([spend model](https://github.com/kiranscript/kman/issues/12)):
 - Every key on an LLM upstream has daily and monthly spend, capped or not.
 - Metered: JSON chat, responses, messages, completions, and embeddings, plus realtime (section 11).
 - **Unmetered requests** (no top-level `model`, a non-JSON body, or a model with no price) are refused on keys with a cap or a model allowlist. Other keys forward them and record the cost as unknown, shown as "+ N unmetered requests", never as $0.
@@ -235,7 +235,7 @@ The default LLM allowlists exclude batch, files, fine-tune, and multipart audio 
 
 ## 10. Detection and incidents
 
-From [detection quality](https://github.com/kirank55/kman/issues/15), all in M2:
+From [detection quality](https://github.com/kiranscript/kman/issues/15), all in M2:
 - **Baselines** per key, built during a **learning period** in which baseline rules only record.
 - **Rules:** keman's 8 rules with their defaults, plus **Retired secret used** (High). Thresholds are configurable install-wide (settings) and per key (policy). Severities are fixed.
 - **Incidents** (built, [ADR 0014](docs/adr/0014-an-incident-is-one-case-per-key-and-an-operator-answers-it-with-commands.md)): one unresolved per key, grouping its **detections**, with a plain integer id. The incident's severity (low, medium, high, critical) is the highest of its detections.
@@ -259,7 +259,7 @@ From [detection quality](https://github.com/kirank55/kman/issues/15), all in M2:
 
 ## 11. Realtime
 
-From [realtime](https://github.com/kirank55/kman/issues/13), [ADR 0005](docs/adr/0005-child-keys-not-provider-ephemeral-tokens.md), and [the `ek_` ticket](https://github.com/kirank55/kman/issues/19). All in M4.
+From [realtime](https://github.com/kiranscript/kman/issues/13), [ADR 0005](docs/adr/0005-child-keys-not-provider-ephemeral-tokens.md), and [the `ek_` ticket](https://github.com/kiranscript/kman/issues/19). All in M4.
 - kman terminates both sides of the WebSocket (`coder/websocket`, read limit raised for audio) and runs two pumps. It parses only `type` and usage-bearing events; everything else passes through as bytes.
 - **Supported:** OpenAI Realtime (including transcription and translation), OpenAI Responses WebSocket mode, GPT-Live, Gemini Live, xAI voice.
 - **Key on the handshake:** an `Authorization` header; the subprotocols `openai-insecure-api-key.<key>` and `xai-client-secret.<key>` (kman echoes only `realtime`); `?key=` only for presets that document it (Gemini), stripped before forwarding. `Sec-WebSocket-Protocol` is redacted like an auth header.
@@ -270,7 +270,7 @@ From [realtime](https://github.com/kirank55/kman/issues/13), [ADR 0005](docs/adr
 - **WebRTC**, brokered for OpenAI Realtime only: the browser POSTs its SDP to kman with a child key, kman forwards it with the real key, watches a sideband WebSocket by `call_id` for usage, and calls `hangup` at the cap.
 - One event per session at close (duration, tokens, cost, close reason). Spend flushes during the session. The rate-spike rule counts session starts. Server timeouts never cut a session short of the provider's limit.
 
-**M4 opens with the live checks** deferred from [the realtime verification task](https://github.com/kirank55/kman/issues/17). The spec assumes the left column until each is verified:
+**M4 opens with the live checks** deferred from [the realtime verification task](https://github.com/kiranscript/kman/issues/17). The spec assumes the left column until each is verified:
 
 | Item | Assumed | If wrong |
 |---|---|---|
@@ -302,7 +302,7 @@ From [realtime](https://github.com/kirank55/kman/issues/13), [ADR 0005](docs/adr
 
 ## 13. Dashboard
 
-From [dashboard look and flows](https://github.com/kirank55/kman/issues/16) and [roles](https://github.com/kirank55/kman/issues/10). All in M3.
+From [dashboard look and flows](https://github.com/kiranscript/kman/issues/16) and [roles](https://github.com/kiranscript/kman/issues/10). All in M3.
 - Server-rendered with templ and vendored htmx, with SSE for live updates (one stream per page). No Node, no CDN, assets embedded, works air-gapped.
 - Served under `/ui/` on the admin listener, or on `dashboard_listen` when admin is a Unix socket.
 - **Login:** a single-use link from `kman dashboard` (valid 60 s; on a headless host it prints the link and the `ssh -L` tunnel command), with a fallback form for pasting an admin token.
@@ -319,7 +319,7 @@ From [dashboard look and flows](https://github.com/kirank55/kman/issues/16) and 
 
 ## 14. Storage
 
-The full table-by-table schema is in [the schema ticket](https://github.com/kirank55/kman/issues/25). The build follows it, with the flush interval corrected to 5 s (see [Consistency fixes](#consistency-fixes)). In brief:
+The full table-by-table schema is in [the schema ticket](https://github.com/kiranscript/kman/issues/25). The build follows it, with the flush interval corrected to 5 s (see [Consistency fixes](#consistency-fixes)). In brief:
 - `modernc.org/sqlite` (pure Go), WAL, `synchronous=NORMAL`, `busy_timeout=5000`, `foreign_keys=ON`, `trusted_schema=OFF`, `auto_vacuum=INCREMENTAL`. Files `0600`, data directory `0700`.
 - `STRICT` tables, Unix-millisecond integer timestamps, integer microdollars rounded up per request, prefixed random `TEXT` ids, integer incident ids, JSON as `TEXT`, one install-wide `generation` stamped per admin transaction, soft deletes for configuration rows, no tenant column.
 - One migration per milestone (`0001` M1 core, `0002` detection, `0003` dashboard sessions, `0004` realtime session columns), tracked by `user_version`, forward-only.
@@ -332,8 +332,8 @@ The full table-by-table schema is in [the schema ticket](https://github.com/kira
 
 ## 15. Release and supply chain
 
-From [release, signing, and distribution](https://github.com/kirank55/kman/issues/24):
-- The repo goes **public at the `v0.1.0` tag**, and stays at `kirank55/kman`. Signing identity: `https://github.com/kirank55/kman/.github/workflows/release.yml@refs/tags/<tag>`, issuer `https://token.actions.githubusercontent.com`.
+From [release, signing, and distribution](https://github.com/kiranscript/kman/issues/24):
+- The repo goes **public at the `v0.1.0` tag**, and stays at `kiranscript/kman`. Signing identity: `https://github.com/kiranscript/kman/.github/workflows/release.yml@refs/tags/<tag>`, issuer `https://token.actions.githubusercontent.com`.
 - GoReleaser OSS, pinned, from one `release.yml` triggered by a maintainer-pushed `v*` tag. Five static targets, `CGO_ENABLED=0 -trimpath`, the toolchain pinned in `go.mod`, timestamps from the commit.
 - cosign v3 signs `checksums.txt` once. GitHub artifact attestations cover every archive and the image digests (SLSA Build L2), with the bundle attached as `kman_<v>.intoto.jsonl`. Immutable releases.
 - An SPDX 2.3 SBOM per archive and for the source, attached and attested.
@@ -361,7 +361,7 @@ All in the repo, rendered by GitHub, with no docs site:
 
 ## 17. Testing and quality gates
 
-The whole strategy is in [testing strategy and quality gates](https://github.com/kirank55/kman/issues/18). What every build issue relies on:
+The whole strategy is in [testing strategy and quality gates](https://github.com/kiranscript/kman/issues/18). What every build issue relies on:
 - Time is an argument; timer-driven code is tested in `testing/synctest`. Only `main` reads the clock.
 - Each module is tested through its interface: table tests, fuzz targets, and property tests as listed in that ticket. Each test gets its own SQLite database.
 - **E2E** on every PR: the real binary against a mock upstream whose responses are recorded transcripts, plus the pinned official Python and Node SDKs. A weekly job runs the latest SDKs. A live suite runs before each release.
@@ -389,10 +389,10 @@ Put real keys behind kman and kill a leak.
 6. **Metering:** the OpenAI and Anthropic profiles with streaming usage; the price-table generator and embedded table; `pricing`; `meter` with reservations, settlement, increments, and fail-closed; caps; the unmetered rule; price overrides and the staleness line.
 6. **Policy and limits:** allowlists, `limiter` with bounded memory, `trusted_proxies`.
 7. **Lifecycle:** disable, enable, revoke, expiry, maximum key lifetime.
-7. **Security review:** one focused review of everything `v0.1.0` ships ([#59](https://github.com/kirank55/kman/issues/59)).
+7. **Security review:** one focused review of everything `v0.1.0` ships ([#59](https://github.com/kiranscript/kman/issues/59)).
 8. **Ship:** the release pipeline, `install.sh`, the image and Compose example, the Homebrew formula and packages, `README`, quickstart, operator guide, `SECURITY.md`, `THREAT-MODEL.md`, the quickstart CI test, the `v0.1.0` fixture.
 
-**Shipped after the `v0.1.0` cut.** The first release left these out, and they have all since been implemented, so the sections that describe them describe what kman now does: CIDR and country locks ([#43](https://github.com/kirank55/kman/issues/43)); key rotation and credential compromise ([#45](https://github.com/kirank55/kman/issues/45)); events, `usage_hourly` and `/metrics` ([#46](https://github.com/kirank55/kman/issues/46)); the alert outbox and channels ([#47](https://github.com/kirank55/kman/issues/47)); soft budgets and warnings ([#48](https://github.com/kirank55/kman/issues/48)); `scan` and `exposure` ([#49](https://github.com/kirank55/kman/issues/49)); `backup`, `restore`, `prune` and retention ([#50](https://github.com/kirank55/kman/issues/50)). They are in the changelog's Unreleased section, not in a tagged release yet, and the `v0.1.0` release notes and [what `v0.1.0` leaves out](docs/v0.1.0-scope.md) still describe the first release as it was. M2, which needs events and alerts, can start.
+**Shipped after the `v0.1.0` cut.** The first release left these out, and they have all since been implemented, so the sections that describe them describe what kman now does: CIDR and country locks ([#43](https://github.com/kiranscript/kman/issues/43)); key rotation and credential compromise ([#45](https://github.com/kiranscript/kman/issues/45)); events, `usage_hourly` and `/metrics` ([#46](https://github.com/kiranscript/kman/issues/46)); the alert outbox and channels ([#47](https://github.com/kiranscript/kman/issues/47)); soft budgets and warnings ([#48](https://github.com/kiranscript/kman/issues/48)); `scan` and `exposure` ([#49](https://github.com/kiranscript/kman/issues/49)); `backup`, `restore`, `prune` and retention ([#50](https://github.com/kiranscript/kman/issues/50)). They are in the changelog's Unreleased section, not in a tagged release yet, and the `v0.1.0` release notes and [what `v0.1.0` leaves out](docs/v0.1.0-scope.md) still describe the first release as it was. M2, which needs events and alerts, can start.
 
 **Done when:**
 - The quickstart test passes on Linux and macOS, word for word from the docs.
@@ -407,11 +407,11 @@ Put real keys behind kman and kill a leak.
 
 Notice a leak before the bill does.
 
-**Build order** is reordered by [#83](https://github.com/kirank55/kman/issues/83), which puts seeing who uses a key and where first: key places (`baseline_places` and `kman key places`, landed), the live event feed (`kman events --follow`, landed), the calling client (`events.client` and `kind = client` places, landed), canary keys, incidents, and the location rules (all landed), then the rest of the list below. Its tickets add to migration `0002` until `v0.2.0` is tagged.
+**Build order** is reordered by [#83](https://github.com/kiranscript/kman/issues/83), which puts seeing who uses a key and where first: key places (`baseline_places` and `kman key places`, landed), the live event feed (`kman events --follow`, landed), the calling client (`events.client` and `kind = client` places, landed), canary keys, incidents, and the location rules (all landed), then the rest of the list below. Its tickets add to migration `0002` until `v0.2.0` is tagged.
 
 1. **Baselines and rules:** migration `0002`, `detect` with baselines, the learning period, the 9 rules, configurable thresholds and per-key overrides, the replay fixtures and golden files.
-2. **Incidents:** incidents and detections, quiet and expiry, the response actions, `--incident` on containment commands, the incident CLI (landed, [#88](https://github.com/kirank55/kman/issues/88); baseline hold-out comes with the baseline).
-2. **Known sources and canaries:** `known-source` commands; canary keys with the four plant formats, the ignore list, and reset (both landed, [#87](https://github.com/kirank55/kman/issues/87), #88). The location rules that use known sources have landed ([#89](https://github.com/kirank55/kman/issues/89)).
+2. **Incidents:** incidents and detections, quiet and expiry, the response actions, `--incident` on containment commands, the incident CLI (landed, [#88](https://github.com/kiranscript/kman/issues/88); baseline hold-out comes with the baseline).
+2. **Known sources and canaries:** `known-source` commands; canary keys with the four plant formats, the ignore list, and reset (both landed, [#87](https://github.com/kiranscript/kman/issues/87), #88). The location rules that use known sources have landed ([#89](https://github.com/kiranscript/kman/issues/89)).
 3. **Auto-disable:** the trigger, `system:detect` through `admin`, dry-run results on the incident, the 1 h pause.
 3. **Alert channels and streams:** Discord and ntfy, per-channel `min_severity`, incident throttling, `detections --follow` and `audit --follow`, `detection test --key`.
 

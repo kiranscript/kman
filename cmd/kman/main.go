@@ -18,9 +18,9 @@ import (
 	"time"
 	_ "time/tzdata" // spend_timezone must resolve where the OS has no zone database, such as Windows
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/cli"
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/cli"
+	"github.com/kiranscript/kman/internal/vault"
 	"golang.org/x/term"
 )
 

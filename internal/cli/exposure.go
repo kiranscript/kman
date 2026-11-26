@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 // cmdExposure lists the keys that would be easy to abuse if they leaked, each

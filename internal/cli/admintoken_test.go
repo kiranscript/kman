@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 var secretRE = regexp.MustCompile(`kma_[0-9A-Za-z]{49}`)

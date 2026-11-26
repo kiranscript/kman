@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 // Golden tokens, computed outside Go (Python's zlib.crc32 and hashlib) from

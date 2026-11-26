@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/alerts"
-	"github.com/kirank55/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/alerts"
+	"github.com/kiranscript/kman/internal/policy"
 )
 
 // alertLimits reads a key's policy as the amounts its spend warnings count from.

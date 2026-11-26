@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 // Profile is what the gateway needs from one kind of upstream.

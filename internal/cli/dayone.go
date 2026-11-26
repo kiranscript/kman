@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 // backupFile is backup: a consistent copy of the database, from the running

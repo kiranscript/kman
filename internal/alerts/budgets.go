@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // DefaultSoftBudgets are the percentages of a cap or soft budget that warn for a

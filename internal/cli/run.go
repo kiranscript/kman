@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 // Exit codes (SPEC §12).

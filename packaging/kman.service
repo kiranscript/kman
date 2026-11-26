@@ -6,7 +6,7 @@
 # directory and /etc/kman for the config. The package scripts create nothing.
 [Unit]
 Description=kman, a key manager and proxy for LLM API keys
-Documentation=https://github.com/kirank55/kman
+Documentation=https://github.com/kiranscript/kman
 After=network.target
 
 [Service]

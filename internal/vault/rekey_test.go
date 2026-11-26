@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 const newDEKID = "dek_BBBBBBBBBBBB"

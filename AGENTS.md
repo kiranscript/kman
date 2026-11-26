@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues for `kirank55/kman`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitHub Issues for `kiranscript/kman`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

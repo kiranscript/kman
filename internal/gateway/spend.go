@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/meter"
+	"github.com/kiranscript/kman/internal/profiles"
 )
 
 // reserve takes a reservation against the key's spend before anything is

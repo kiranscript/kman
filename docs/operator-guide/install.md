@@ -16,7 +16,7 @@ Releases cover Linux and macOS on amd64 and arm64, and Windows on amd64. The ima
 ## Linux and macOS: install.sh
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kirank55/kman/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/kiranscript/kman/main/install.sh | sh
 ```
 
 It finds the latest stable release, downloads the archive for your OS and CPU, and **checks its SHA-256 against the release's `checksums.txt`**. Then it verifies the release's signature, against the exact identity of the release workflow at that tag:
@@ -39,7 +39,7 @@ A failed check stops the install; it never falls through to the next verifier.
 
 ## A release archive, by hand
 
-Download the archive for your machine from the [releases page](https://github.com/kirank55/kman/releases), together with `checksums.txt`, and [verify them](../verify.md): `kman_<version>_<os>_<arch>.tar.gz` for Linux and macOS, and `kman_<version>_windows_amd64.zip` for Windows. Each holds the `kman` binary (`kman.exe` on Windows), the changelog and the README. Put the binary somewhere on your `PATH`.
+Download the archive for your machine from the [releases page](https://github.com/kiranscript/kman/releases), together with `checksums.txt`, and [verify them](../verify.md): `kman_<version>_<os>_<arch>.tar.gz` for Linux and macOS, and `kman_<version>_windows_amd64.zip` for Windows. Each holds the `kman` binary (`kman.exe` on Windows), the changelog and the README. Put the binary somewhere on your `PATH`.
 
 ### macOS: the quarantine flag
 
@@ -75,7 +75,7 @@ The `0600` and `0700` file modes kman sets are a Unix idea. On Windows kman crea
 ## Homebrew
 
 ```sh
-brew install kirank55/tap/kman
+brew install kiranscript/tap/kman
 ```
 
 This installs the release archive for your machine from a formula pinned to the SHA-256 in the signed `checksums.txt`. It is a formula, not a cask, so macOS does not quarantine the binary. Only stable releases reach the tap, not release candidates.
@@ -87,7 +87,7 @@ See [Docker and Compose](docker.md) and [systemd](systemd.md).
 ## go install
 
 ```sh
-go install github.com/kirank55/kman/cmd/kman@latest
+go install github.com/kiranscript/kman/cmd/kman@latest
 ```
 
 This builds from source with your own Go toolchain (the version `go.mod` names or newer). The result is **unsigned and carries no version stamp**: `kman version` shows the module's pseudo-version and commit. Use a release if you want to verify what you run.

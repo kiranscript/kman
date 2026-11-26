@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 // client is the admin API's one typed client: admin.API over /admin/v1.

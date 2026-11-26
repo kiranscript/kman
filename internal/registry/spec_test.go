@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 func goodSpec() registry.Spec {

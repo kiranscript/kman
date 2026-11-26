@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 // kman scan needs no install, no server and no network: this home has none, and

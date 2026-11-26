@@ -5,7 +5,7 @@ package vault_test
 import (
 	"testing"
 
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/vault"
 	"golang.org/x/sys/unix"
 )
 

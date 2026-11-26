@@ -13,8 +13,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/kirank55/kman/internal/store"
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/store"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 // A canary's states, as the API shows them.

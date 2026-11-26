@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/profiles"
 )
 
 var updateDocs = flag.Bool("update", false, "rewrite the generated parts of docs/sdks.md")

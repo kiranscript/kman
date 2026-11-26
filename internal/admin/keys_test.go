@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/registry"
-	"github.com/kirank55/kman/internal/store"
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/store"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 const days = 24 * time.Hour

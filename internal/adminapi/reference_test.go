@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/adminapi"
+	"github.com/kiranscript/kman/internal/adminapi"
 )
 
 // referencePath is the generated admin API reference (SPEC §16), a readable

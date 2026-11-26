@@ -21,7 +21,7 @@ func inContainer(getenv func(string) string) bool {
 // that has no key source.
 const dockerSteps = `In a container the data directory is the volume, so the master key has to come from outside it:
 
-  1. docker run --rm ghcr.io/kirank55/kman keygen > master.key
+  1. docker run --rm ghcr.io/kiranscript/kman keygen > master.key
   2. Mount master.key as a secret and set KMAN_MASTER_KEY_FILE to where it is mounted
      (the Compose example does both).
   3. docker compose run --rm kman init     (the admin token goes to your terminal, not the logs)

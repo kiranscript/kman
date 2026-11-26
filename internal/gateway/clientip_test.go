@@ -5,7 +5,7 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/kirank55/kman/internal/gateway"
+	"github.com/kiranscript/kman/internal/gateway"
 )
 
 func prefixes(t *testing.T, s ...string) []netip.Prefix {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 // errorCodes are every admin.Code, and "internal".

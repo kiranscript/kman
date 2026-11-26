@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 // keyText is the master key's text form: what kman keygen prints and a key

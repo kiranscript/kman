@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 const day = 24 * 60 * 60

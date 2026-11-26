@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // installWith makes a data directory whose one upstream is named name.

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // withKeys opens a store holding two keys, abcd1234 and beef5678, and a canary,

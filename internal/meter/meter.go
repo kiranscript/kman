@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kirank55/kman/internal/pricing"
-	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/pricing"
+	"github.com/kiranscript/kman/internal/profiles"
 )
 
 // Why a request is refused. A refusal reserves nothing.

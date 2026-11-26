@@ -9,7 +9,7 @@ import (
 
 	"context"
 
-	"github.com/kirank55/kman/internal/pricing"
+	"github.com/kiranscript/kman/internal/pricing"
 )
 
 // These prices were read from the providers' pages (docs/research on the

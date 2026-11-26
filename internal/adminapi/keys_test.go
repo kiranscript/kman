@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/admin"
 )
 
 // withUpstreamAndCredential adds an upstream with one credential.

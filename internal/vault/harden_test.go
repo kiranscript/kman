@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/kirank55/kman/internal/vault"
+	"github.com/kiranscript/kman/internal/vault"
 )
 
 // orderSource records whether the process was hardened when it was read.

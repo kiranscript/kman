@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/profiles"
 )
 
 // withSpend stands for the meter, which admin may not import: it answers for a

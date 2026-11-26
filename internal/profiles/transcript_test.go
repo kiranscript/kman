@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/profiles"
 )
 
 // The e2e transcripts say what usage each response holds, so the SDK tests replay

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/meter"
+	"github.com/kiranscript/kman/internal/profiles"
 )
 
 // The properties of SPEC §17 hold under concurrency: a capped key never ends up

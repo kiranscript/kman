@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/cli"
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/profiles"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/cli"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/profiles"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // withFeed is an install that has a key named my-app, a clock at t0, and these

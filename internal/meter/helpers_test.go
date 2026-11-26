@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/meter"
-	"github.com/kirank55/kman/internal/pricing"
+	"github.com/kiranscript/kman/internal/meter"
+	"github.com/kiranscript/kman/internal/pricing"
 )
 
 // The table the tests price by. At these rates a token is a whole number of

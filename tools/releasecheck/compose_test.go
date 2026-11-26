@@ -82,8 +82,8 @@ func TestComposeKeepsTheDataOnAVolumeAndTheRootReadOnly(t *testing.T) {
 	if !slices.Equal(k.CapDrop, []string{"ALL"}) || !slices.Contains(k.SecurityOpt, "no-new-privileges:true") {
 		t.Errorf("cap_drop %v, security_opt %v; want ALL and no-new-privileges:true", k.CapDrop, k.SecurityOpt)
 	}
-	if !strings.HasPrefix(k.Image, "ghcr.io/kirank55/kman") {
-		t.Errorf("image = %q, want ghcr.io/kirank55/kman", k.Image)
+	if !strings.HasPrefix(k.Image, "ghcr.io/kiranscript/kman") {
+		t.Errorf("image = %q, want ghcr.io/kiranscript/kman", k.Image)
 	}
 	if !slices.Equal(k.Command, []string{"serve"}) {
 		t.Errorf("command = %v, want [serve]", k.Command)

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // Retention is how long the data that is pruned by age is kept (SPEC §14). Daily

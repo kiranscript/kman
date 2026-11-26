@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/policy/geoip/geoiptest"
+	"github.com/kiranscript/kman/internal/policy/geoip/geoiptest"
 )
 
 // dbipMirror serves DB-IP Lite's files, as this month's, from a local server:

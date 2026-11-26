@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 // The docs give operators the published key pattern to grep for in place of the

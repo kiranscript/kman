@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kirank55/kman/internal/registry"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // Auth is how a credential is presented to an upstream.

@@ -249,9 +249,9 @@ while [ $# -gt 0 ]; do
 	shift
 done
 case $url in
-https://raw.githubusercontent.com/kirank55/kman/main/install.sh) cat %q ;;
-https://github.com/kirank55/kman/releases/latest) printf '%%s' https://github.com/kirank55/kman/releases/tag/v0.1.0 ;;
-https://github.com/kirank55/kman/releases/download/v0.1.0/*) cp %q/"${url##*/}" "$out" ;;
+https://raw.githubusercontent.com/kiranscript/kman/main/install.sh) cat %q ;;
+https://github.com/kiranscript/kman/releases/latest) printf '%%s' https://github.com/kiranscript/kman/releases/tag/v0.1.0 ;;
+https://github.com/kiranscript/kman/releases/download/v0.1.0/*) cp %q/"${url##*/}" "$out" ;;
 *) echo "curl: the quickstart test has no network for $url" >&2; exit 22 ;;
 esac
 `, installSh, releaseDir)

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // withCanary opens a store holding one canary key, cafe0001: a key with no

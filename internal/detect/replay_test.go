@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/detect"
-	"github.com/kirank55/kman/internal/events"
-	"github.com/kirank55/kman/internal/policy"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/detect"
+	"github.com/kiranscript/kman/internal/events"
+	"github.com/kiranscript/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // The replay harness feeds a scripted run of events through the real event

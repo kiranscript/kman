@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/cli"
-	"github.com/kirank55/kman/internal/detect"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/cli"
+	"github.com/kiranscript/kman/internal/detect"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // withIncident is an install with a key named my-app and incident 1 for it: a

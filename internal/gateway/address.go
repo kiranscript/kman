@@ -3,8 +3,8 @@ package gateway
 import (
 	"net/netip"
 
-	"github.com/kirank55/kman/internal/policy"
-	"github.com/kirank55/kman/internal/policy/geoip"
+	"github.com/kiranscript/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/policy/geoip"
 )
 
 // Geo places an address: its country and its ASN. *geoip.DB is one.

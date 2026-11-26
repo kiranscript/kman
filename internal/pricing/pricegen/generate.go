@@ -12,7 +12,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/kirank55/kman/internal/pricing"
+	"github.com/kiranscript/kman/internal/pricing"
 )
 
 // globalPresets are the presets whose rows are the table's global section.

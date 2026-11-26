@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/cli"
+	"github.com/kiranscript/kman/internal/cli"
 )
 
 var updateCLIReference = flag.Bool("update", false, "rewrite the committed CLI reference")

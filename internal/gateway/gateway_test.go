@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/gateway"
-	"github.com/kirank55/kman/internal/registry"
-	"github.com/kirank55/kman/internal/token"
+	"github.com/kiranscript/kman/internal/gateway"
+	"github.com/kiranscript/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/token"
 )
 
 // openAIError is the shape OpenAI's SDKs read an error from.

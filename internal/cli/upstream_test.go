@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/admin"
-	"github.com/kirank55/kman/internal/registry"
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/admin"
+	"github.com/kiranscript/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 const secret = "sk-live-sentinel-0123456789abcdefWXYZ"

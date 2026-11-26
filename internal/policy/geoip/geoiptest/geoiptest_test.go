@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/kirank55/kman/internal/policy/geoip/geoiptest"
+	"github.com/kiranscript/kman/internal/policy/geoip/geoiptest"
 )
 
 func TestWriteMakesADatabaseFile(t *testing.T) {

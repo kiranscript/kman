@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/pricing"
+	"github.com/kiranscript/kman/internal/pricing"
 )
 
 func entry(maxOut, context, input, output int64) pricing.Entry {

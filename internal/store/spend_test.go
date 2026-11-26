@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 func TestSpendIsAddedAsIncrementsAndReadBackBySince(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kirank55/kman/internal/store"
+	"github.com/kiranscript/kman/internal/store"
 )
 
 // PriceTable is the built-in price table as admin serves it.

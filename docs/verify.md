@@ -8,7 +8,7 @@ Every kman release is built by one GitHub Actions workflow, `release.yml`, from 
 
 Whichever you check, check it against this exact identity, with the tag you are installing:
 
-- Identity: `https://github.com/kirank55/kman/.github/workflows/release.yml@refs/tags/<tag>`
+- Identity: `https://github.com/kiranscript/kman/.github/workflows/release.yml@refs/tags/<tag>`
 - Issuer: `https://token.actions.githubusercontent.com`
 
 A different identity, or a pattern in place of the tag, accepts a signature from some other workflow or ref. `install.sh` does the first two checks for you (see the end of this page).
@@ -29,12 +29,12 @@ The commands below are the ones the post-release job in `release.yml` runs again
 Download one archive, the checksums, the signature and the attestation bundle:
 
 ```sh
-gh release download "$TAG" -R kirank55/kman \
+gh release download "$TAG" -R kiranscript/kman \
   -p "kman_${V}_linux_amd64.tar.gz" \
   -p checksums.txt -p checksums.txt.sigstore.json -p "kman_${V}.intoto.jsonl"
 ```
 
-Without gh, download the same files from `https://github.com/kirank55/kman/releases/download/<tag>/<file>`.
+Without gh, download the same files from `https://github.com/kiranscript/kman/releases/download/<tag>/<file>`.
 
 ### The signature, with cosign
 
@@ -43,7 +43,7 @@ Verify `checksums.txt`, then check the archive against it:
 ```sh
 cosign verify-blob checksums.txt \
   --bundle checksums.txt.sigstore.json \
-  --certificate-identity "https://github.com/kirank55/kman/.github/workflows/release.yml@refs/tags/$TAG" \
+  --certificate-identity "https://github.com/kiranscript/kman/.github/workflows/release.yml@refs/tags/$TAG" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 sha256sum --ignore-missing -c checksums.txt
 ```
@@ -55,12 +55,12 @@ On macOS, use `shasum -a 256 --ignore-missing -c checksums.txt`.
 Verify the archive's build provenance, online and then from the attached bundle:
 
 ```sh
-gh attestation verify "kman_${V}_linux_amd64.tar.gz" -R kirank55/kman \
-  --cert-identity "https://github.com/kirank55/kman/.github/workflows/release.yml@refs/tags/$TAG" \
+gh attestation verify "kman_${V}_linux_amd64.tar.gz" -R kiranscript/kman \
+  --cert-identity "https://github.com/kiranscript/kman/.github/workflows/release.yml@refs/tags/$TAG" \
   --deny-self-hosted-runners
-gh attestation verify "kman_${V}_linux_amd64.tar.gz" -R kirank55/kman \
+gh attestation verify "kman_${V}_linux_amd64.tar.gz" -R kiranscript/kman \
   --bundle "kman_${V}.intoto.jsonl" \
-  --cert-identity "https://github.com/kirank55/kman/.github/workflows/release.yml@refs/tags/$TAG" \
+  --cert-identity "https://github.com/kiranscript/kman/.github/workflows/release.yml@refs/tags/$TAG" \
   --deny-self-hosted-runners
 ```
 
@@ -69,9 +69,9 @@ gh attestation verify "kman_${V}_linux_amd64.tar.gz" -R kirank55/kman \
 The archive's SPDX 2.3 SBOM is attached as `kman_<version>_<os>_<arch>.tar.gz.spdx.json` and attested:
 
 ```sh
-gh attestation verify "kman_${V}_linux_amd64.tar.gz" -R kirank55/kman \
+gh attestation verify "kman_${V}_linux_amd64.tar.gz" -R kiranscript/kman \
   --predicate-type https://spdx.dev/Document/v2.3 \
-  --cert-identity "https://github.com/kirank55/kman/.github/workflows/release.yml@refs/tags/$TAG"
+  --cert-identity "https://github.com/kiranscript/kman/.github/workflows/release.yml@refs/tags/$TAG"
 ```
 
 ### The release itself
@@ -79,20 +79,20 @@ gh attestation verify "kman_${V}_linux_amd64.tar.gz" -R kirank55/kman \
 GitHub's own attestation of the immutable release, its tag and the asset:
 
 ```sh
-gh release verify "$TAG" -R kirank55/kman
-gh release verify-asset "$TAG" "kman_${V}_linux_amd64.tar.gz" -R kirank55/kman
+gh release verify "$TAG" -R kiranscript/kman
+gh release verify-asset "$TAG" "kman_${V}_linux_amd64.tar.gz" -R kiranscript/kman
 ```
 
 ### The image
 
-The image `ghcr.io/kirank55/kman` is signed by digest and has its provenance stored in the registry. Verify it, then deploy it by digest:
+The image `ghcr.io/kiranscript/kman` is signed by digest and has its provenance stored in the registry. Verify it, then deploy it by digest:
 
 ```sh
-cosign verify "ghcr.io/kirank55/kman:$V" \
-  --certificate-identity "https://github.com/kirank55/kman/.github/workflows/release.yml@refs/tags/$TAG" \
+cosign verify "ghcr.io/kiranscript/kman:$V" \
+  --certificate-identity "https://github.com/kiranscript/kman/.github/workflows/release.yml@refs/tags/$TAG" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
-gh attestation verify "oci://ghcr.io/kirank55/kman:$V" -R kirank55/kman \
-  --cert-identity "https://github.com/kirank55/kman/.github/workflows/release.yml@refs/tags/$TAG"
+gh attestation verify "oci://ghcr.io/kiranscript/kman:$V" -R kiranscript/kman \
+  --cert-identity "https://github.com/kiranscript/kman/.github/workflows/release.yml@refs/tags/$TAG"
 ```
 
 <!-- verify:end -->
@@ -104,9 +104,9 @@ gh attestation verify "oci://ghcr.io/kirank55/kman:$V" -R kirank55/kman \
 Releases are reproducible: `CGO_ENABLED=0 -trimpath`, the Go toolchain pinned in `go.mod`, and every timestamp taken from the commit. The post-release job rebuilds each tag and compares the archives' checksums with the published ones. To do the same:
 
 ```sh
-git clone https://github.com/kirank55/kman && cd kman && git checkout "$TAG"
+git clone https://github.com/kiranscript/kman && cd kman && git checkout "$TAG"
 goreleaser release --clean --skip=publish,sign,sbom,docker,announce,validate
-gh release download "$TAG" -R kirank55/kman -p checksums.txt -O published-checksums.txt
+gh release download "$TAG" -R kiranscript/kman -p checksums.txt -O published-checksums.txt
 sh scripts/compare-checksums.sh dist/checksums.txt published-checksums.txt
 ```
 

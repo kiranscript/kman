@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kirank55/kman/internal/policy"
-	"github.com/kirank55/kman/internal/policy/geoip"
-	"github.com/kirank55/kman/internal/policy/geoip/geoiptest"
-	"github.com/kirank55/kman/internal/registry"
+	"github.com/kiranscript/kman/internal/policy"
+	"github.com/kiranscript/kman/internal/policy/geoip"
+	"github.com/kiranscript/kman/internal/policy/geoip/geoiptest"
+	"github.com/kiranscript/kman/internal/registry"
 )
 
 func TestGeoIPPathsAreSetInConfig(t *testing.T) {

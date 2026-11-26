@@ -6,7 +6,7 @@ import (
 	"testing"
 	"testing/synctest"
 
-	"github.com/kirank55/kman/internal/alerts"
+	"github.com/kiranscript/kman/internal/alerts"
 )
 
 // refuses fails the test on any request: it is the network, which kman does not
