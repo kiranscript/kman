@@ -1,0 +1,26 @@
+# kman keys for gitleaks and Betterleaks, which has no rule for them by default.
+#
+#   gitleaks dir --config gitleaks.toml <path>
+#   betterleaks fs <path> --config gitleaks.toml    (v2; v1 takes `dir` as gitleaks does)
+#
+# If you already have a config, copy the two [[rules]] into it.
+# https://github.com/kiranscript/kman/blob/main/docs/operator-guide/scan.md
+
+title = "kman keys"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "kman-virtual-key"
+description = "kman virtual key (or canary): look it up with `kman key show <the 8 characters after kmn_>`"
+regex = '''\bkmn_[0-9A-Za-z]{8}_[0-9A-Za-z]{49}\b'''
+keywords = ["kmn_"]
+tags = ["high"]
+
+[[rules]]
+id = "kman-child-key"
+description = "kman child key (short-lived): low severity"
+regex = '''\bek_kmn_[0-9A-Za-z]{8}_[0-9A-Za-z]{49}\b'''
+keywords = ["ek_kmn_"]
+tags = ["low"]

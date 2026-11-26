@@ -40,6 +40,24 @@ kman scan . || { echo "a kman key is in this tree"; exit 1; }
 
 If it finds a key that was ever live, treat it as leaked: `kman key rotate <key id> --grace 0` (or `kman key revoke <key id>`) ends the old secret, as [Rotating keys](rotation.md) explains.
 
+## Other secret scanners
+
+**No secret scanner detects kman keys by default**, so a key pushed to a public repository is not flagged for you. `kman scan` is the offline check that knows them. If you already run gitleaks, Betterleaks or trufflehog, a config teaches it the [published pattern](../v0.1.0-scope.md#looking-for-leaked-keys): download [gitleaks.toml](../../examples/scanners/gitleaks.toml) or [trufflehog.yaml](../../examples/scanners/trufflehog.yaml) and pass it to the scanner.
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/kiranscript/kman/main/examples/scanners/gitleaks.toml
+curl -fsSLO https://raw.githubusercontent.com/kiranscript/kman/main/examples/scanners/trufflehog.yaml
+
+gitleaks git --config gitleaks.toml path/to/repo
+betterleaks git path/to/repo --config gitleaks.toml
+trufflehog git file://path/to/repo --config=trufflehog.yaml
+```
+
+- **gitleaks and Betterleaks** report `kman-virtual-key`, tagged `high`, and `kman-child-key`, tagged `low`. The config keeps their default rules. If you have a config of your own, copy the two `[[rules]]` into it.
+- **trufflehog** reports a detector named `CustomRegex`, with `kman-virtual-key` or `kman-child-key` as its name. The finding is always unverified, so a run limited to verified results (`--results=verified`) leaves it out. If you have a config of your own, add the two entries to its `detectors`.
+- **These configs do not check the checksum**, so a string that is only shaped like a key is reported too. Run `kman scan` on what they find to confirm it and to get the key id.
+- **These scanners print the whole key** in what they report, unlike `kman scan`. Treat their reports and CI logs as secret, or use the scanner's redaction option.
+
 ## `kman exposure`
 
 ```sh
