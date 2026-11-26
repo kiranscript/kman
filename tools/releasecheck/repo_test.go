@@ -10,6 +10,8 @@ import (
 
 // Dependabot keeps the pins fresh, and the 7-day cooldown keeps a freshly
 // compromised release of a dependency out until it has had time to be noticed.
+// The github-actions entry covers the workflows and the composite actions in
+// .github/actions, which pin actions of their own.
 func TestDependabotUpdatesEveryEcosystemAfterACooldown(t *testing.T) {
 	var cfg struct {
 		Version int
@@ -42,7 +44,7 @@ func TestDependabotUpdatesEveryEcosystemAfterACooldown(t *testing.T) {
 		}
 	}
 	want := map[string][]string{
-		"gomod": {"/", "/tools"}, "github-actions": {"/"}, "docker": {"/"},
+		"gomod": {"/", "/tools"}, "github-actions": {"/", "/.github/actions/*"}, "docker": {"/"},
 		"npm": {"/e2e/testdata/sdk/node"}, "pip": {"/e2e/testdata/sdk/python"},
 	}
 	for eco, dirs := range want {
