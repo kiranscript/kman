@@ -233,18 +233,7 @@ func TestACanaryReusedRightAfterItsIncidentIsResolvedAlertsForTheNewOne(t *testi
 		if n := len(in.net.received("hooks.test")); n != 1 {
 			t.Fatalf("%d alerts for the first use, want 1", n)
 		}
-		err := in.store.Do(context.Background(), func(tx *store.Tx) error {
-			inc, err := tx.Incident(1)
-			if err != nil {
-				return err
-			}
-			inc.State, inc.Resolution, inc.ResolvedAt, inc.ResolvedBy = store.IncidentResolved, "confirmed", time.Now(), "owner"
-			_, err = tx.UpdateIncident(inc)
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
+		in.resolveIncident(1)
 		time.Sleep(time.Minute) // well inside the canary's 10-minute window
 		bus.Emit(canaryUse("cafe0001", "198.51.100.9"))
 		synctest.Wait()
@@ -259,6 +248,69 @@ func TestACanaryReusedRightAfterItsIncidentIsResolvedAlertsForTheNewOne(t *testi
 			t.Errorf("a repeat on the new incident alerted: %d alerts", n)
 		}
 	})
+}
+
+// The uses held back under one incident are not counted as the next one's: a
+// new incident's alert says which incident they were of (#125).
+func TestAnAlertForANewIncidentSaysTheHeldBackUsesWereOfTheOldOne(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var eng *detect.Engine
+		in := newInstall(t, func(o *alerts.Options) {
+			o.CanaryIncident = func(tx *store.Tx, keyID string, at time.Time, ev store.Evidence) (int64, bool, error) {
+				out, err := eng.Raise(tx, detect.Detection{KeyID: keyID, Rule: "canary", Severity: store.SeverityCritical, At: at, Evidence: ev, Silent: true})
+				return out.Incident.ID, out.Change != detect.Repeated, err
+			}
+		})
+		eng = in.engine()
+		in.channel("ch_1", "slack", "hooks.test", "critical", true, "")
+		in.withCanary("cafe0001", "decoy", "the deploy repo's .env")
+		bus, stop := in.priorityLane()
+		defer stop()
+		for range 31 { // one alerts, 30 are held back
+			bus.Emit(canaryUse("cafe0001", "203.0.113.7"))
+		}
+		synctest.Wait()
+		in.resolveIncident(1)
+		time.Sleep(time.Minute) // well inside the canary's 10-minute window
+		bus.Emit(canaryUse("cafe0001", "198.51.100.9"))
+		synctest.Wait()
+		got := in.net.received("hooks.test")
+		if len(got) != 2 || !strings.Contains(got[1].Body, "kman incident show 2") {
+			t.Fatalf("%d alerts, want a second naming incident 2:\n%v", len(got), got)
+		}
+		if !strings.Contains(got[1].Body, "30 more uses of incident #1 since the last alert") {
+			t.Errorf("incident 2's alert does not say the held-back uses were incident 1's:\n%s", got[1].Body)
+		}
+		// Uses held back under the new incident are its own.
+		for range 3 {
+			bus.Emit(canaryUse("cafe0001", "198.51.100.9"))
+		}
+		synctest.Wait()
+		time.Sleep(11 * time.Minute)
+		bus.Emit(canaryUse("cafe0001", "198.51.100.9"))
+		synctest.Wait()
+		got = in.net.received("hooks.test")
+		if len(got) != 3 || !strings.Contains(got[2].Body, "3 more uses since the last alert") || strings.Contains(got[2].Body, "incident #") {
+			t.Fatalf("%d alerts, want a third counting incident 2's 3 held-back uses as its own:\n%v", len(got), got)
+		}
+	})
+}
+
+// resolveIncident resolves incident id as confirmed.
+func (in *install) resolveIncident(id int64) {
+	in.t.Helper()
+	err := in.store.Do(context.Background(), func(tx *store.Tx) error {
+		inc, err := tx.Incident(id)
+		if err != nil {
+			return err
+		}
+		inc.State, inc.Resolution, inc.ResolvedAt, inc.ResolvedBy = store.IncidentResolved, "confirmed", time.Now(), "owner"
+		_, err = tx.UpdateIncident(inc)
+		return err
+	})
+	if err != nil {
+		in.t.Fatal(err)
+	}
 }
 
 // A client hammering a canary costs the store a transaction per batch of the
