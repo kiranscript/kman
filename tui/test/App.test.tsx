@@ -833,7 +833,9 @@ describe('App', () => {
       client.fail = new ApiError('unauthorized', 'the admin token is unknown or revoked', 401);
       const m = mount(client);
       await until(() => m.screen().includes('refused this token'), 'the refusal');
-      expect(lines(m).some((l) => l.includes('kman login, or set KMAN_ADMIN_TOKEN'))).toBe(true);
+      expect(lines(m).some((l) => l.includes('kman login --admin-url <address>'))).toBe(true);
+      expect(m.screen()).toContain('Admin address: http://127.0.0.1:8081');
+      expect(m.screen()).toContain('replace or unset it');
       m.unmount();
     });
   });
@@ -2417,6 +2419,24 @@ describe('review round 4', () => {
     expect(m.screen()).not.toContain('Ctrl+S');
     expect(lines(m).at(-1)).toContain('Esc close');
     expect(lines(m).at(-1)).not.toContain('next field');
+    m.unmount();
+  });
+
+  it('keeps typed confirmation and its target across layout changes', async () => {
+    const m = mount(fakeClient(), { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    await m.press('x');
+    await m.press('check');
+    m.resize({ columns: 80, rows: 24 });
+    await m.press('out');
+    await until(() => m.screen().includes('Name matches.'), 'the preserved field');
+    m.resize({ columns: 140, rows: 40 });
+    await until(() => m.screen().includes('[2] Keys'), 'the wide popup');
+    expect(m.screen()).toContain('Name matches.');
+    expect(m.client.calls).toEqual([]);
+    await m.press(ENTER);
+    expect(m.client.calls).toEqual(['revoke k_checkout']);
     m.unmount();
   });
 

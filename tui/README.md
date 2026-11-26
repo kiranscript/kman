@@ -71,3 +71,5 @@ KMAN_TUI_LIVE_URL=http://127.0.0.1:8081 KMAN_TUI_LIVE_TOKEN=kma_… npm test
 ```
 
 The server needs one upstream with a credential. The test creates a key, disables, enables and revokes it, and leaves it revoked, so use a throwaway install. CI does exactly that.
+
+For a repeatable operator walkthrough with a disposable install and a local mock provider, use the [facilitator guide](test/usability/README.md) and [participant worksheet](test/usability/worksheet.md).

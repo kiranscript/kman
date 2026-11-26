@@ -25,6 +25,7 @@ export interface AppProps {
   client: AdminClient;
   /** The admin address, for the header. Never the token. */
   url: string;
+  configDir?: string;
   intervalMs?: number;
   /** How long a success notice stays, in milliseconds. */
   noticeMs?: number;
@@ -51,7 +52,7 @@ type Mode =
 export const MIN_COLUMNS = 80;
 export const MIN_ROWS = 24;
 
-export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secretGuardMs }: AppProps) {
+export function App({ client, url, configDir, intervalMs, size, copy, noticeMs = 6000, secretGuardMs }: AppProps) {
   const { exit } = useApp();
   const win = useWindowSize();
   const { columns, rows } = size ?? win;
@@ -446,8 +447,11 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
         <Panel title="The admin API refused this token" width={66} tone={color.danger}>
           <Box flexDirection="column">
             <Text>{link.error}</Text>
-            <Text dimColor>Save a current one with kman login, or set KMAN_ADMIN_TOKEN,</Text>
-            <Text dimColor>then start this again.</Text>
+            <Text>Admin address: {url}</Text>
+            {configDir && <Text>Config directory: {configDir}</Text>}
+            <Text dimColor>Save a current token using the address above:</Text>
+            <Text>kman login --admin-url &lt;address&gt;{configDir && ' --config-dir <directory>'}</Text>
+            <Text dimColor>If KMAN_ADMIN_TOKEN is set, replace or unset it. Then restart the TUI.</Text>
           </Box>
         </Panel>
       </Centered>
@@ -594,18 +598,11 @@ export function App({ client, url, intervalMs, size, copy, noticeMs = 6000, secr
     );
   }
 
-  if (overlay && popup) {
-    body = (
-      <Box width={width} height={bodyRows}>
-        {left}
-        {body}
-      </Box>
-    );
-  }
-
   return (
     <Box flexDirection="column" width={columns} height={rows}>
       <Box width={width} height={bodyRows}>
+        {/* Keep the dialog mounted when a resize shows or hides the panels. */}
+        {overlay && popup ? left : null}
         {body}
       </Box>
       <Footer

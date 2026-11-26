@@ -47,7 +47,7 @@ async function main(argv: string[]): Promise<number> {
     throw err;
   }
 
-  const app = render(<App client={createClient(conn)} url={conn.url} />, { alternateScreen: true });
+  const app = render(<App client={createClient(conn)} url={conn.url} configDir={configDir} />, { alternateScreen: true });
   await app.waitUntilExit();
   return 0;
 }
