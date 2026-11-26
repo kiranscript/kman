@@ -316,9 +316,9 @@ func TestAHammeredCanaryCostsATransactionPerBatchAndHoldsUpNoOther(t *testing.T)
 }
 
 // backlog starts the priority lane only once events are waiting in it, so
-// they are read as batches and not as they come.
-func (in *install) backlog(es ...events.Event) (stop func()) {
-	bus := events.New(events.Options{})
+// they are read as batches and not as they come. bus feeds the lane after them.
+func (in *install) backlog(es ...events.Event) (bus *events.Bus, stop func()) {
+	bus = events.New(events.Options{})
 	sub := bus.Subscribe("alerts", events.SubOptions{PriorityOnly: true, Buffer: events.DefaultPriorityCapacity})
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
@@ -329,7 +329,7 @@ func (in *install) backlog(es ...events.Event) (stop func()) {
 	synctest.Wait()
 	wg.Go(func() { in.svc.RunPriority(sub) })
 	stopRun := in.run()
-	return func() { cancel(); wg.Wait(); stopRun() }
+	return bus, func() { cancel(); wg.Wait(); stopRun() }
 }
 
 // A batch that fails is handled event by event, so one canary whose incident
@@ -349,7 +349,7 @@ func TestAFailingPriorityEventCostsNoOtherInItsBatchItsAlert(t *testing.T) {
 		in.withCanary("cafe0001", "decoy", "the deploy repo's .env")
 		in.withCanary("cafe0002", "decoy-2", "the wiki")
 		// The one that works comes first, so the failed batch rolls it back.
-		stop := in.backlog(canaryUse("cafe0002", "192.0.2.9"), canaryUse("cafe0001", "203.0.113.7"))
+		_, stop := in.backlog(canaryUse("cafe0002", "192.0.2.9"), canaryUse("cafe0001", "203.0.113.7"))
 		defer stop()
 		synctest.Wait()
 		got := in.net.received("hooks.test")
@@ -378,7 +378,7 @@ func TestABacklogOfCanaryUsesIsReadInBoundedBatches(t *testing.T) {
 		for range 300 {
 			es = append(es, canaryUse("cafe0001", "203.0.113.7"))
 		}
-		stop := in.backlog(es...)
+		_, stop := in.backlog(es...)
 		defer stop()
 		synctest.Wait()
 		if n := in.svc.PriorityTransactions(); n != 5 {
