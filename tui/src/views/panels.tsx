@@ -6,6 +6,7 @@ import type { AuditEntry, Key, PriceDataStatus, Upstream } from '../api.js';
 import { clock, fitMiddle, money, padEnd, since, tailCells, textWidth } from '../format.js';
 import { keyLabel } from '../keys.js';
 import { keyRisks, topRisk, upstreamRisks } from '../risk.js';
+import { hasFilterRow, listArea } from '../layout.js';
 import type { Attention, Severity, Risk, UpstreamAttention } from '../risk.js';
 import { linkBadge, useTick } from '../ui/chrome.js';
 import { Frame, Strip, stripLabelWidth, subtitleFits } from '../ui/frame.js';
@@ -305,17 +306,9 @@ export function StatusPanel({
   const rows = Math.max(1, height - 2);
   // Focused, the panel is a list of what needs attention under as much of the summary
   // as fits; otherwise it is the summary alone.
-  // The list is sized to what it holds, an empty one being a single line, and the
-  // summary gets everything else, down to a few lines.
-  // The label sits on the list only when there is room; otherwise the border says it
-  // (`1 of 7 need attention`), and at least one selectable line is always kept.
-  // Rows the summary needs at least: one line when there are no keys to count, else three.
-  const reserve = noKeys ? 1 : 3;
-  const header = items.length > 0 && rows >= reserve + 2 ? 1 : 0;
-  const needed = items.length === 0 ? 1 : header + items.length;
-  const listArea = focused ? Math.min(needed, Math.max(header + 1, rows >= reserve + 2 ? rows - reserve : rows - 2)) : 0;
-  const summaryRows = focused ? rows - listArea : rows;
-  const base = (summaryRows >= fullLines.length ? fullLines : tierFor(summaryRows)).filter((l) => l.length > 0);
+  const list = focused ? listArea(height, { tab: 'status', items: items.length, noKeys }) : { header: 0, rows: 0 };
+  const summaryHeight = rows - list.header - list.rows;
+  const base = (summaryHeight >= fullLines.length ? fullLines : tierFor(summaryHeight)).filter((l) => l.length > 0);
   // A tall summary with a row to spare says what the list would: the first thing to look at.
   const first = items[0];
   const reason = ` · ${first ? topRisk(first.risks)!.short : ''}${items.length > 1 ? ` · +${items.length - 1} more` : ''}`;
@@ -331,19 +324,18 @@ export function StatusPanel({
   // A stale price keeps its line, though: it too is something to act on.
   const staleLast = base.length > 0 && base[base.length - 1]!.some((x) => x.t.includes('price stale'));
   const lines =
-    !focused && !strip && items.length > 0 && summaryRows >= 3
-      ? summaryRows > base.length
+    !focused && !strip && items.length > 0 && summaryHeight >= 3
+      ? summaryHeight > base.length
         ? [...base, attentionLine]
         : staleLast
-          ? [...base.slice(0, summaryRows - 2), attentionLine, base[base.length - 1]!]
-          : [...base.slice(0, summaryRows - 1), attentionLine]
-      : !focused && summaryRows > base.length && summaryRows >= fullLines.length
+          ? [...base.slice(0, summaryHeight - 2), attentionLine, base[base.length - 1]!]
+          : [...base.slice(0, summaryHeight - 1), attentionLine]
+      : !focused && summaryHeight > base.length && summaryHeight >= fullLines.length
         ? [...base, attentionLine]
         : base;
-  const listRows = listArea - header;
   const sel = Math.min(selected, Math.max(0, items.length - 1));
-  const start = windowStart(sel, items.length, Math.max(1, listRows));
-  const shown = items.slice(start, start + listRows);
+  const start = windowStart(sel, items.length, Math.max(1, list.rows));
+  const shown = items.slice(start, start + list.rows);
   const nameW = Math.min(24, Math.max(4, ...shown.map((n) => textWidth(n.name))));
 
   return (
@@ -365,12 +357,12 @@ export function StatusPanel({
       width={width}
       height={height}
     >
-      {lines.slice(0, summaryRows).map((segs, i) => (
+      {lines.slice(0, summaryHeight).map((segs, i) => (
         <Row key={i} left={[...lead, ...withoutLeadingDot(segs)]} width={inner} />
       ))}
-      {focused && listRows > 0 ? (
+      {list.rows > 0 ? (
         <>
-          {header > 0 ? (
+          {list.header > 0 ? (
             <Text dimColor bold wrap="truncate-end">
               {' '}NEEDS ATTENTION
             </Text>
@@ -439,9 +431,9 @@ export function KeysPanel({
   const inner = innerWidth(width, height, title, count);
   const lead: Seg[] = height <= 1 ? [] : [{ t: ' ' }];
   const sel = Math.max(0, keys.findIndex((k) => k.id === selectedId));
-  const showFilter = focused && (filtering || filter !== '');
+  const showFilter = focused && hasFilterRow(filter, filtering);
   // The filter takes the last row, so a list that is empty still shows its message above it.
-  const rows = height <= 1 ? 1 : Math.max(0, height - 2 - (showFilter ? 1 : 0));
+  const { rows } = listArea(height, { tab: 'keys', filterRow: showFilter });
   const { shown } = windowed(keys, sel, Math.max(1, rows));
   /** What a key's row says on its right: the mark and word, the warning, today's spend. */
   const parts = (k: Key) => {
@@ -568,7 +560,7 @@ export function UpstreamsPanel({
   const inner = innerWidth(width, height, title, count);
   const lead: Seg[] = height <= 1 ? [] : [{ t: ' ' }];
   const sel = Math.min(selected, Math.max(0, upstreams.length - 1));
-  const rows = Math.max(1, height - 2);
+  const { rows } = listArea(height, { tab: 'upstreams' });
   const { shown } = windowed(upstreams, sel, rows);
   const live = (u: Upstream) => keys.filter((k) => k.upstream === u.name && k.status === 'active').length;
   return (
@@ -629,7 +621,7 @@ export function AuditPanel({
   const count = `(${audit.length})`;
   const lead = height <= 1 ? '' : ' ';
   const sel = Math.min(selected, Math.max(0, audit.length - 1));
-  const rows = Math.max(1, height - 2);
+  const { rows } = listArea(height, { tab: 'audit' });
   const { shown } = windowed(audit, sel, rows);
   // The columns are as wide as what is shown needs, so the target, which is what tells
   // entries apart, keeps the rest. The action already names the kind, so only a name follows.
