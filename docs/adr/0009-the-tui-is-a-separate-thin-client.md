@@ -1,12 +1,12 @@
 # The TUI is a separate, thin admin-API client
 
-kman now has two terminal UIs, and this ADR is about the second. `kman tui` is a read-only view written in Go, inside the binary (browse keys, exposure, audit and upstreams). `tui/` is a React app on Ink that watches keys, spend, upstreams and the audit log, and can also disable, enable, revoke and create virtual keys. Both are the later that ADR 0004 left open ("a TUI can come back later as a thin client of the admin API"), and both keep that ADR's rules.
+kman now has two terminal UIs, and this ADR is about the second. `kman tui` is a read-only view written in Go, inside the binary (browse keys, exposure, audit and upstreams). `tui/` is a React app on Ink that watches keys, spend, upstreams and the audit log, and can also disable, enable, revoke and create virtual keys, and answer an incident: acknowledge it, say it was you, resolve it, disable, enable, rotate or revoke its key, and reset its canary. Both are the later that ADR 0004 left open ("a TUI can come back later as a thin client of the admin API"), and both keep that ADR's rules.
 
 - **It is only an admin API client.** Every change is one request to `/admin/v1`, under the admin token it is run with, so the audit log names the same actor as for the CLI. It imports nothing from the Go code and adds no endpoint. Nothing can be done in it that the CLI cannot do (ADR 0004).
 - **It does not run the server.** keman's beta TUI ran the proxy inside the terminal, so the proxy stopped when the terminal closed. This one connects to a `kman serve` that is already running, and quitting it changes nothing.
 - **It reads the CLI's credentials.** The credentials file in the config directory, overridden by `KMAN_ADMIN_URL` and `KMAN_ADMIN_TOKEN`, the same rules as `internal/cli`. Its only network traffic is to that admin address (ADR 0008). It has no telemetry and no update check.
 - **It is not in the kman binary.** It needs Node 22 or later and is installed and run separately (`tui/README.md`). The Go binary stays one static file, and the TUI is not part of a release archive, so a security fix to kman never waits on it.
-- **A secret is shown once, and held only on screen.** The secret of a created key lives only in the dialog that shows it, is never logged or written, and is cleared when the operator presses Enter. Esc does not close that dialog.
+- **A secret is shown once, and held only on screen.** The secret of a created or rotated key lives only in the dialog that shows it, is never logged or written, and is cleared when the operator presses Enter. Esc does not close that dialog.
 
 ## Considered options
 

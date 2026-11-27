@@ -2,7 +2,7 @@
 // shows stale data marked as stale rather than an empty screen.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, isMissingRoute } from './api.js';
-import type { AdminClient, AuditEntry, ExposureFinding, Incident, Key, KeyPlaces, PriceDataStatus, Settings, Upstream } from './api.js';
+import type { AdminClient, AuditEntry, ExposureFinding, Incident, IncidentDetail, Key, KeyPlaces, PriceDataStatus, Settings, Upstream } from './api.js';
 
 export interface AdminData {
   keys: Key[];
@@ -174,6 +174,38 @@ export function usePlaces(client: AdminClient, id: string | undefined, at: numbe
         if (isMissingRoute(err)) return setState({ id, unsupported: true });
         const error = err instanceof Error ? err.message : String(err);
         setState((s) => ({ id, places: s.id === id ? s.places : undefined, error }));
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [client, id, at]);
+  return state.id === id ? state : { id };
+}
+
+export interface IncidentState {
+  /** The incident this is about. */
+  id?: number;
+  detail?: IncidentDetail;
+  /** Why the last fetch failed: `detail` is then old, or undefined. */
+  error?: string;
+}
+
+/**
+ * One incident in full, fetched when it is opened and again on every poll (`at` is when the
+ * last one answered). Fetching it changes nothing: opening an incident never acknowledges it.
+ */
+export function useIncident(client: AdminClient, id: number | undefined, at: number): IncidentState {
+  const [state, setState] = useState<IncidentState>({});
+  useEffect(() => {
+    if (id === undefined) return setState({});
+    let live = true;
+    client.incident(id).then(
+      (detail) => live && setState({ id, detail }),
+      (err: unknown) => {
+        if (!live) return;
+        const error = err instanceof Error ? err.message : String(err);
+        setState((s) => ({ id, detail: s.id === id ? s.detail : undefined, error }));
       },
     );
     return () => {

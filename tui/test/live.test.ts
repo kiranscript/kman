@@ -3,9 +3,15 @@
 // a server (CI starts one; see ADR 0009 and README.md):
 //   KMAN_TUI_LIVE_URL=http://127.0.0.1:8081 KMAN_TUI_LIVE_TOKEN=kma_... npm test
 // The server needs at least one upstream with a credential. The test creates a key,
-// walks it through disable, enable and revoke, and leaves it revoked.
-import { beforeAll, describe, expect, it } from 'vitest';
+// walks it through disable, enable and revoke, and leaves it revoked. For incidents it
+// also needs to run on the same machine as kman: it adds an upstream of its own that
+// listens on loopback, and makes keys and a canary that raise incidents, which it
+// resolves. Use a throwaway install.
+import { createServer } from 'node:http';
+import type { Server } from 'node:http';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ApiError, createClient } from '../src/api.js';
+import type { Incident } from '../src/api.js';
 
 const url = process.env.KMAN_TUI_LIVE_URL;
 const token = process.env.KMAN_TUI_LIVE_TOKEN;
@@ -111,6 +117,118 @@ describe.skipIf(!url || !token)('against a real kman', () => {
     } finally {
       await client.revokeKey(key.id);
     }
+  });
+
+  describe('incidents', () => {
+    let upstreamServer: Server;
+    const upstreamName = `tui-live-up-${Date.now()}`;
+
+    /** A request to kman's own admin API for what the TUI's client does not do. */
+    async function admin<T>(method: string, path: string, body?: unknown): Promise<T> {
+      const res = await fetch(`${url}/admin/v1${path}`, {
+        method,
+        headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      expect(res.ok, `${method} ${path}: ${res.status}`).toBe(true);
+      return (await res.json()) as T;
+    }
+
+    const use = (proxy: string, secret: string, agent: string) =>
+      fetch(`${proxy}/v1/models`, { headers: { authorization: `Bearer ${secret}`, 'user-agent': agent } });
+
+    /** The key's unresolved incident, once the events that raise it are written. */
+    async function incidentOf(keyId: string): Promise<Incident> {
+      for (let n = 0; n < 150; n++) {
+        const found = (await client.openIncidents()).find((i) => i.key_id === keyId);
+        if (found) return found;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      throw new Error(`no incident for ${keyId}`);
+    }
+
+    /** A key that has an incident: used by one client, then by another once it has learned. */
+    async function leakedKey(tag: string) {
+      const created = await client.createKey({ upstream: upstreamName, name: `tui-live-${tag}-${Date.now()}`, ttl_seconds: 3600, policy: { learning_period: '1s' } });
+      expect((await use(created.proxy_url!, created.secret, 'usual-app/1')).status).toBe(200);
+      // The first forwarded request is the baseline once its event is written.
+      for (let n = 0; n < 150 && (await client.keyPlaces(created.key.id)).places.length === 0; n++) await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 1100));
+      await use(created.proxy_url!, created.secret, 'curl/8');
+      return { ...created, incident: await incidentOf(created.key.id) };
+    }
+
+    beforeAll(async () => {
+      upstreamServer = createServer((_req, res) => res.writeHead(200, { 'content-type': 'application/json' }).end('{"object":"list","data":[]}'));
+      await new Promise<void>((r) => upstreamServer.listen(0, '127.0.0.1', r));
+      const { port } = upstreamServer.address() as { port: number };
+      await admin('POST', '/upstreams', {
+        name: upstreamName,
+        host: '127.0.0.1',
+        port,
+        tls: false,
+        profile: 'openai',
+        path_allowlist: ['GET /v1/models'],
+        sdk_env: 'OPENAI_API_KEY',
+        credential: { name: upstreamName, secret: 'sk-live-test-not-real' },
+      });
+    });
+
+    afterAll(() => void upstreamServer?.close());
+
+    it('reads an incident in full, and acknowledges, disables for it and rotates, each audited with its id', async () => {
+      const { key, incident } = await leakedKey('rotate');
+      const detail = await client.incident(incident.id);
+      expect(detail).toMatchObject({ id: incident.id, key_id: key.id, state: 'open', severity: expect.any(String), rules: expect.arrayContaining(['new_client']), detection_count: expect.any(Number) });
+      expect(detail.detections[0]).toMatchObject({ id: expect.any(Number), time: expect.any(String), rule: 'new_client', evidence: { client: 'curl/8', baseline: expect.any(String), address_withheld: true } });
+      expect(detail.addresses_withheld).toBe(true);
+      expect(detail.known_source_candidates).toEqual(expect.arrayContaining([{ kind: 'client', value: 'curl/8' }, { kind: 'cidr', withheld: true }]));
+      expect(detail.actions[0]).toMatchObject({ action: 'incident.open', actor: 'system:detect', incident_id: incident.id });
+      // Reading it acknowledged nothing.
+      expect((await client.incident(incident.id)).state).toBe('open');
+
+      expect(await client.acknowledgeIncident(incident.id)).toMatchObject({ state: 'acknowledged', acknowledged_by: expect.any(String), acknowledged_at: expect.any(String) });
+      expect((await client.disableKey(key.id, incident.id)).status).toBe('disabled');
+      expect((await client.enableKey(key.id)).status).toBe('active');
+      const rotated = await client.rotateKey(key.id, incident.id);
+      expect(rotated).toMatchObject({ key: { id: key.id }, secret: expect.stringMatching(/^kmn_/), sdk_env: expect.any(String) });
+      const done = await client.incident(incident.id);
+      expect(done).toMatchObject({ state: 'resolved', resolution: 'confirmed', resolved_by: expect.any(String), resolved_at: expect.any(String) });
+      expect(done.actions.map((a) => a.action)).toEqual(expect.arrayContaining(['incident.acknowledge', 'key.disable', 'key.rotate', 'incident.resolve']));
+      expect(done.actions.every((a) => a.incident_id === incident.id)).toBe(true);
+      await expect(client.disableKey(key.id, incident.id)).rejects.toMatchObject({ code: 'conflict' });
+      await client.revokeKey(key.id);
+    }, 90_000);
+
+    it('revokes for an incident, and answers another with this was me', async () => {
+      const first = await leakedKey('revoke');
+      expect((await client.revokeKey(first.key.id, first.incident.id)).status).toBe('revoked');
+      expect(await client.incident(first.incident.id)).toMatchObject({ state: 'resolved', resolution: 'confirmed' });
+
+      const second = await leakedKey('me');
+      const got = await client.thisWasMe(second.incident.id, { add_known_sources: true, kinds: ['client'] });
+      expect(got.incident).toMatchObject({ state: 'resolved', resolution: 'false_positive' });
+      expect(got.added).toEqual([expect.objectContaining({ kind: 'client', value: 'curl/8', id: expect.any(Number), label: expect.any(String) })]);
+      await client.revokeKey(second.key.id);
+
+      const third = await leakedKey('plain');
+      expect((await client.thisWasMe(third.incident.id, { add_known_sources: false })).added).toEqual([]);
+      await client.revokeKey(third.key.id);
+    }, 90_000);
+
+    it('resolves a canary incident and arms the canary again', async () => {
+      const proxy = (await client.createKey({ upstream: upstreamName, name: `tui-live-proxy-${Date.now()}`, ttl_seconds: 3600 }));
+      const canary = await admin<{ canary: { id: string }; secret: string }>('POST', '/canaries', { name: `tui-live-canary-${Date.now()}`, planted: 'the live test', format: 'env' });
+      await use(proxy.proxy_url!, canary.secret, 'curl/8');
+      const incident = await incidentOf(canary.canary.id);
+      const detail = await client.incident(incident.id);
+      expect(detail).toMatchObject({ rules: ['canary'], severity: 'critical', known_source_candidates: [] });
+      expect(detail.detections[0]!.evidence.detail).toContain('the live test');
+      expect(await client.resolveIncident(incident.id, 'false_positive')).toMatchObject({ state: 'resolved', resolution: 'false_positive' });
+      expect(await client.resetCanary(canary.canary.id)).toMatchObject({ id: canary.canary.id, state: expect.any(String) });
+      await client.revokeKey(canary.canary.id);
+      await client.revokeKey(proxy.key.id);
+    }, 90_000);
   });
 
   it('refuses a wrong token as unauthorized', async () => {

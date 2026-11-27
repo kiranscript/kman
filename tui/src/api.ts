@@ -31,6 +31,8 @@ export interface KeyPolicy {
   /** Where the key may be used from. With neither, it works from any address. */
   allowed_cidrs?: string[];
   allowed_countries?: string[];
+  /** How long the location rules only record, such as "7d"; absent for the install's setting. */
+  learning_period?: string;
 }
 
 export interface Key {
@@ -81,6 +83,8 @@ export interface AuditEntry {
   target_kind: string;
   target_id: string;
   client_ip?: string;
+  /** The incident the change was made for. */
+  incident_id?: number;
 }
 
 export interface PriceDataStatus {
@@ -168,6 +172,99 @@ export interface Incident {
   detection_count: number;
   opened_at: string;
   last_fired_at: string;
+  acknowledged_at?: string;
+  acknowledged_by?: string;
+  resolved_at?: string;
+  /** An admin token's name, or system:detect when it expired. */
+  resolved_by?: string;
+  resolution?: Resolution | 'expired';
+}
+
+/** How an operator ends an incident: it was real, or it was not. */
+export type Resolution = 'confirmed' | 'false_positive';
+
+/** What a detection saw. The address and networks are left out unless expose_client_addresses is on. */
+export interface Evidence {
+  address?: string;
+  /** For a new network, the networks the key normally uses. */
+  usual?: string;
+  network?: string;
+  /** There is an address or network, which was left out. */
+  address_withheld?: boolean;
+  country?: string;
+  asn?: number;
+  as_org?: string;
+  client?: string;
+  /** What the rule saw, for a rule that compares. */
+  observed?: string;
+  /** What the key normally does. */
+  baseline?: string;
+  /** Such as that the request was refused, or where a canary was planted. */
+  detail?: string;
+}
+
+export interface Detection {
+  id: number;
+  time: string;
+  rule: string;
+  severity: IncidentSeverity;
+  evidence: Evidence;
+}
+
+export type SourceKind = 'cidr' | 'country' | 'asn' | 'client';
+
+/** A place an incident saw that "this was me" can add as a known source. */
+export interface Candidate {
+  kind: SourceKind;
+  /** Empty for a network that is withheld. */
+  value?: string;
+  label?: string;
+  withheld?: boolean;
+}
+
+/** An incident with what it recorded and what was done about it (GET /incidents/{id}). */
+export interface IncidentDetail extends Incident {
+  /** Oldest first, at most 100; detection_count says how many there were. */
+  detections: Detection[];
+  /** The audit entries that carry the incident's id, oldest first. */
+  actions: AuditEntry[];
+  /** None for a canary. */
+  known_source_candidates: Candidate[];
+  addresses_withheld?: boolean;
+}
+
+/** The kinds "this was me" picks by; a network is the candidate kind cidr. */
+export type PickKind = 'country' | 'asn' | 'client' | 'network';
+
+export interface ThisWasMeInput {
+  /** With no `kinds` this adds every kind, so it is only sent with some. */
+  add_known_sources: boolean;
+  /** For every key, not just this one. */
+  install_wide?: boolean;
+  kinds?: PickKind[];
+}
+
+export interface ThisWasMeResult {
+  incident: Incident;
+  added: { id: number; kind: SourceKind; value: string; label: string }[];
+  already_known?: number;
+  /** Networks not added, as adding one would show it while addresses are off. */
+  withheld_networks?: number;
+}
+
+/** A key after rotation, with its new secret, which is shown only this once. */
+export interface RotatedKey {
+  key: Key;
+  secret: string;
+  previous_valid_until?: string;
+  sdk_env?: string;
+}
+
+/** A canary, as far as the TUI reads one. */
+export interface Canary {
+  id: string;
+  name?: string;
+  state: string;
 }
 
 /** One rule a working key breaks that would make a leak easy to abuse (GET /exposure). */
@@ -234,9 +331,19 @@ export interface AdminClient {
   priceStatus(): Promise<PriceDataStatus>;
   settings(): Promise<Settings>;
   createKey(input: CreateKeyInput): Promise<CreatedKey>;
-  disableKey(id: string): Promise<Key>;
+  /** With an incident, the change is audited with its id, and the incident stays open. */
+  disableKey(id: string, incident?: number): Promise<Key>;
   enableKey(id: string): Promise<Key>;
-  revokeKey(id: string): Promise<Key>;
+  /** With an incident, which it resolves as confirmed. */
+  revokeKey(id: string, incident?: number): Promise<Key>;
+  /** A new secret at once, with no grace, for an incident it resolves as confirmed. */
+  rotateKey(id: string, incident: number): Promise<RotatedKey>;
+  incident(id: number): Promise<IncidentDetail>;
+  acknowledgeIncident(id: number): Promise<Incident>;
+  resolveIncident(id: number, as: Resolution): Promise<Incident>;
+  thisWasMe(id: number, input: ThisWasMeInput): Promise<ThisWasMeResult>;
+  /** Arms a fired canary again, by its key id. */
+  resetCanary(id: string): Promise<Canary>;
   /**
    * The client addresses a key was used from. Refused with `conflict` until the install turns
    * on expose_client_addresses: an address is personal data.
@@ -300,6 +407,10 @@ export function createClient(conn: Connection): AdminClient {
   }
 
   const keyPath = (id: string) => `/admin/v1/keys/${encodeURIComponent(id)}`;
+  const incidentPath = (id: number) => `/admin/v1/incidents/${id}`;
+  const forIncident = (id: number | undefined) => (id === undefined ? undefined : { incident_id: id });
+  /** The server sends an incident that has no rules yet as null. */
+  const withRules = <T extends Incident>(i: T): T => ({ ...i, rules: i.rules ?? [] });
 
   return {
     async whoami() {
@@ -325,9 +436,30 @@ export function createClient(conn: Connection): AdminClient {
     priceStatus: () => request<PriceDataStatus>('GET', '/admin/v1/prices/status'),
     settings: () => request<Settings>('GET', '/admin/v1/settings'),
     createKey: (input) => request<CreatedKey>('POST', '/admin/v1/keys', input),
-    disableKey: (id) => request<Key>('POST', `${keyPath(id)}/disable`),
+    disableKey: (id, incident) => request<Key>('POST', `${keyPath(id)}/disable`, forIncident(incident)),
     enableKey: (id) => request<Key>('POST', `${keyPath(id)}/enable`),
-    revokeKey: (id) => request<Key>('POST', `${keyPath(id)}/revoke`),
+    revokeKey: (id, incident) => request<Key>('POST', `${keyPath(id)}/revoke`, forIncident(incident)),
+    rotateKey: (id, incident) => request<RotatedKey>('POST', `${keyPath(id)}/rotate`, forIncident(incident)),
+    async incident(id) {
+      const got = await request<IncidentDetail>('GET', incidentPath(id));
+      return withRules({
+        ...got,
+        detections: (got.detections ?? []).map((d) => ({ ...d, evidence: d.evidence ?? {} })),
+        actions: got.actions ?? [],
+        known_source_candidates: got.known_source_candidates ?? [],
+      });
+    },
+    async acknowledgeIncident(id) {
+      return withRules(await request<Incident>('POST', `${incidentPath(id)}/acknowledge`));
+    },
+    async resolveIncident(id, as) {
+      return withRules(await request<Incident>('POST', `${incidentPath(id)}/resolve`, { as }));
+    },
+    async thisWasMe(id, input) {
+      const got = await request<ThisWasMeResult>('POST', `${incidentPath(id)}/this-was-me`, input);
+      return { ...got, added: got.added ?? [] };
+    },
+    resetCanary: (id) => request<Canary>('POST', `/admin/v1/canaries/${encodeURIComponent(id)}/reset`),
     async keyClients(id) {
       const got = await request<KeyClients>('GET', `${keyPath(id)}/clients`);
       return { ...got, clients: got.clients ?? [] };
@@ -344,7 +476,7 @@ export function createClient(conn: Connection): AdminClient {
         const cursor = before === undefined ? '' : `&before=${before}`;
         const page = await request<{ incidents: Incident[] | null; more?: boolean }>('GET', `/admin/v1/incidents?open=true&limit=500${cursor}`);
         const list = page.incidents ?? [];
-        all.push(...list.map((i) => ({ ...i, rules: i.rules ?? [] })));
+        all.push(...list.map(withRules));
         const last = list[list.length - 1]?.id;
         if (!page.more || last === undefined || (before !== undefined && last >= before)) return all;
         before = last;
