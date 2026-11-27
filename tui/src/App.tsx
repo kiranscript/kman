@@ -361,11 +361,17 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     }
   }
 
+  /** Another table, or this one afresh: nothing in it has been lost. */
+  function startTable() {
+    setPlace({});
+    setUntold(false);
+  }
+
   /** Shows the requests of one key, or of all of them, from the newest. */
   function showRequests(keyId: string | undefined, filter: RequestFilter = requestFilter) {
     setRequestKeyId(keyId);
     setRequestFilter(filter);
-    setPlace({});
+    startTable();
     goTab('requests');
   }
 
@@ -800,11 +806,11 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       if (tab === 'requests') {
         if (key.return) return openRequest();
         if (input === 'f') {
-          setPlace({});
+          startTable();
           return setRequestFilter(nextFilter);
         }
         if (key.escape && requestKeyId !== undefined) {
-          setPlace({});
+          startTable();
           return setRequestKeyId(undefined);
         }
         return;
