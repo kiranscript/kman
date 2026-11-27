@@ -12,7 +12,7 @@ import { ThisWasMeDialog } from './dialogs/ThisWasMeDialog.js';
 import { TypeNameDialog } from './dialogs/TypeNameDialog.js';
 import { cli, resolutionWord } from './commands.js';
 import { fit, plural } from './format.js';
-import { actionFor, actions, incidentFor, isCanary, picks, resolvedText } from './incidents.js';
+import { actionFor, actions, endedText, incidentFor, isCanary, picks } from './incidents.js';
 import type { Action } from './incidents.js';
 import { isChord, keyLabel, visibleKeys } from './keys.js';
 import { attention, otherIncidents, unknowns, upstreamAttention } from './risk.js';
@@ -164,10 +164,13 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const shownKeyId = tab === 'status' ? attnItem?.key?.id : tab === 'keys' ? selectedKey?.id : undefined;
   // `now` is when the last poll answered.
   const places = usePlaces(client, shownKeyId, now);
-  const requests = useRequests(client, requestKeyId, requestFilter === 'refused' ? 'refused' : undefined, now);
+  // Not before the first poll has answered, which is when the token is known to be taken.
+  const answeredAt = link.state === 'connecting' || link.state === 'denied' ? 0 : now;
+  const exposed = data.settings?.expose_client_addresses;
+  const requests = useRequests(client, requestKeyId, requestFilter === 'refused' ? 'refused' : undefined, answeredAt, { selected: place.id, exposed });
   const hasRequests = !requests.unsupported;
   const tabs = useMemo(() => TABS.filter((t) => t.id !== 'requests' || hasRequests), [hasRequests]);
-  const incidentDetails = useIncidentDetails(client, hasRequests ? data.incidents : undefined, now);
+  const incidentDetails = useIncidentDetails(client, hasRequests ? data.incidents : undefined, now, exposed);
   const flagged = useMemo(() => {
     const sources = { canaries: data.canaries, incidents: data.incidents, details: incidentDetails.details };
     return requests.rows.map((e) => ({ e, flag: flagOf(e, sources) }));
@@ -225,7 +228,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     seenOpen.current = undefined;
     setMode((m) => (endsWith(m, opened.id) ? { kind: 'none' } : m));
     const warning = lost.current?.id === opened.id ? ` ${lost.current.warning}` : '';
-    setNotice({ tone: 'error', text: `Incident #${opened.id} was ${resolvedText(opened)}.${warning}` });
+    setNotice({ tone: 'error', text: `Incident #${opened.id} ${endedText(opened)}.${warning}` });
   }, [opened]);
 
   // A box ticks every value of its kind, so what was ticked is ticked again if they change.
@@ -313,7 +316,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
         const id = tableShown[step(indexOf(p.id), tableShown.length)]?.e.id;
         if (id === undefined) return p;
         // g goes to the newest, so everything has been seen; going up sees what is passed.
-        return { id, seen: Math.max(id, p.seen ?? id) };
+        // Before the selection was pinned, what was on screen from the top had been seen.
+        return { id, seen: Math.max(id, p.seen ?? tableShown[0]?.e.id ?? id) };
       });
     }
   }
@@ -400,7 +404,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     if (after?.state !== 'resolved') return { error };
     seenOpen.current = undefined;
     setMode((m) => (endsWith(m, id) ? { kind: 'none' } : m));
-    setNotice({ tone: 'error', text: `Incident #${id} was ${resolvedText(after)}. While ${doing}: ${error}` });
+    setNotice({ tone: 'error', text: `Incident #${id} ${endedText(after)}. While ${doing}: ${error}` });
     return { error, ended: after };
   }
 
@@ -447,7 +451,11 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       // Looked at again first: it may have been resolved, or have seen more, since it was drawn.
       const latest = await client.incident(id);
       if (latest.state === 'resolved') throw new Error(`incident ${id} is already resolved`);
-      if (kinds.length && JSON.stringify(picks(latest)) !== boxesAre) throw new Error(CHANGED);
+      if (kinds.length && JSON.stringify(picks(latest)) !== boxesAre) {
+        // Drawn at once: the next key must find the new boxes, not the old ones beside a warning.
+        incident.show(latest);
+        throw new Error(CHANGED);
+      }
       const got = await client.thisWasMe(
         id,
         kinds.length ? { add_known_sources: true, kinds, ...(everyKey ? { install_wide: true } : {}) } : { add_known_sources: false },
@@ -544,7 +552,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     // This try, or an earlier one for this incident that got no answer.
     const warning = lost.current?.id === id ? maybe : undefined;
     if (ended) {
-      return setNotice({ tone: 'error', text: `Incident #${id} was ${resolvedText(ended)}. Could not rotate: ${error}.${warning ? ` ${warning}` : ''}` });
+      return setNotice({ tone: 'error', text: `Incident #${id} ${endedText(ended)}. Could not rotate: ${error}.${warning ? ` ${warning}` : ''}` });
     }
     if (error || !rotated) return setDialogError(`${error ?? 'kman did not return the new secret'}${warning ? `. ${warning}` : ''}`);
     setNotice(undefined);
@@ -812,7 +820,12 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const reading = detail || viewing !== undefined;
   const requestKey = data.keys.find((k) => k.id === requestKeyId);
   // A canary, or a key that has gone, is named by its requests or its id.
-  const requestKeyName = requestKeyId === undefined ? undefined : requestKey ? keyLabel(requestKey) : requests.rows[0]?.key_name || requestKeyId;
+  const requestKeyName =
+    requestKeyId === undefined
+      ? undefined
+      : requestKey
+        ? keyLabel(requestKey)
+        : requests.rows[0]?.key_name || data.incidents?.find((i) => i.key_id === requestKeyId)?.key_name || requestKeyId;
   const flagsMissing = data.canariesError
     ? 'Canaries did not load: their requests may not be flagged.'
     : data.incidentsError
@@ -978,7 +991,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
           incidentNote={`Incident #${mode.incident} is resolved as confirmed.`}
           maxWidth={dw}
           busy={working !== undefined}
-          errorLines={Math.max(3, bodyRows - 16)}
+          // Its words take a row more than revoke's.
+          errorLines={Math.max(3, bodyRows - 17)}
           error={dialogError}
           guardMs={actionGuardMs}
           onConfirm={() => void rotate(mode.key, mode.incident)}
@@ -1061,7 +1075,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   } else if (mode.kind === 'help') {
     body = (
       <Centered width={dw} height={bodyRows}>
-        <HelpDialog focus={tab} detail={detail} incident={viewing !== undefined} onClose={() => setMode({ kind: 'none' })} />
+        <HelpDialog focus={tab} detail={detail} incident={viewing !== undefined} requests={hasRequests} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'confirm') {
@@ -1203,6 +1217,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
                   tab,
                   mode: mode.kind,
                   key: tab === 'status' ? attnItem?.key : selectedKey,
+                  canary: Boolean(attnItem?.incident),
                   filtered: filter !== '',
                   selectable,
                   // A part that did not load has nothing to open.
@@ -1279,6 +1294,8 @@ interface HintState {
   requests: boolean;
   /** The requests table shows one key. */
   oneKey: boolean;
+  /** The selected Status row is a canary's incident, whose key is not listed. */
+  canary: boolean;
   offline: boolean;
   /** A change is being sent: another cannot start. */
   working: boolean;
@@ -1298,7 +1315,7 @@ interface HintState {
  * missed go first (`rank`): scrolling and the panel keys, then selecting, and last the
  * actions on the selected row, which stay unless nothing else can.
  */
-function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, offline, working, canCreate, hasKeys, scrollable, detail, openable, incident, marked, answered, panels, requests, oneKey }: HintState): HintItem[] {
+function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, offline, working, canCreate, hasKeys, scrollable, detail, openable, incident, marked, answered, panels, requests, oneKey, canary }: HintState): HintItem[] {
   const jump = `1-${panels}`;
   const canChange = !offline && !working;
   if (mode === 'confirm' || mode === 'reset') return [{ k: 'y', label: 'yes' }, { k: 'n', label: 'cancel' }];
@@ -1381,7 +1398,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, of
     return [
       ...select,
       ...(openable ? [{ k: 'Enter', label: marked ? 'incident' : 'open', rank: 5 }] : []),
-      ...(requests && key ? [{ k: 'v', label: 'requests', rank: 2.95 }] : []),
+      ...(requests && (key || canary) ? [{ k: 'v', label: 'requests', rank: 2.95 }] : []),
       ...create,
       ...common,
     ];

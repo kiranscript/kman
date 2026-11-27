@@ -46,6 +46,9 @@ export function resolvedText(i: Incident): string {
   return `resolved${i.resolved_by ? ` by ${i.resolved_by}` : ''}${i.resolution ? ` as ${resolutionWord(i.resolution)}` : ''}`;
 }
 
+/** What to say after "Incident #12": it was resolved, or it expired, which no one did to it. */
+export const endedText = (i: Incident) => (i.resolution === 'expired' ? resolvedText(i) : `was ${resolvedText(i)}`);
+
 const asText = (asn: number | undefined, org: string | undefined) => (asn ? `AS${asn}${org ? ` ${org}` : ''}` : '');
 
 export interface Fired {
@@ -101,7 +104,7 @@ export function whatFired(detections: Detection[]): Fired[] {
 }
 
 /** "usually US", or kman's own sentence about what is usual, which says so already. */
-export const usualText = (usual: string) => (/\busual\b/.test(usual) ? usual : `usually ${usual}`);
+export const usualText = (usual: string) => (/^(?:no|\d+) usual /.test(usual) ? usual : `usually ${usual}`);
 
 /** Why every request behind what fired was refused, when they all were, for one reason. */
 export function allRefused(fired: Fired[]): string | undefined {

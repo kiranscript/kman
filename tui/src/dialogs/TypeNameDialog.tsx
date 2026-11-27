@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from 'ink';
 import { useEffect, useState } from 'react';
 import type { Key } from '../api.js';
-import { keyLabel } from '../keys.js';
+import { isChord, keyLabel } from '../keys.js';
 import { editField, TextField } from '../ui/TextField.js';
 import type { Edit } from '../ui/TextField.js';
 import { Command } from '../ui/command.js';
@@ -68,7 +68,7 @@ export function TypeNameDialog({ action, keyData, command, incidentNote, maxWidt
     if (busy) return;
     if (key.escape) return onCancel();
     if (key.return) {
-      if (!armed()) return;
+      if (!armed() || isChord(key)) return;
       if (matches) onConfirm();
       else setTried(true);
       return;

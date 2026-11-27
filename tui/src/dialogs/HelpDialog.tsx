@@ -19,7 +19,14 @@ const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
       ['q  Ctrl+C', 'quit (this help: Esc or ? closes)'],
     ],
   },
-  { title: 'STATUS', panel: 'status', rows: [['Enter', 'open an incident, else the key or upstream']] },
+  {
+    title: 'STATUS',
+    panel: 'status',
+    rows: [
+      ['Enter', 'open an incident, else the key or upstream'],
+      ['v', "the key's requests"],
+    ],
+  },
   {
     title: 'KEYS',
     panel: 'keys',
@@ -87,7 +94,20 @@ const DETAIL_GLOBAL = {
 };
 
 /** `focus` is the focused panel: its keys come first, as in lazygit's menu. */
-export function HelpDialog({ onClose, focus, detail, incident }: { onClose: () => void; focus?: Tab; detail?: boolean; incident?: boolean }) {
+export function HelpDialog({
+  onClose,
+  focus,
+  detail,
+  incident,
+  requests = true,
+}: {
+  onClose: () => void;
+  focus?: Tab;
+  detail?: boolean;
+  incident?: boolean;
+  /** Whether kman has events: without them there is no fifth panel and no `v`. */
+  requests?: boolean;
+}) {
   // The focused panel's keys first, then what works everywhere: other panels' keys
   // are on their own screens, which this dialog has no room for.
   // With the detail panel focused only its own keys work, so those come first.
@@ -98,7 +118,10 @@ export function HelpDialog({ onClose, focus, detail, incident }: { onClose: () =
   // The requests table moves and opens its own way, which its group says: only the rest is repeated.
   const unsaid = focus === 'requests' ? ['↑ ↓  j k  PgUp PgDn', 'g  G  Home  End', 'Enter', 'J  K'] : focus === 'status' || focus === 'keys' ? ['Enter'] : [];
   const global = { ...groups[0]!, rows: groups[0]!.rows.filter(([k]) => !unsaid.includes(k)) };
-  const ordered = alone ? [alone, DETAIL_GLOBAL] : [...(mine ? [mine] : []), global];
+  const shown = alone ? [alone, DETAIL_GLOBAL] : [...(mine ? [mine] : []), global];
+  const ordered = requests
+    ? shown
+    : shown.map((g) => ({ ...g, rows: g.rows.filter(([k]) => k !== 'v').map(([k, what]): [string, string] => [k.replace(/^1-5/, '1-4'), what]) }));
   useInput((_i, key) => {
     if (key.escape || key.return || _i === '?') onClose();
   });
@@ -106,7 +129,7 @@ export function HelpDialog({ onClose, focus, detail, incident }: { onClose: () =
     <Panel title="Keybindings" width={78} tone={color.accent}>
       {ordered.map((g, i) => (
         <Box key={g.title} flexDirection="column" marginTop={i === 0 ? 0 : 1}>
-          <SectionTitle>{g === mine ? `${g.title} (this panel)` : g.title}</SectionTitle>
+          <SectionTitle>{g.title === mine?.title ? `${g.title} (this panel)` : g.title}</SectionTitle>
           {g.rows.map(([k, what]) => (
             // The meaning wraps under itself, not under the key.
             <Box key={k + what}>

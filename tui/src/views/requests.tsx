@@ -3,7 +3,7 @@
 import { Box, Text } from 'ink';
 import type { RequestEvent } from '../api.js';
 import { clock, fit, fitMiddle, padEnd, since, textWidth, wrapLines } from '../format.js';
-import { requestFrom, requestKey, resultText } from '../requests.js';
+import { MAX_ROWS, requestFrom, requestKey, resultText } from '../requests.js';
 import type { Flag, RequestFilter } from '../requests.js';
 import { useTick } from '../ui/chrome.js';
 import { Frame } from '../ui/frame.js';
@@ -186,11 +186,12 @@ export function RequestsMain({
       ? `Could not load them: ${state.error}`
       : 'Loading…'
     : filter === 'flagged'
-      ? `No flagged request among the ${state.rows.length} loaded.${state.more ? ' ↓ looks further back.' : ''}`
+      ? `No flagged request among the ${state.rows.length} loaded.${state.more && state.rows.length < MAX_ROWS ? ' ↓ looks further back.' : ''}`
       : filter === 'refused'
         ? 'No refused requests.'
         : 'No requests yet. They are listed about 5s after they are made.';
-  const older = state.loadingOlder ? 'Loading older…' : below === 0 && state.more && selected >= rows.length - 1 && rows.length > 0 ? '↓ loads older' : '';
+  const atEnd = below === 0 && state.more && selected >= rows.length - 1 && rows.length > 0;
+  const older = state.loadingOlder ? 'Loading older…' : !atEnd ? '' : state.rows.length >= MAX_ROWS ? 'most held: kman events' : '↓ loads older';
   return (
     <Frame
       title={title}
@@ -251,10 +252,11 @@ export function LastRequests({ rows, width, now }: { rows: Flagged[]; width: num
         return (
           <Text key={r.e.id} wrap="truncate-end">
             <Text color={mark.color}>{mark.t}</Text>
-            <Text dimColor>{padEnd(clock(r.e.time, now), timeW + 1)}</Text>
-            {padEnd(requestFrom(r.e), fromW + 1)}
+            {/* Each column is cut to its width, and then parted: a cut one keeps its space. */}
+            <Text dimColor>{`${padEnd(clock(r.e.time, now), timeW)} `}</Text>
+            {`${padEnd(requestFrom(r.e), fromW)} `}
             {/* The result says what came of it: the client gives way first. */}
-            {padEnd(r.e.client ?? '—', Math.max(6, Math.min(clientW, width - 2 - timeW - 1 - fromW - 1 - 20)) + 1)}
+            {`${padEnd(r.e.client ?? '—', Math.max(6, Math.min(clientW, width - 2 - timeW - 1 - fromW - 1 - 20)))} `}
             <Text color={r.flag ? severityColor[r.flag.severity] : undefined}>{resultText(r.e, r.flag)}</Text>
           </Text>
         );

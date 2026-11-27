@@ -18,7 +18,7 @@ import type {
   Upstream,
 } from './api.js';
 import { isCanary } from './incidents.js';
-import { mergeNewest, mergeOlder } from './requests.js';
+import { MAX_ROWS, mergeNewest, mergeOlder, withoutAddresses } from './requests.js';
 import type { Feed } from './requests.js';
 
 export interface AdminData {
@@ -220,7 +220,7 @@ export interface IncidentState {
  * One incident in full, fetched when it is opened and again on every poll (`at` is when the
  * last one answered). Fetching it changes nothing: opening an incident never acknowledges it.
  */
-export function useIncident(client: AdminClient, id: number | undefined, at: number): IncidentState {
+export function useIncident(client: AdminClient, id: number | undefined, at: number): IncidentState & { show: (detail: IncidentDetail) => void } {
   const [state, setState] = useState<IncidentState>({});
   useEffect(() => {
     if (id === undefined) return setState({});
@@ -237,7 +237,9 @@ export function useIncident(client: AdminClient, id: number | undefined, at: num
       live = false;
     };
   }, [client, id, at]);
-  return state.id === id ? state : { id };
+  /** Takes a detail fetched elsewhere, so what it holds is on screen without waiting for a poll. */
+  const show = useCallback((detail: IncidentDetail) => setState({ id: detail.id, detail }), []);
+  return { ...(state.id === id ? state : { id }), show };
 }
 
 /** The events asked for at a time. */
@@ -263,73 +265,104 @@ const noRequests: Requests = { rows: [], more: false, loaded: false, loadingOlde
  * The stored requests of one key, or all of them, newest first: the newest fetched again on
  * every poll and joined to what is held, and older ones a page at a time on demand. The
  * live event stream is not used, as its events have no id to keep a place by.
+ *
+ * `at` is when the last poll answered, 0 before one has. `selected` is the request not to
+ * let go of, and `exposed` whether the install gives addresses out, when that is known.
  */
-export function useRequests(client: AdminClient, key: string | undefined, kind: RequestEvent['kind'] | undefined, at: number) {
+export function useRequests(
+  client: AdminClient,
+  key: string | undefined,
+  kind: RequestEvent['kind'] | undefined,
+  at: number,
+  { selected, exposed }: { selected?: number; exposed?: boolean } = {},
+) {
   const query = `${key ?? ''}|${kind ?? ''}`;
   const [state, setState] = useState<Requests & { query: string }>({ ...noRequests, query });
   const held = useRef(state);
   held.current = state;
-  const polling = useRef<string | undefined>(undefined);
-  const older = useRef<string | undefined>(undefined);
-  const wanted = useRef(query);
-  wanted.current = query;
+  const keep = useRef(selected);
+  keep.current = selected;
+  // Each change of query starts a generation, and an answer from an earlier one is
+  // dropped: after going away and back, a slow one would undo what has loaded since.
+  const generation = useRef(0);
+  const asked = useRef(query);
+  const polling = useRef(false);
+  const older = useRef(false);
+  if (asked.current !== query) {
+    asked.current = query;
+    generation.current++;
+    polling.current = false;
+    older.current = false;
+  }
   // Without a key the route is always there on a kman that has it, so only that answer
   // says an older kman lacks it: an unknown key is not found too.
   const unsupported = useRef(false);
 
   const update = useCallback((q: string, change: (s: Requests) => Partial<Requests>) => {
     setState((s) => {
-      if (wanted.current !== q) return s;
       const was = s.query === q ? s : { ...noRequests, query: q };
       return { ...was, ...change(was), query: q };
     });
   }, []);
 
   useEffect(() => {
-    if (polling.current === query || unsupported.current) return;
-    polling.current = query;
+    if (!at || polling.current || unsupported.current) return;
+    polling.current = true;
+    const mine = generation.current;
+    const stale = () => mine !== generation.current;
     const base: EventQuery = { key, kind, limit: EVENT_PAGE };
     void (async () => {
       try {
         const pages: EventPage[] = [await client.events(base)];
         const newest = held.current.query === query ? held.current.rows[0]?.id : undefined;
         // More may have arrived than a page holds: read back to what is held.
-        for (let last = pages[0]!; newest !== undefined && last.more && last.next_before! > newest && pages.length < CATCH_UP_PAGES; ) {
+        for (let last = pages[0]!; !stale() && newest !== undefined && last.more && last.next_before! > newest && pages.length < CATCH_UP_PAGES; ) {
           last = await client.events({ ...base, before: last.next_before });
           pages.push(last);
         }
-        update(query, (s) => ({ ...mergeNewest(s, pages), loaded: true, at: Date.now(), error: undefined }));
+        if (!stale()) update(query, (s) => ({ ...mergeNewest(s, pages, keep.current), loaded: true, at: Date.now(), error: undefined }));
       } catch (err) {
-        if (!key && !kind && isMissingRoute(err)) {
+        if (stale()) return;
+        if (!key && isMissingRoute(err)) {
           unsupported.current = true;
           return update(query, () => ({ unsupported: true }));
         }
         update(query, () => ({ error: err instanceof Error ? err.message : String(err) }));
       } finally {
-        if (polling.current === query) polling.current = undefined;
+        if (!stale()) polling.current = false;
       }
     })();
   }, [client, query, key, kind, at, update]);
 
+  // The install stopped giving addresses out: those held go, whatever the next page holds.
+  useEffect(() => {
+    if (exposed === false) setState((s) => (s.rows.some((r) => r.client_address) ? { ...s, rows: withoutAddresses(s.rows) } : s));
+  }, [exposed, state.rows]);
+
   const loadOlder = useCallback(() => {
     const s = held.current;
     const oldest = s.rows.at(-1)?.id;
-    if (s.query !== query || !s.more || oldest === undefined || older.current === query) return;
-    older.current = query;
+    const room = MAX_ROWS - s.rows.length;
+    if (s.query !== query || !s.more || oldest === undefined || room <= 0 || older.current) return;
+    older.current = true;
+    const mine = generation.current;
     update(query, () => ({ loadingOlder: true }));
-    client.events({ key, kind, limit: EVENT_PAGE, before: oldest }).then(
+    client.events({ key, kind, limit: Math.min(EVENT_PAGE, room), before: oldest }).then(
       (page) => {
-        older.current = undefined;
+        if (mine !== generation.current) return;
+        older.current = false;
         update(query, (now) => ({ ...mergeOlder(now, page, oldest), loadingOlder: false }));
       },
       (err: unknown) => {
-        older.current = undefined;
+        if (mine !== generation.current) return;
+        older.current = false;
         update(query, () => ({ loadingOlder: false, error: err instanceof Error ? err.message : String(err) }));
       },
     );
   }, [client, query, key, kind, update]);
 
-  const shown: Requests = state.query === query ? state : noRequests;
+  // A state left from another query shows nothing, and one being gone back to is not "loading older".
+  const shown: Requests = state.query === query ? { ...state, loadingOlder: state.loadingOlder && older.current } : noRequests;
   return { ...shown, unsupported: unsupported.current, loadOlder };
 }
 
@@ -368,27 +401,32 @@ export function useKeyRequests(client: AdminClient, id: string | undefined, at: 
 /** Details fetched at once, so a hundred open incidents do not become a hundred requests together. */
 const DETAILS_AT_ONCE = 6;
 
-const detailMark = (i: Incident) => `${i.last_fired_at}|${i.detection_count}`;
+/** What makes a held detail old: another firing, or addresses being given out or not. */
+const detailMark = (i: Incident, exposed: boolean | undefined) => `${i.last_fired_at}|${i.detection_count}|${exposed}`;
 
 /**
  * The detail of each unresolved incident that is not a canary's, which is what says which
- * requests look like it. Fetched again only when the incident fires or counts more.
+ * requests look like it. Fetched again only when the incident fires or counts more, or
+ * `exposed` changes, which changes what its evidence holds.
  * `incomplete` says one is missing or behind, so a request may lack its flag.
  */
-export function useIncidentDetails(client: AdminClient, incidents: Incident[] | undefined, at: number) {
+export function useIncidentDetails(client: AdminClient, incidents: Incident[] | undefined, at: number, exposed?: boolean) {
   const cache = useRef(new Map<number, { mark: string; detail: IncidentDetail }>());
   const fetching = useRef(new Set<number>());
   const [version, setVersion] = useState(0);
   const wanted = (incidents ?? []).filter((i) => i.state !== 'resolved' && !isCanary(i));
   useEffect(() => {
-    const stale = wanted.filter((i) => cache.current.get(i.id)?.mark !== detailMark(i) && !fetching.current.has(i.id));
+    // What is resolved is let go.
+    const ids = new Set(wanted.map((i) => i.id));
+    for (const id of cache.current.keys()) if (!ids.has(id)) cache.current.delete(id);
+    const stale = wanted.filter((i) => cache.current.get(i.id)?.mark !== detailMark(i, exposed) && !fetching.current.has(i.id));
     if (stale.length === 0) return;
     for (const i of stale) fetching.current.add(i.id);
     const queue = [...stale];
     const worker = async () => {
       for (let i = queue.shift(); i; i = queue.shift()) {
         try {
-          cache.current.set(i.id, { mark: detailMark(i), detail: await client.incident(i.id) });
+          cache.current.set(i.id, { mark: detailMark(i, exposed), detail: await client.incident(i.id) });
           setVersion((v) => v + 1);
         } catch {
           // Tried again on the next poll; what was held stays, and the table says it may be behind.
@@ -398,15 +436,15 @@ export function useIncidentDetails(client: AdminClient, incidents: Incident[] | 
       }
     };
     for (let n = 0; n < DETAILS_AT_ONCE; n++) void worker();
-  }, [client, incidents, at]);
+  }, [client, incidents, at, exposed]);
   return useMemo(() => {
     const details = new Map<number, IncidentDetail>();
     let incomplete = false;
     for (const i of wanted) {
       const held = cache.current.get(i.id);
       if (held) details.set(i.id, held.detail);
-      if (held?.mark !== detailMark(i)) incomplete = true;
+      if (held?.mark !== detailMark(i, exposed)) incomplete = true;
     }
     return { details, incomplete };
-  }, [incidents, version]);
+  }, [incidents, version, exposed]);
 }

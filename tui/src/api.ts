@@ -97,6 +97,8 @@ export interface PriceDataStatus {
 export interface Settings {
   default_key_ttl_seconds: number;
   max_key_lifetime_seconds: number;
+  /** Whether the admin API gives client addresses and networks out. */
+  expose_client_addresses?: boolean;
 }
 
 export interface CreateKeyInput {

@@ -214,6 +214,125 @@ describe('the requests table', () => {
     m.unmount();
   });
 
+  it('drops a slow answer from before the filter went away and came back', async () => {
+    const client = traffic();
+    const events = client.events.bind(client);
+    let release = () => {};
+    let held = false;
+    client.events = async (query) => {
+      const page = await events(query);
+      // The first fetch of everything after the table is up is slow, and says what was so then.
+      if (!held && !query?.kind && client.requests.length === 4 && slow) {
+        held = true;
+        await new Promise<void>((r) => (release = r));
+      }
+      return page;
+    };
+    let slow = false;
+    const m = mount(client, SMALL, 100);
+    await onRequests(m);
+    slow = true;
+    await until(() => held, 'the slow poll');
+    client.requests.push(request({ id: 5, ...bad }, 1000));
+    await m.press('f', 'f', 'f');
+    await until(() => m.table().length === 5, 'the newest');
+    client.events = async () => new Promise(() => {});
+    release();
+    await tick(200);
+    expect(m.table()).toHaveLength(5);
+    m.unmount();
+  });
+
+  it('counts nothing as new for a move made before the selection settled', async () => {
+    const client = traffic();
+    client.incident = async () => {
+      throw new ApiError('internal', 'database is locked', 500);
+    };
+    const m = mount(client);
+    await until(() => m.screen().includes('live'), 'the first load');
+    await m.press('5', 'f');
+    await until(() => m.table().length > 1, 'the flagged rows');
+    await m.settle();
+    await m.press('j');
+    expect(m.screen()).toContain('all keys · flagged');
+    expect(m.screen()).not.toMatch(/\d new/);
+    m.unmount();
+  });
+
+  it('fetches an incident again when addresses are turned on, and drops them when off', async () => {
+    const client = traffic();
+    client.exposeClients = false;
+    client.incidents = [client.incidents[0]!];
+    const network = { detections: [{ id: 1, time: new Date(NOW).toISOString(), rule: 'new_network', severity: 'low' as const, evidence: { address_withheld: true } }] };
+    client.recorded = { 12: network };
+    client.requests = [request({ id: 1, ...bad, kind: 'forwarded', status: 200, refusal_code: undefined, client_address: '203.0.113.7' }, 1000)];
+    const m = mount(client, SMALL, 100);
+    await until(() => m.screen().includes('live'), 'the first load');
+    await m.press('5');
+    await until(() => m.table().length === 1, 'the row');
+    expect(m.table()[0]).toMatch(/^│ {3}/);
+    client.exposeClients = true;
+    Object.assign(network.detections[0]!.evidence, { network: '203.0.113.0/24', address_withheld: false });
+    await until(() => /^│ ! /.test(m.table()[0] ?? ''), 'the flag');
+    expect(m.screen()).toContain('203.0.113.7');
+    // Off again, and the next answer holds no row with an address to say so.
+    client.events = async () => ({ events: [], more: true, next_before: 1 });
+    client.exposeClients = false;
+    await until(() => !m.screen().includes('203.0.113.7'), 'it gone');
+    m.unmount();
+  });
+
+  it('says how many are loaded without an "of" when none is flagged', async () => {
+    const client = traffic();
+    client.incidents = [];
+    client.canaryIds = [];
+    client.requests = [request({ id: 1 })];
+    for (const size of [SMALL, { columns: 140, rows: 40 }]) {
+      const m = mount(client, size);
+      await until(() => m.screen().includes('1 loaded'), 'it');
+      expect(m.screen()).not.toContain('of 1 loaded');
+      m.unmount();
+    }
+  });
+
+  it('keeps a space after a column that is cut in a key’s last requests', async () => {
+    const client = traffic();
+    client.requests = [request({ id: 1, client: 'anthropic-typescript/123456', kind: 'refused', status: 403, refusal_code: 'address_not_allowed' })];
+    for (const size of [{ columns: 100, rows: 40 }, { columns: 80, rows: 40 }]) {
+      const m = mount(client, size);
+      await until(() => m.screen().includes('live'), 'the first load');
+      await m.press('2');
+      await until(() => m.screen().includes('LAST REQUESTS'), 'them');
+      await m.settle();
+      expect(m.screen()).toMatch(/… 403|123456 403/);
+      m.unmount();
+    }
+  });
+
+  it('asks for no events until the first poll has answered', async () => {
+    const client = traffic();
+    client.listKeys = () => new Promise(() => {});
+    const asked = vi.spyOn(client, 'events');
+    const m = mount(client);
+    await tick(300);
+    expect(asked).not.toHaveBeenCalled();
+    m.unmount();
+  });
+
+  it('offers v on a canary’s row in Status, and names it while its requests load', async () => {
+    const client = traffic();
+    client.incidents = [client.incidents[1]!];
+    const events = client.events.bind(client);
+    client.events = async (query) => (query?.key ? new Promise(() => {}) : events(query));
+    const m = mount(client, { columns: 140, rows: 40 });
+    await until(() => m.screen().includes('live'), 'the first load');
+    await m.settle();
+    expect(m.screen()).toContain('v requests');
+    await m.press('v');
+    expect(m.screen()).toContain('Requests · wiki-canary');
+    m.unmount();
+  });
+
   it('opens the incident from a flagged row, and the key from another', async () => {
     const m = mount();
     await onRequests(m);
@@ -271,6 +390,9 @@ describe('the requests table', () => {
     await m.press('2', 'v');
     expect(m.screen()).not.toContain('Requests');
     expect(m.screen()).not.toContain('LAST REQUESTS');
+    await m.press('?');
+    expect(m.screen()).toContain('1-4  h l');
+    expect(m.screen()).not.toContain('requests');
     m.unmount();
   });
 

@@ -137,6 +137,25 @@ describe('joining the pages to the rows held', () => {
     expect(ids(mergeOlder({ rows: rows(30, 29), more: true }, page([3, 2]), 4))).toEqual([30, 29]);
   });
 
+  it('keeps the selected request past the most it holds, up to twice as many', () => {
+    const newest = 2 * MAX_ROWS + 10;
+    const full = { rows: rows(...Array.from({ length: MAX_ROWS }, (_, i) => MAX_ROWS - i)), more: true };
+    const next = page([MAX_ROWS + 2, MAX_ROWS + 1, MAX_ROWS], true);
+    // The oldest are let go, but not the selected one.
+    expect(mergeNewest(full, [next]).rows.at(-1)!.id).toBe(3);
+    const kept = mergeNewest(full, [next], 1);
+    expect(kept.rows.at(-1)!.id).toBe(1);
+    expect(kept.rows).toHaveLength(MAX_ROWS + 2);
+    const huge = { rows: rows(...Array.from({ length: newest }, (_, i) => newest - i)), more: true };
+    expect(mergeNewest(huge, [page([newest], true)], 1).rows).toHaveLength(2 * MAX_ROWS);
+  });
+
+  it('does not take an address in a network that is not one', () => {
+    for (const network of ['203.0.113.0/99', '2001:db8::/200', '203.0.113.0/24/8', '203.0.113.0']) {
+      expect(matches(detection(1, 'new_network', { network }), alike({ id: 1, client_address: '203.0.113.7' })), network).toBe(false);
+    }
+  });
+
   it('holds only so many rows', () => {
     const many = Array.from({ length: MAX_ROWS + 5 }, (_, i) => MAX_ROWS + 5 - i);
     const got = mergeNewest({ rows: [], more: false }, [page(many)]);
