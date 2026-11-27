@@ -429,7 +429,7 @@ export function createClient(conn: Connection): AdminClient {
           // A connection dropped part way through a reply gives no 'end', and no error on
           // the request: without this the reply is waited on for ever.
           const cut = () => {
-            if (!res.complete) reject(new ApiError('unreachable', `cannot reach ${conn.url}: the reply was cut off`));
+            if (!res.complete) reject(new ApiError('unreachable', `the reply from ${conn.url} was cut off`));
           };
           res.on('error', cut);
           res.on('close', cut);

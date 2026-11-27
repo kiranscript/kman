@@ -555,7 +555,15 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     // This try, or an earlier one for this incident that got no answer.
     const warning = lost.current?.id === id ? maybe : undefined;
     if (ended) {
-      return setNotice({ tone: 'error', text: `Incident #${id} ${endedText(ended)}. Could not rotate: ${error}.${warning ? ` ${warning}` : ''}` });
+      const how = `Incident #${id} ${endedText(ended)}.`;
+      // Refused every time it was asked, so nothing was rotated from here.
+      if (!warning) return setNotice({ tone: 'error', text: `${how} Could not rotate: ${error}.` });
+      // A rotation recorded on the incident happened, whatever became of its answer.
+      const done = ended.actions?.find((x) => x.action === 'key.rotate' && x.target_id === key.id);
+      const text = done
+        ? `${keyLabel(key)} was rotated by ${done.actor}, but no new secret arrived here: run ${cli.rotate(keyLabel(key))} for one you can see. ${how} (${error})`
+        : `${how} No answer to rotating ${keyLabel(key)}: ${error}. ${warning}`;
+      return setNotice({ tone: 'error', text });
     }
     if (error || !rotated) return setDialogError(`${error ?? 'kman did not return the new secret'}${warning ? `. ${warning}` : ''}`);
     setNotice(undefined);
