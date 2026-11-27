@@ -1,6 +1,6 @@
 # kman-tui
 
-A terminal client for a running kman, built with [Ink](https://github.com/vadimdemedes/ink) (React for the terminal). It is a thin client of the admin API. It shows who is using each virtual key and where: the open incidents (a key turning up from somewhere new, or a canary being used), the keys that would be easy to abuse if they leaked, and the countries, networks and clients each key was used from. It also shows each key's spend against its caps, the upstreams and the audit log, and can disable, enable, revoke and create virtual keys, and answer an incident: acknowledge it, say it was you, resolve it, contain its key, or arm its canary again. [ADR 0009](../docs/adr/0009-the-tui-is-a-separate-thin-client.md) says why it is a separate package and what it may and may not do.
+A terminal client for a running kman, built with [Ink](https://github.com/vadimdemedes/ink) (React for the terminal). It is a thin client of the admin API. It shows who is using each virtual key and where: the open incidents (a key turning up from somewhere new, or a canary being used), the keys that would be easy to abuse if they leaked, and the countries, networks and clients each key was used from. It also shows the recent requests with the suspicious ones flagged, each key's spend against its caps, the upstreams and the audit log, and can disable, enable, revoke and create virtual keys, and answer an incident: acknowledge it, say it was you, resolve it, contain its key, or arm its canary again. [ADR 0009](../docs/adr/0009-the-tui-is-a-separate-thin-client.md) says why it is a separate package and what it may and may not do.
 
 It does not run the server. Start kman first (`kman serve`), then this.
 
@@ -21,13 +21,13 @@ It finds the admin address and token the way the kman CLI does: the credentials 
 
 ## Layout
 
-The screen follows [lazygit](https://github.com/jesseduffield/lazygit): numbered panels down the left (Status, Keys, Upstreams, Audit), the details of the selected line in the main panel on the right, and the keys that work right now along the bottom. The focused panel has a green border and is the tall one; the others shrink to the one line that is selected. The selected line is a blue bar, and a panel's bottom border says where it is (`2 of 7`). Below 100 columns the main panel goes under the panels instead of beside them, and on a short terminal (under 30 rows) the panels that are not focused shrink to a single line each, so the detail keeps the room. Status names the install (`owner @ host:port`) in its top border and counts both keys and upstreams that need attention.
+The screen follows [lazygit](https://github.com/jesseduffield/lazygit): numbered panels down the left (Status, Keys, Upstreams, Audit, Requests), the details of the selected line in the main panel on the right, and the keys that work right now along the bottom. The focused panel has a green border and is the tall one; the others shrink to the one line that is selected. The selected line is a blue bar, and a panel's bottom border says where it is (`2 of 7`). Below 100 columns the main panel goes under the panels instead of beside them, and on a short terminal (under 30 rows) the panels that are not focused shrink to a single line each, so the detail keeps the room. Status names the install (`owner @ host:port`) in its top border and counts both keys and upstreams that need attention.
 
 ## Keys
 
 | Key | Does |
 |---|---|
-| `1`–`4`, `←` `→`, `h` `l`, `Tab` | focus a panel: Status, Keys, Upstreams, Audit |
+| `1`–`5`, `←` `→`, `h` `l`, `Tab` | focus a panel: Status, Keys, Upstreams, Audit, Requests |
 | `↑` `↓`, `j` `k`, `PgUp` `PgDn`, `g` `G` | move |
 | `Enter` | on a row marked as an incident, in Status or Keys: open the incident (see [Answering an incident](#answering-an-incident)) |
 | `Enter` (Status) | open the selected key from Needs attention |
@@ -37,6 +37,7 @@ The screen follows [lazygit](https://github.com/jesseduffield/lazygit): numbered
 | `n` | create a key |
 | `d`, `e` | disable, enable the selected key (asks y/n) |
 | `x` | revoke the selected key (asks for its name to be typed) |
+| `v` | on a key, in Keys or Status: its requests (see [Recent requests](#recent-requests)) |
 | `c` | the addresses the selected key was used from, grouped, newest first (see below) |
 | `r` | refresh now (it also refreshes every 3 seconds) |
 | `?` | help |
@@ -92,6 +93,34 @@ Action keys are ignored for a moment after the view or one of its dialogs appear
 ## Where a key is used
 
 A key's detail opens with its warnings and then **Where it is used**: each country, ASN, network and client it was used from, most recently seen first, with when it was last seen and how many requests kman forwarded and refused from there. Refused requests are what a locked key turning up somewhere else looks like, so they are marked. These are the places `kman key places` lists, which kman keeps after the events are pruned. Networks are left out unless `expose_client_addresses` is on, as for the addresses below. After that come the policy (where the key may be used from first), and last the spend: today and this month against the caps, with what is left after charges and in-flight reservations.
+
+## Recent requests
+
+`5` shows the requests through kman, newest first, from the events it keeps: time, key, country and AS number, client and result, with the incident's number where the request is flagged for one. A wider screen adds the AS's organisation, the operation and the model; as it narrows the model goes first, then the operation, then the organisation. A client address column appears only while `expose_client_addresses` is on. A request that presented no key kman knows is `(no key)`, with no country or AS. Under the selected row are its whole operation and model, and why it is flagged. Below a table 110 columns wide the panels go above it, a line each, so it has the whole width.
+
+| Key | Does |
+|---|---|
+| `↑` `↓`, `j` `k`, `PgUp` `PgDn` | move; past the end loads older requests |
+| `g`, `G` | the newest; the oldest loaded |
+| `f` | all, flagged (`!` or `▲`), refused |
+| `Enter` | open the request's incident, or else its key |
+| `Esc` | from one key's requests (`v`), back to all keys |
+
+New requests arrive on the 3-second poll, about 5 seconds after they are made. The selection stays on the same request as they do, and the title says how many are new above it. A key's detail lists its last five. If the requests stop loading, the rows are kept and marked old. A kman without the events route has no panel.
+
+### What the flags mean
+
+Events carry no flag, so the TUI works it out:
+
+- `!` the request used a canary key, or its key has an unresolved incident, it is no older than the incident, and it looks like one of its detections: every one of country, AS number and client that the detection recorded is the same, what was new among them. A new network also needs the address to be in that network, which can only be told with `expose_client_addresses` on. A detection that recorded only a client counts only for a new client.
+- `▲` otherwise, the request was refused, or presented no key kman knows.
+
+What the flags cannot tell:
+
+- Your own traffic is flagged if it looks the same as the suspicious request.
+- Nothing the rules never raised is flagged: what a key did while learning, or from a known source.
+- An incident's flags go when it is resolved.
+- An incident's detail lists at most 100 detections, and only those are compared.
 
 ## Which addresses used a key
 

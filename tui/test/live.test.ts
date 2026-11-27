@@ -12,6 +12,7 @@ import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ApiError, createClient } from '../src/api.js';
 import type { Incident } from '../src/api.js';
+import { matches } from '../src/requests.js';
 
 const url = process.env.KMAN_TUI_LIVE_URL;
 const token = process.env.KMAN_TUI_LIVE_TOKEN;
@@ -216,11 +217,43 @@ describe.skipIf(!url || !token)('against a real kman', () => {
       await client.revokeKey(third.key.id);
     }, 90_000);
 
+    it('reads events and canaries in the shapes the requests table expects', async () => {
+      const { key, secret, proxy_url, incident } = await leakedKey('events');
+      // A key kman does not know.
+      await use(proxy_url!, `${secret.slice(0, -4)}xxxx`, 'curl/8');
+      let page = await client.events({ key: key.id, limit: 1 });
+      for (let n = 0; n < 150 && !(page.events.length && page.more); n++) {
+        await new Promise((r) => setTimeout(r, 200));
+        page = await client.events({ key: key.id, limit: 1 });
+      }
+      expect(page).toMatchObject({ more: true, next_before: page.events[0]!.id });
+      expect(page.events[0]).toMatchObject({ id: expect.any(Number), time: expect.any(String), kind: 'forwarded', key_id: key.id, key_name: key.name, client: 'curl/8', operation: 'GET /v1/models', status: 200 });
+      const older = await client.events({ key: key.id, before: page.next_before });
+      expect(older.events.map((e) => e.client)).toEqual(['usual-app/1']);
+      expect(older.more).toBe(false);
+      let unknown = (await client.events({ kind: 'refused', limit: 20 })).events.find((e) => e.unidentified_key);
+      for (let n = 0; n < 150 && !unknown; n++) {
+        await new Promise((r) => setTimeout(r, 200));
+        unknown = (await client.events({ kind: 'refused', limit: 20 })).events.find((e) => e.unidentified_key);
+      }
+      expect(unknown).toMatchObject({ kind: 'refused', status: 401, refusal_code: expect.any(String) });
+      expect(unknown!.key_id).toBeUndefined();
+      // Addresses are off on a new install, and the page says it left them out.
+      expect(page.client_addresses_withheld).toBe(true);
+      expect(page.events[0]).toMatchObject({ client_address_withheld: true });
+      // The request that raised the incident matches what it recorded.
+      const detail = await client.incident(incident.id);
+      expect(detail.detections.some((d) => matches(d, page.events[0]!))).toBe(true);
+      expect(await client.canaries()).toEqual(expect.any(Array));
+      await client.revokeKey(key.id);
+    }, 90_000);
+
     it('resolves a canary incident and arms the canary again', async () => {
       const proxy = (await client.createKey({ upstream: upstreamName, name: `tui-live-proxy-${Date.now()}`, ttl_seconds: 3600 }));
       const canary = await admin<{ canary: { id: string }; secret: string }>('POST', '/canaries', { name: `tui-live-canary-${Date.now()}`, planted: 'the live test', format: 'env' });
       await use(proxy.proxy_url!, canary.secret, 'curl/8');
       const incident = await incidentOf(canary.canary.id);
+      expect((await client.canaries()).map((c) => c.id)).toContain(canary.canary.id);
       const detail = await client.incident(incident.id);
       expect(detail).toMatchObject({ rules: ['canary'], severity: 'critical', known_source_candidates: [] });
       expect(detail.detections[0]!.evidence.detail).toContain('the live test');

@@ -9,7 +9,7 @@ const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
   {
     title: 'GLOBAL',
     rows: [
-      ['1-4  h l  ← →', 'jump to a panel; step to the next or previous'],
+      ['1-5  h l  ← →', 'jump to a panel; step to the next or previous'],
       ['Tab  ⇧Tab', 'next panel, previous panel'],
       ['↑ ↓  j k  PgUp PgDn', 'move in the focused panel'],
       ['g  G  Home  End', 'first, last'],
@@ -27,10 +27,29 @@ const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
       ['/   Esc', 'filter by name, id, tag or upstream; clear it'],
       ['Enter', 'open its incident, else focus a longer detail'],
       ['d  e', 'disable, enable the key (y confirms, n cancels)'],
+      ['v', "the key's requests"],
       ['c', 'the IP addresses a key was used from'],
       ['x', 'revoke the key (type its name to confirm)'],
     ],
   },
+  {
+    title: 'REQUESTS',
+    panel: 'requests',
+    rows: [
+      ['↑ ↓  j k  PgUp PgDn', 'move; past the end loads older ones'],
+      ['g  G  Home  End', 'newest; oldest loaded'],
+      ['f', 'all, flagged, refused'],
+      ['Enter', "open the request's incident, else its key"],
+      ['Esc', 'back to all keys'],
+    ],
+  },
+];
+
+/** What the flags of the requests table claim, and what they cannot. */
+const FLAG_NOTES = [
+  '! a canary key, or like what an open incident saw (maybe your own use).',
+  '▲ refused, or unknown key. Never !: what no rule raised (learning, a known',
+  'source), resolved incidents, and detections past the 100 listed.',
 ];
 
 const DETAIL = {
@@ -61,7 +80,7 @@ const INCIDENT = {
 const DETAIL_GLOBAL = {
   title: 'GLOBAL',
   rows: [
-    ['1-4  h l  ← →  Tab', 'go to another panel (the list gets the keyboard)'],
+    ['1-5  h l  ← →  Tab', 'go to another panel (the list gets the keyboard)'],
     ['r', 'refresh now'],
     ['q  Ctrl+C', 'quit (this help: Esc or ? closes)'],
   ] as [string, string][],
@@ -76,7 +95,9 @@ export function HelpDialog({ onClose, focus, detail, incident }: { onClose: () =
   const alone = incident ? INCIDENT : detail ? DETAIL : undefined;
   const mine = alone ? undefined : groups.find((g) => g.panel === focus);
   // On Status Enter opens the selected item, so the list-with-a-detail line does not apply there.
-  const global = focus === 'status' || focus === 'keys' ? { ...groups[0]!, rows: groups[0]!.rows.filter(([k]) => k !== 'Enter') } : groups[0]!;
+  // The requests table moves and opens its own way, which its group says: only the rest is repeated.
+  const unsaid = focus === 'requests' ? ['↑ ↓  j k  PgUp PgDn', 'g  G  Home  End', 'Enter', 'J  K'] : focus === 'status' || focus === 'keys' ? ['Enter'] : [];
+  const global = { ...groups[0]!, rows: groups[0]!.rows.filter(([k]) => !unsaid.includes(k)) };
   const ordered = alone ? [alone, DETAIL_GLOBAL] : [...(mine ? [mine] : []), global];
   useInput((_i, key) => {
     if (key.escape || key.return || _i === '?') onClose();
@@ -101,6 +122,15 @@ export function HelpDialog({ onClose, focus, detail, incident }: { onClose: () =
           ))}
         </Box>
       ))}
+      {mine?.panel === 'requests' ? (
+        <Box marginTop={1} flexDirection="column">
+          {FLAG_NOTES.map((l) => (
+            <Text key={l} dimColor>
+              {l}
+            </Text>
+          ))}
+        </Box>
+      ) : null}
       <Box marginTop={1} flexDirection="column">
         <SectionTitle>MARKS</SectionTitle>
         <Text dimColor>

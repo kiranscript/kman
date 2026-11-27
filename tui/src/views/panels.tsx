@@ -676,3 +676,51 @@ export function AuditPanel({
     </Shell>
   );
 }
+
+// ---- Requests -------------------------------------------------------------
+
+/** Whose requests the table shows, and how many of those loaded are flagged. The table is the main panel. */
+export function RequestsPanel({
+  width,
+  height,
+  focused,
+  keyName,
+  danger,
+  warn,
+  loaded,
+  brief,
+}: PanelProps & {
+  keyName?: string;
+  /** In a strip too narrow for more than the counts. */
+  brief?: boolean;
+  /** Rows marked danger, and warn, among those loaded. */
+  danger: number;
+  warn: number;
+  /** Undefined before anything has been answered. */
+  loaded?: number;
+}) {
+  const title = '[5] Requests';
+  const inner = innerWidth(width, height, title);
+  const lead: Seg[] = height <= 1 ? [] : [{ t: ' ' }];
+  const who: Seg = { t: keyName ?? 'all keys' };
+  const counts: Seg[] =
+    loaded === undefined
+      ? [{ t: 'loading…', dim: true }]
+      : [
+          ...(danger ? [{ t: `${severityGlyph.danger} ${danger} `, color: severityColor.danger }] : []),
+          ...(warn ? [{ t: `${severityGlyph.warn} ${warn} `, color: severityColor.warn }] : []),
+          { t: `of ${loaded} loaded`, dim: true },
+        ];
+  return (
+    <Shell title={title} focused={focused} width={width} height={height}>
+      {height <= 3 ? (
+        <Row width={inner} left={brief ? counts : [...lead, who, { t: ' · ', dim: true }, ...counts]} />
+      ) : (
+        <>
+          <Row width={inner} left={[...lead, who]} />
+          <Row width={inner} left={[...lead, ...counts]} />
+        </>
+      )}
+    </Shell>
+  );
+}

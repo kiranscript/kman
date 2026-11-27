@@ -10,6 +10,7 @@ import type {
   KeyClients,
   KeyPlaces,
   Place,
+  RequestEvent,
   Resolution,
   Upstream,
 } from '../src/api.js';
@@ -76,6 +77,24 @@ export function leak(): Recorded {
   };
 }
 
+/** A forwarded request from checkout's usual place, `ago` before NOW; the newest has the highest id. */
+export function request(over: Partial<RequestEvent> & { id: number }, ago = 60_000): RequestEvent {
+  return {
+    time: new Date(NOW - ago).toISOString(),
+    kind: 'forwarded',
+    key_id: 'k_checkout',
+    key_name: 'checkout',
+    country: 'US',
+    asn: 16509,
+    asn_label: 'Amazon.com, Inc.',
+    client: 'openai-node/4',
+    operation: 'POST /v1/chat/completions',
+    model: 'gpt-5.4',
+    status: 200,
+    ...over,
+  };
+}
+
 export function place(over: Partial<Place> & Pick<Place, 'kind' | 'value'>): Place {
   return {
     first_seen: new Date(NOW - 20 * day).toISOString(),
@@ -124,6 +143,9 @@ export interface Fake extends AdminClient {
   recorded: Record<number, Recorded>;
   /** The audit entries the changes made, newest last: each with the incident it was for. */
   audited: AuditEntry[];
+  canaryIds: string[];
+  /** Stored requests, in any order. */
+  requests: RequestEvent[];
 }
 
 /** An in-memory admin API that records the changes it is asked to make. */
@@ -171,6 +193,8 @@ export function fakeClient(keys: Key[] = defaultKeys()): Fake {
     findings: [],
     recorded: {},
     audited: [],
+    canaryIds: [],
+    requests: [],
     async whoami() {
       guard();
       return 'owner';
@@ -295,6 +319,26 @@ export function fakeClient(keys: Key[] = defaultKeys()): Fake {
         ? (fake.recorded[id]?.known_source_candidates ?? []).filter((c) => !c.withheld && (!input.kinds || input.kinds.includes(c.kind === 'cidr' ? 'network' : c.kind)))
         : [];
       return { incident: structuredClone(i), added: picked.map((c, n) => ({ id: n + 1, kind: c.kind, value: c.value!, label: 'this was me' })) };
+    },
+    async canaries() {
+      guard();
+      return fake.canaryIds.map((id) => ({ id, state: 'armed' }));
+    },
+    async events(query = {}) {
+      guard();
+      if (query.key !== undefined && !fake.canaryIds.includes(query.key)) find(query.key);
+      const matching = fake.requests
+        .filter((e) => (query.key === undefined || e.key_id === query.key) && (query.kind === undefined || e.kind === query.kind) && (query.before === undefined || e.id < query.before))
+        .sort((a, b) => b.id - a.id);
+      const events = matching.slice(0, query.limit ?? 100);
+      const more = matching.length > events.length;
+      const withheld = !fake.exposeClients && events.some((e) => e.client_address !== undefined);
+      return structuredClone({
+        events: withheld ? events.map(({ client_address, ...e }) => ({ ...e, client_address_withheld: client_address !== undefined })) : events,
+        more,
+        ...(more ? { next_before: events.at(-1)!.id } : {}),
+        ...(withheld ? { client_addresses_withheld: true } : {}),
+      });
     },
     async resetCanary(id) {
       guard();

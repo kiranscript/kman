@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { COLLAPSED, layout, listArea } from '../src/layout.js';
 import type { Tab } from '../src/ui/chrome.js';
 
-const TABS: Tab[] = ['status', 'keys', 'upstreams', 'audit'];
+const TABS: Tab[] = ['status', 'keys', 'upstreams', 'audit', 'requests'];
 
 describe('layout', () => {
   it.each([
@@ -15,7 +15,8 @@ describe('layout', () => {
     for (const focus of TABS) {
       const l = layout(columns, rows, focus);
       const stack = Object.values(l.heights).reduce((a, b) => a + b, 0);
-      expect(l.wide ? stack : stack + l.mainH).toBe(rows);
+      // On a short screen the last two strips are one row.
+      expect(l.wide ? stack : stack + l.mainH - (l.shared ? 1 : 0)).toBe(rows);
       for (const h of Object.values(l.heights)) expect(h).toBeGreaterThanOrEqual(l.strips ? 1 : COLLAPSED);
       expect(l.leftW + (l.wide ? l.mainW : 0)).toBe(l.wide ? columns : columns);
     }
@@ -38,6 +39,24 @@ describe('layout', () => {
     expect(layout(120, 22, 'keys').strips).toBe(false);
   });
 
+  it('costs a short screen no row for the Requests strip until it or Audit is focused', () => {
+    const without = layout(80, 22, 'keys', 3, { panels: ['status', 'keys', 'upstreams', 'audit'] });
+    const withIt = layout(80, 22, 'keys', 3);
+    expect(withIt.shared).toBe(true);
+    expect(withIt.mainH).toBe(without.mainH);
+    for (const focus of ['audit', 'requests'] as Tab[]) expect(layout(80, 22, focus, 3).shared).toBe(false);
+    expect(layout(80, 40, 'keys', 3).shared).toBe(false);
+    expect(layout(140, 40, 'keys', 3).shared).toBe(false);
+  });
+
+  it('leaves out a panel a server cannot fill, and stacks a wide screen when asked', () => {
+    const four = layout(140, 40, 'keys', 3, { panels: ['status', 'keys', 'upstreams', 'audit'] });
+    expect(four.heights.requests).toBe(0);
+    const stacked = layout(140, 40, 'requests', 2, { stacked: true });
+    expect(stacked).toMatchObject({ wide: false, strips: true, mainW: 140 });
+    expect(stacked.mainH).toBeGreaterThanOrEqual(30);
+  });
+
   it('gives the panels about two fifths of a wide screen', () => {
     expect(layout(100, 30, 'keys').leftW).toBe(44);
     expect(layout(140, 40, 'keys').leftW).toBe(56);
@@ -46,12 +65,12 @@ describe('layout', () => {
 
   it('gives each wide panel what it can use, two lines at least, and the rest to the log so both columns end together', () => {
     const l = layout(140, 40, 'upstreams', { status: 5, keys: 3, upstreams: 1, audit: 1 });
-    expect([l.heights.status, l.heights.keys, l.heights.upstreams, l.heights.audit]).toEqual([7, 5, 3, 3 + (40 - 7 - 5 - 3 - 3)]);
+    expect([l.heights.status, l.heights.keys, l.heights.upstreams, l.heights.requests, l.heights.audit]).toEqual([7, 5, 3, 3, 3 + (40 - 7 - 5 - 3 - 3 - 3)]);
     // A focused list with more than the screen holds keeps the rest; the others keep their first rows.
     const busy = layout(140, 40, 'keys', { status: 5, keys: 100, upstreams: 1, audit: 100 });
     expect(busy.heights.status).toBe(5);
     expect(busy.heights.upstreams).toBe(3);
-    expect(busy.heights.keys + busy.heights.audit + busy.heights.status + busy.heights.upstreams).toBe(40);
+    expect(busy.heights.keys + busy.heights.audit + busy.heights.status + busy.heights.upstreams + busy.heights.requests).toBe(40);
   });
 
   it('never hides the rows of a problem: every wide panel keeps its first two', () => {

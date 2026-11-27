@@ -156,6 +156,47 @@ export interface KeyPlaces {
   networks_withheld?: boolean;
 }
 
+/** One request kman saw (GET /events), with no content, header or secret. */
+export interface RequestEvent {
+  id: number;
+  time: string;
+  /** refused: kman answered it itself, with a refusal code. */
+  kind: 'forwarded' | 'refused';
+  key_id?: string;
+  key_name?: string;
+  /** It presented no key kman knows. */
+  unidentified_key?: boolean;
+  /** Only with expose_client_addresses on. */
+  client_address?: string;
+  client_address_withheld?: boolean;
+  country?: string;
+  asn?: number;
+  /** The AS's organisation. */
+  asn_label?: string;
+  client?: string;
+  /** The method and path. */
+  operation?: string;
+  model?: string;
+  status?: number;
+  refusal_code?: string;
+}
+
+export interface EventQuery {
+  key?: string;
+  kind?: RequestEvent['kind'];
+  limit?: number;
+  /** Only events older than the one with this id. */
+  before?: number;
+}
+
+/** A page of events, newest first. */
+export interface EventPage {
+  events: RequestEvent[];
+  more: boolean;
+  next_before?: number;
+  client_addresses_withheld?: boolean;
+}
+
 export type IncidentSeverity = 'low' | 'medium' | 'high' | 'critical';
 
 /** The case kman opens for a key when a detection rule fires or a canary is used. */
@@ -344,6 +385,10 @@ export interface AdminClient {
   thisWasMe(id: number, input: ThisWasMeInput): Promise<ThisWasMeResult>;
   /** Arms a fired canary again, by its key id. */
   resetCanary(id: string): Promise<Canary>;
+  /** Every canary, revoked ones included. */
+  canaries(): Promise<Canary[]>;
+  /** Stored requests, newest first. A kman without them answers not_found. */
+  events(query?: EventQuery): Promise<EventPage>;
   /**
    * The client addresses a key was used from. Refused with `conflict` until the install turns
    * on expose_client_addresses: an address is personal data.
@@ -460,6 +505,14 @@ export function createClient(conn: Connection): AdminClient {
       return { ...got, added: got.added ?? [] };
     },
     resetCanary: (id) => request<Canary>('POST', `/admin/v1/canaries/${encodeURIComponent(id)}/reset`),
+    async canaries() {
+      return (await request<{ canaries: Canary[] | null }>('GET', '/admin/v1/canaries')).canaries ?? [];
+    },
+    async events(query = {}) {
+      const params = new URLSearchParams(Object.entries(query).flatMap(([k, v]) => (v === undefined ? [] : [[k, String(v)]])));
+      const page = await request<EventPage>('GET', `/admin/v1/events${params.size ? `?${params}` : ''}`);
+      return { ...page, events: page.events ?? [] };
+    },
     async keyClients(id) {
       const got = await request<KeyClients>('GET', `${keyPath(id)}/clients`);
       return { ...got, clients: got.clients ?? [] };

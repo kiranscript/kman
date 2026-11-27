@@ -6,7 +6,7 @@
 // contractor's key works from any address; a scratch key was never used. One key
 // is near its daily cap, which matters less.
 import { render } from 'ink';
-import type { Place } from '../src/api.js';
+import type { Place, RequestEvent } from '../src/api.js';
 import { App } from '../src/App.js';
 import { fakeClient, incident, key, NOW } from './fakes.js';
 
@@ -127,4 +127,22 @@ client.places = {
     ],
   },
 };
+// The requests behind it: the usual traffic, a probe, the leak refused, and the canary used.
+client.canaryIds = ['k_wiki'];
+let eventId = 1;
+const seen = (ago: number, over: Partial<RequestEvent>) =>
+  client.requests.push({ id: eventId++, time: at(ago), kind: 'forwarded', status: 200, operation: 'POST /v1/chat/completions', model: 'gpt-5.4', ...over });
+const usual = { key_id: 'k_checkout', key_name: 'checkout', country: 'US', asn: 16509, asn_label: 'Amazon.com, Inc.', client: 'openai-node/4' };
+const prod = { key_id: 'k_prod', key_name: 'prod-api', country: 'US', asn: 16509, asn_label: 'Amazon.com, Inc.', client: 'openai-python/1' };
+const leak = { kind: 'refused' as const, status: 403, refusal_code: 'address_not_allowed', key_id: 'k_prod', key_name: 'prod-api', country: 'NL', asn: 60729, asn_label: 'Stiftung Erneuerbare Freiheit', client: 'curl/8', client_address_withheld: true };
+// Oldest first, as kman stores them.
+seen(3 * 3600_000, usual);
+seen(2 * 3600_000, { kind: 'refused', status: 401, refusal_code: 'invalid_key', key_id: 'k_wiki', key_name: 'wiki-canary', country: 'RO', asn: 9009, asn_label: 'M247 Europe SRL', client: 'python-requests/2', model: undefined });
+seen(50 * min, prod);
+seen(40 * min, leak);
+seen(30 * min, { ...usual, key_id: 'k_ci', key_name: 'ci-evals', client: 'openai-python/1', asn: undefined, asn_label: undefined });
+seen(12 * min, { kind: 'refused', status: 401, refusal_code: 'invalid_key', unidentified_key: true, client: 'curl/8', model: undefined, operation: 'GET /v1/models' });
+seen(4 * min, leak);
+seen(3 * min, prod);
+seen(min, usual);
 render(<App client={client} url="http://127.0.0.1:8081" intervalMs={3000} />);

@@ -715,7 +715,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('2');
       // What can be done to the selected key is dropped last; scrolling and selecting go first.
-      for (const hint of ['↑↓ select', 'd disable', 'x revoke', '1-4 panels', '/ filter', '? help', 'q quit']) expect(lines(m).at(-1)).toContain(hint);
+      for (const hint of ['↑↓ select', 'd disable', 'x revoke', '1-5 panels', '/ filter', '? help', 'q quit']) expect(lines(m).at(-1)).toContain(hint);
       await m.press('d');
       expect(m.screen()).toContain('Disable this key?');
       expect(m.screen()).toContain('you can enable it again');
@@ -2788,7 +2788,7 @@ describe('review round 9', () => {
     const m = mount(fakeClient(), { columns: 80, rows: 24 });
     await loaded(m);
     await m.press('2');
-    expect(lines(m).at(-1)).toContain('1-4 panels');
+    expect(lines(m).at(-1)).toContain('1-5 panels');
     expect(lines(m).at(-1)).toMatch(/q quit {2,}● live/);
     m.unmount();
   });
@@ -2856,7 +2856,7 @@ describe('review round 10', () => {
     const m = mount(client, { columns: 80, rows: 24 });
     await loaded(m);
     await m.press('3');
-    expect(lines(m).at(-1)).toContain('1-4 panels');
+    expect(lines(m).at(-1)).toContain('1-5 panels');
     m.unmount();
   });
 

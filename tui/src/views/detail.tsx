@@ -14,6 +14,8 @@ import { color, severityColor, severityGlyph } from '../ui/theme.js';
 import { AUDIT_LIMIT } from '../useAdmin.js';
 import type { PlacesState } from '../useAdmin.js';
 import { actionColor, rowTarget, targetName, targetText } from './audit.js';
+import { LastRequests } from './requests.js';
+import type { Flagged } from './requests.js';
 import type { Names } from './audit.js';
 
 interface Size {
@@ -287,8 +289,19 @@ export function KeyMain({
   scroll,
   watch,
   places,
+  requests,
   none = 'No key selected.',
-}: Size & { keyData: Key | undefined; now: number; compact: boolean; scroll: Scroll; watch?: Watch; places?: PlacesState; none?: string }) {
+}: Size & {
+  keyData: Key | undefined;
+  now: number;
+  compact: boolean;
+  scroll: Scroll;
+  watch?: Watch;
+  places?: PlacesState;
+  /** Its last few requests; absent on a kman without events. */
+  requests?: { rows?: Flagged[]; error?: string };
+  none?: string;
+}) {
   const { onMax } = scroll;
   useEffect(() => {
     if (!k) onMax(0);
@@ -366,6 +379,15 @@ export function KeyMain({
             <Places state={places?.id === k.id ? places : undefined} k={k} width={width - 4} perKind={compact ? 2 : 3} now={now} />
           </Box>
         )}
+
+        {/* A key with none has "Not used yet" above, which says it. */}
+        {requests?.rows?.length || requests?.error ? (
+          <Box flexDirection="column" marginTop={gap}>
+            <SectionTitle>LAST REQUESTS · v shows more</SectionTitle>
+            {requests.error ? <Text color={color.warn} wrap="wrap">{`${severityGlyph.warn} ${requests.rows ? 'not updated' : 'could not load'}: ${requests.error}`}</Text> : null}
+            {requests.rows?.length ? <LastRequests rows={requests.rows} width={width - 4} now={now} /> : null}
+          </Box>
+        ) : null}
 
         <Box flexDirection="column" marginTop={gap}>
           {compact ? null : <SectionTitle>POLICY</SectionTitle>}

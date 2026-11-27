@@ -26,9 +26,11 @@ export interface Layout {
   mainW: number;
   mainH: number;
   heights: Record<Tab, number>;
+  /** The Audit and Requests strips share one row, so a short screen loses none to the latter. */
+  shared: boolean;
 }
 
-const PANELS: Tab[] = ['status', 'keys', 'upstreams', 'audit'];
+const PANELS: Tab[] = ['status', 'keys', 'upstreams', 'audit', 'requests'];
 
 /** The lines Status's summary is sure of above its list: one when there are no keys to count. */
 export const summaryRows = (noKeys: boolean) => (noKeys ? 1 : 3);
@@ -40,7 +42,7 @@ export const hasFilterRow = (filter: string, filtering: boolean) => filtering ||
 export type ListPanel =
   | { tab: 'status'; items: number; noKeys: boolean }
   | { tab: 'keys'; filterRow: boolean }
-  | { tab: 'upstreams' | 'audit' };
+  | { tab: 'upstreams' | 'audit' | 'requests' };
 
 /**
  * What a panel `height` rows high gives its list, when it is the focused one: the
@@ -71,13 +73,21 @@ export function listArea(height: number, panel: ListPanel): { header: number; ro
  * rows and the rest goes to the panels that can use it, as in lazygit, where every
  * panel keeps a share of the column.
  */
-export function layout(columns: number, rows: number, focus: Tab, want: number | Partial<Record<Tab, number>> = Infinity): Layout {
-  const wide = columns >= WIDE;
+export function layout(
+  columns: number,
+  rows: number,
+  focus: Tab,
+  want: number | Partial<Record<Tab, number>> = Infinity,
+  { panels = PANELS, stacked = false }: { panels?: Tab[]; stacked?: boolean } = {},
+): Layout {
+  // Stacked, whatever the width, when the main panel needs all of it, as a table does.
+  const wide = columns >= WIDE && !stacked;
   // About two fifths of the screen (44 cells at 100 columns), so names and targets keep room beside the detail.
   const leftW = wide ? Math.min(56, Math.max(44, Math.floor(columns * 0.42))) : columns;
-  const strips = !wide && rows < STRIP_ROWS;
+  const strips = !wide && (stacked || rows < STRIP_ROWS);
   const small = strips ? 1 : COLLAPSED;
-  const heights: Record<Tab, number> = { status: small, keys: small, upstreams: small, audit: small };
+  const of = (t: Tab) => (panels.includes(t) ? small : 0);
+  const heights: Record<Tab, number> = { status: of('status'), keys: of('keys'), upstreams: of('upstreams'), audit: of('audit'), requests: of('requests') };
   const wants: Partial<Record<Tab, number>> = typeof want === 'number' ? { [focus]: want } : want;
   // A panel nobody said anything about stays one line, unless it is the focused one.
   const need = (t: Tab) => (wants[t] === undefined ? (t === focus ? Infinity : COLLAPSED) : Math.max(COLLAPSED, wants[t]! + 2));
@@ -85,24 +95,27 @@ export function layout(columns: number, rows: number, focus: Tab, want: number |
   if (wide) {
     // First every panel gets what shows its first rows (up to FLOOR), so a problem is never
     // hidden; then the focused one gets what it can use, then Keys and the rest.
-    let spare = rows - COLLAPSED * PANELS.length;
+    let spare = rows - COLLAPSED * panels.length;
     const give = (t: Tab, upTo: number) => {
       const n = Math.max(0, Math.min(spare, upTo - heights[t]));
       heights[t] += n;
       spare -= n;
     };
-    const order = [focus, ...(['keys', 'status', 'upstreams', 'audit'] as Tab[]).filter((t) => t !== focus)];
+    const order = [focus, ...(['keys', 'status', 'upstreams', 'audit', 'requests'] as Tab[]).filter((t) => t !== focus && panels.includes(t))];
     for (const t of order) give(t, Math.min(FLOOR, need(t)));
     for (const t of order) give(t, need(t));
     // What nothing wants goes to the last panel (the log), so both columns end on the same row;
     // a focused panel with no limit takes it instead.
     heights[Number.isFinite(need(focus)) ? 'audit' : focus] += spare;
-    return { wide, strips, leftW, mainW: columns - leftW, mainH: rows, heights };
+    return { wide, strips, shared: false, leftW, mainW: columns - leftW, mainH: rows, heights };
   }
 
-  const rest = rows - small * 3;
+  // Asked to stack, the main panel has everything but a line a panel.
+  if (stacked) return { wide, strips, shared: false, leftW: columns, mainW: columns, mainH: rows - panels.length, heights };
+  const shared = strips && panels.includes('requests') && focus !== 'audit' && focus !== 'requests';
+  const rest = rows - small * (panels.length - 1 - (shared ? 1 : 0));
   const w = wants[focus] ?? Infinity;
   const own = Math.max(COLLAPSED, Math.min(Number.isFinite(w) ? w + 2 : rest, Math.max(5, Math.floor(rest / 2)), rest - MAIN_MIN));
   heights[focus] = own;
-  return { wide, strips, leftW, mainW: columns, mainH: rest - own, heights };
+  return { wide, strips, shared, leftW, mainW: columns, mainH: rest - own, heights };
 }
