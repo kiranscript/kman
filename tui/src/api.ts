@@ -446,7 +446,12 @@ export function createClient(conn: Connection): AdminClient {
     disableKey: (id, incident) => request<Key>('POST', `${keyPath(id)}/disable`, forIncident(incident)),
     enableKey: (id) => request<Key>('POST', `${keyPath(id)}/enable`),
     revokeKey: (id, incident) => request<Key>('POST', `${keyPath(id)}/revoke`, forIncident(incident)),
-    rotateKey: (id, incident) => request<RotatedKey>('POST', `${keyPath(id)}/rotate`, forIncident(incident)),
+    async rotateKey(id, incident) {
+      const got = await request<RotatedKey | null>('POST', `${keyPath(id)}/rotate`, forIncident(incident));
+      // The secret is given only this once: a reply without it is no success.
+      if (!got?.secret || !got.key) throw new ApiError('internal', 'the admin API sent no new secret', 200);
+      return got;
+    },
     async incident(id) {
       const got = await request<IncidentDetail>('GET', incidentPath(id));
       return withRules({
