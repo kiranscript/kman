@@ -264,7 +264,7 @@ export interface Requests extends Feed {
   /** The server has no such route (an older kman). */
   unsupported?: boolean;
   loadingOlder: boolean;
-  /** How many times the selected request has had to be let go. */
+  /** How many times a selected request has had to be let go, whichever the table: it only grows. */
   lost?: number;
 }
 
@@ -312,7 +312,7 @@ export function useRequests(
 
   const update = useCallback((q: string, change: (s: Requests) => Partial<Requests>) => {
     setState((s) => {
-      const was = s.query === q ? s : { ...noRequests, query: q };
+      const was = s.query === q ? s : { ...noRequests, query: q, lost: s.lost };
       return { ...was, ...change(was), query: q };
     });
   }, []);
@@ -399,7 +399,9 @@ export function useRequests(
 
   // A state left from another query shows nothing, and one being gone back to is not "loading older".
   const shown: Requests = state.query === query ? { ...state, loadingOlder: state.loadingOlder && older.current } : noRequests;
-  return { ...shown, unsupported: unsupported.current, loadOlder };
+  // The count of what was let go is of every table: one that went back to nothing and
+  // returned would be taken for a new loss.
+  return { ...shown, lost: state.lost ?? 0, unsupported: unsupported.current, loadOlder };
 }
 
 /**

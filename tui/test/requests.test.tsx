@@ -30,8 +30,8 @@ function traffic(): Fake {
   return client;
 }
 
-function mount(client = traffic(), size = SMALL, intervalMs = 60_000) {
-  const app = render(<App client={client} url="http://127.0.0.1:8081" size={size} intervalMs={intervalMs} actionGuardMs={0} />, size.columns);
+function mount(client = traffic(), size = SMALL, intervalMs = 60_000, noticeMs?: number) {
+  const app = render(<App client={client} url="http://127.0.0.1:8081" size={size} intervalMs={intervalMs} actionGuardMs={0} noticeMs={noticeMs} />, size.columns);
   const screen = () => app.lastFrame() ?? '';
   const settle = async () => {
     await tick(40);
@@ -426,6 +426,24 @@ describe('the requests table', () => {
     await until(() => m.screen().includes('Requests · ') && m.table().length > 0, 'another table');
     await m.settle();
     await tick(300);
+    expect(m.screen()).not.toContain('Too many new requests');
+    m.unmount();
+  }, 30_000);
+
+  it('does not say a loss again on going back before another table has answered', async () => {
+    const client = traffic();
+    const events = client.events.bind(client);
+    // Long enough to still be showing when looked for, short enough to wait out.
+    const m = mount(client, SMALL, 100, 1500);
+    await onRequests(m);
+    await m.press('j', 'j');
+    client.requests.push(...Array.from({ length: 11_500 }, (_, i) => request({ id: 5 + i, ...bad }, 11_500 - i)));
+    await until(() => m.screen().includes('Too many new requests'), 'the notice', 15_000);
+    await until(() => !m.screen().includes('Too many new requests'), 'it gone');
+    // The key's table never answers; Esc goes back before it could.
+    client.events = async (query) => (query?.key ? new Promise(() => {}) : events(query));
+    await m.press('2', 'v', ESC);
+    expect(m.screen()).toContain('Requests · all keys');
     expect(m.screen()).not.toContain('Too many new requests');
     m.unmount();
   }, 30_000);
