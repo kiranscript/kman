@@ -413,6 +413,23 @@ describe('the requests table', () => {
     m.unmount();
   }, 30_000);
 
+  it('says nothing of a lost place over a table started since', async () => {
+    const client = traffic();
+    const m = mount(client, SMALL, 100);
+    await onRequests(m);
+    await m.press('j', 'j', '2');
+    const asked = vi.spyOn(client, 'events');
+    client.requests.push(...Array.from({ length: 11_500 }, (_, i) => request({ id: 5 + i, ...bad }, 11_500 - i)));
+    await until(() => asked.mock.calls.filter(([q]) => !q?.key && !q?.before).length >= 2, 'the polls', 15_000);
+    await m.settle();
+    await m.press('v');
+    await until(() => m.screen().includes('Requests · ') && m.table().length > 0, 'another table');
+    await m.settle();
+    await tick(300);
+    expect(m.screen()).not.toContain('Too many new requests');
+    m.unmount();
+  }, 30_000);
+
   it('shows the model after a path too long for a few lines', async () => {
     const client = traffic();
     client.requests = [request({ id: 1, operation: `POST /v1/${'segment/'.repeat(30)}end`, model: 'ft:gpt-5.4:org:custom-deployment' })];
