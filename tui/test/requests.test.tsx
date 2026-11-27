@@ -300,7 +300,8 @@ describe('the requests table', () => {
     expect(m.screen()).not.toContain('ADDRESS');
     const asked = vi.spyOn(client, 'events');
     client.exposeClients = true;
-    await until(() => m.screen().includes('ADDRESS'), 'the column');
+    // The newest rows may show addresses a poll before the rest are read again.
+    await until(() => selectedRow(m).includes('203.0.113.7'), 'the selected row’s address', 10_000);
     await m.settle();
     // The selected row, seven pages down, has its address and is still the selected one,
     // and every row held is still held.
@@ -388,6 +389,45 @@ describe('the requests table', () => {
     expect(selectedAt(m)).toBe(m.lines().findIndex((l) => l === m.table()[0]));
     m.unmount();
   }, 30_000);
+
+  it('says the place was lost only once a failure has been read and the table is back', async () => {
+    const client = traffic();
+    client.acknowledgeIncident = async () => {
+      throw new ApiError('internal', 'disk full', 500);
+    };
+    const m = mount(client, SMALL, 100);
+    await onRequests(m);
+    await m.press(ENTER);
+    await until(() => m.screen().includes('Incident #12'), 'the incident');
+    await m.press('a');
+    await until(() => m.screen().includes('disk full'), 'the failure');
+    const asked = vi.spyOn(client, 'events');
+    client.requests.push(...Array.from({ length: 11_500 }, (_, i) => request({ id: 5 + i, ...bad }, 11_500 - i)));
+    // The poll that reads back across them, and one after it.
+    await until(() => asked.mock.calls.filter(([q]) => !q?.key && !q?.before).length >= 2, 'the polls', 15_000);
+    await m.settle();
+    expect(m.screen()).toContain('disk full');
+    expect(m.screen()).not.toContain('Too many new requests');
+    await m.press(ESC);
+    await until(() => m.screen().includes('Too many new requests to keep your place'), 'the notice');
+    m.unmount();
+  }, 30_000);
+
+  it('shows the model after a path too long for a few lines', async () => {
+    const client = traffic();
+    client.requests = [request({ id: 1, operation: `POST /v1/${'segment/'.repeat(30)}end`, model: 'ft:gpt-5.4:org:custom-deployment' })];
+    const m = mount(client);
+    await until(() => m.screen().includes('live'), 'the first load');
+    await m.press('5');
+    await until(() => m.table().length === 1, 'the row');
+    await m.settle();
+    const joined = m.screen().replace(/[│┃]/g, '').replace(/\s+/g, '');
+    expect(joined).toContain('segment/end');
+    expect(joined).toContain('custom-deployment');
+    expect(joined).toContain('notflagged');
+    expect(m.lines().length).toBeLessThanOrEqual(24);
+    m.unmount();
+  });
 
   it('takes a key’s last requests from an answer slower than a poll', async () => {
     const client = traffic();
