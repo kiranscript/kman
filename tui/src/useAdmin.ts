@@ -197,7 +197,7 @@ export interface IncidentState {
  * One incident in full, fetched when it is opened and again on every poll (`at` is when the
  * last one answered). Fetching it changes nothing: opening an incident never acknowledges it.
  */
-export function useIncident(client: AdminClient, id: number | undefined, at: number): IncidentState {
+export function useIncident(client: AdminClient, id: number | undefined, at: number): IncidentState & { show: (detail: IncidentDetail) => void } {
   const [state, setState] = useState<IncidentState>({});
   useEffect(() => {
     if (id === undefined) return setState({});
@@ -214,5 +214,7 @@ export function useIncident(client: AdminClient, id: number | undefined, at: num
       live = false;
     };
   }, [client, id, at]);
-  return state.id === id ? state : { id };
+  /** Takes a detail fetched elsewhere, so what it holds is on screen without waiting for a poll. */
+  const show = useCallback((detail: IncidentDetail) => setState({ id: detail.id, detail }), []);
+  return { ...(state.id === id ? state : { id }), show };
 }

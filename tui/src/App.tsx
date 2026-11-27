@@ -12,7 +12,7 @@ import { ThisWasMeDialog } from './dialogs/ThisWasMeDialog.js';
 import { TypeNameDialog } from './dialogs/TypeNameDialog.js';
 import { cli, resolutionWord } from './commands.js';
 import { fit, plural } from './format.js';
-import { actionFor, actions, incidentFor, isCanary, picks, resolvedText } from './incidents.js';
+import { actionFor, actions, endedText, incidentFor, isCanary, picks } from './incidents.js';
 import type { Action } from './incidents.js';
 import { isChord, keyLabel, visibleKeys } from './keys.js';
 import { attention, otherIncidents, unknowns, upstreamAttention } from './risk.js';
@@ -174,7 +174,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     seenOpen.current = undefined;
     setMode((m) => (endsWith(m, opened.id) ? { kind: 'none' } : m));
     const warning = lost.current?.id === opened.id ? ` ${lost.current.warning}` : '';
-    setNotice({ tone: 'error', text: `Incident #${opened.id} was ${resolvedText(opened)}.${warning}` });
+    setNotice({ tone: 'error', text: `Incident #${opened.id} ${endedText(opened)}.${warning}` });
   }, [opened]);
 
   // A box ticks every value of its kind, so what was ticked is ticked again if they change.
@@ -305,7 +305,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     if (after?.state !== 'resolved') return { error };
     seenOpen.current = undefined;
     setMode((m) => (endsWith(m, id) ? { kind: 'none' } : m));
-    setNotice({ tone: 'error', text: `Incident #${id} was ${resolvedText(after)}. While ${doing}: ${error}` });
+    setNotice({ tone: 'error', text: `Incident #${id} ${endedText(after)}. While ${doing}: ${error}` });
     return { error, ended: after };
   }
 
@@ -352,7 +352,11 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       // Looked at again first: it may have been resolved, or have seen more, since it was drawn.
       const latest = await client.incident(id);
       if (latest.state === 'resolved') throw new Error(`incident ${id} is already resolved`);
-      if (kinds.length && JSON.stringify(picks(latest)) !== boxesAre) throw new Error(CHANGED);
+      if (kinds.length && JSON.stringify(picks(latest)) !== boxesAre) {
+        // Drawn at once: the next key must find the new boxes, not the old ones beside a warning.
+        incident.show(latest);
+        throw new Error(CHANGED);
+      }
       const got = await client.thisWasMe(
         id,
         kinds.length ? { add_known_sources: true, kinds, ...(everyKey ? { install_wide: true } : {}) } : { add_known_sources: false },
@@ -449,7 +453,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     // This try, or an earlier one for this incident that got no answer.
     const warning = lost.current?.id === id ? maybe : undefined;
     if (ended) {
-      return setNotice({ tone: 'error', text: `Incident #${id} was ${resolvedText(ended)}. Could not rotate: ${error}.${warning ? ` ${warning}` : ''}` });
+      return setNotice({ tone: 'error', text: `Incident #${id} ${endedText(ended)}. Could not rotate: ${error}.${warning ? ` ${warning}` : ''}` });
     }
     if (error || !rotated) return setDialogError(`${error ?? 'kman did not return the new secret'}${warning ? `. ${warning}` : ''}`);
     setNotice(undefined);
@@ -837,7 +841,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
           incidentNote={`Incident #${mode.incident} is resolved as confirmed.`}
           maxWidth={dw}
           busy={working !== undefined}
-          errorLines={Math.max(3, bodyRows - 16)}
+          // Its words take a row more than revoke's.
+          errorLines={Math.max(3, bodyRows - 17)}
           error={dialogError}
           guardMs={actionGuardMs}
           onConfirm={() => void rotate(mode.key, mode.incident)}
