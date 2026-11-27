@@ -729,6 +729,30 @@ describe('safety', () => {
     m.unmount();
   });
 
+  it('never says to rotate again after someone else’s rotation, whatever this one got', async () => {
+    for (const failure of [
+      new ApiError('conflict', 'incident 12 is already resolved (confirmed)', 409),
+      new ApiError('internal', 'the admin API answered 502', 502),
+      new ApiError('unreachable', 'cannot reach it: timed out'),
+    ]) {
+      const client = leaked();
+      const rotate = client.rotateKey.bind(client);
+      client.rotateKey = async (id, n) => {
+        await rotate(id, n);
+        Object.assign(client.incidents[0]!, { resolved_by: 'alice' });
+        for (const x of client.recorded[12]!.actions!) x.actor = 'alice';
+        throw failure;
+      };
+      const m = mount(client, WIDE);
+      await opened(m);
+      await m.press('o', 'prod-api', ENTER);
+      const said = m.screen().replace(/\s+/g, ' ');
+      expect(said, failure.message).toContain('prod-api was rotated by alice, and the new secret did not come here');
+      expect(said, failure.message).not.toContain('kman key rotate prod-api');
+      m.unmount();
+    }
+  });
+
   it('takes a proxy’s 502 after a rotation for a rotation, not a failure', async () => {
     const client = leaked();
     const rotate = client.rotateKey.bind(client);
@@ -746,7 +770,7 @@ describe('safety', () => {
     m.unmount();
   });
 
-  it('warns that a key may have been rotated after a 502 that records nothing, then says what a refusal left unknown', async () => {
+  it('warns that a key may have been rotated while a 504 leaves the incident open, until it is resolved without one', async () => {
     const client = leaked();
     client.rotateKey = async () => {
       throw new ApiError('internal', 'the admin API answered 504', 504);
@@ -761,8 +785,9 @@ describe('safety', () => {
     };
     await m.press(ENTER);
     const said = m.screen().replace(/\s+/g, ' ');
-    expect(said).toContain('An earlier try to rotate prod-api brought no new secret, and this one was refused');
-    expect(said).toContain('If prod-api was rotated');
+    // Resolved with no rotation recorded: neither try rotated anything.
+    expect(said).toContain('was resolved by alice as false positive. Could not rotate: incident 12 is already resolved');
+    expect(said).not.toContain('was rotated');
     m.unmount();
   });
 
@@ -809,7 +834,7 @@ describe('safety', () => {
     m.unmount();
   });
 
-  it('says only that there was no answer when someone else resolved it and no rotation is recorded', async () => {
+  it('says nothing was rotated when someone else resolved it and no rotation is recorded', async () => {
     const client = leaked();
     client.rotateKey = async () => {
       Object.assign(client.incidents[0]!, { state: 'resolved', resolution: 'false_positive', resolved_by: 'alice' });
@@ -819,9 +844,8 @@ describe('safety', () => {
     await opened(m);
     await m.press('o', 'prod-api', ENTER);
     const said = m.screen().replace(/\s+/g, ' ');
-    expect(said).toContain('was resolved by alice as false positive. No new secret came back from rotating prod-api');
-    expect(said).toContain('If prod-api was rotated');
-    expect(said).not.toContain('Could not rotate');
+    expect(said).toContain('was resolved by alice as false positive. Could not rotate: cannot reach it: timed out');
+    expect(said).not.toContain('was rotated');
     m.unmount();
   });
 });
