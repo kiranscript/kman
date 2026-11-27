@@ -74,7 +74,16 @@ const optional: [Column, number][] = [
  * a column only while kman gives addresses out, and one key's table needs no key column.
  */
 export function columns(rows: Flagged[], width: number, now: number, oneKey: boolean): { column: Column; width: number }[] {
-  const longest = (c: Column) => Math.max(textWidth(heads[c]), ...rows.map((r) => textWidth(value(r, c, now))));
+  // Thousands of rows are measured, and mostly say the same few things.
+  const known = new Map<string, number>();
+  const measure = (text: string) => {
+    let width = known.get(text);
+    if (width === undefined) known.set(text, (width = textWidth(text)));
+    return width;
+  };
+  // A time is longer the older it is, so the ends of the list say how long they get.
+  const measured = (c: Column) => (c === 'time' && rows.length > 2 ? [rows[0]!, rows[rows.length - 1]!] : rows);
+  const longest = (c: Column) => measured(c).reduce((most, r) => Math.max(most, measure(value(r, c, now))), textWidth(heads[c]));
   const clamp = (c: Column, min: number, max: number) => Math.min(max, Math.max(min, longest(c)));
   const addresses = rows.some((r) => r.e.client_address);
   // With an address to fit too, a narrow table gives the others less.

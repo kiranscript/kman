@@ -248,7 +248,7 @@ export function useIncident(client: AdminClient, id: number | undefined, at: num
 export const EVENT_PAGE = 200;
 /** What a poll asks for once rows are held: it reads further back only if more than this arrived. */
 export const POLL_PAGE = 25;
-/** The most pages one poll reads to meet the rows already held before it starts over. */
+/** The most full pages one poll reads to meet the rows already held before it starts over. */
 const CATCH_UP_PAGES = 5;
 
 export interface Requests extends Feed {
@@ -331,14 +331,17 @@ export function useRequests(
     const stale = () => mine !== generation.current;
     const anew = again.current;
     const rows = held.current.query === query ? held.current.rows : [];
-    // How far back to read: to what is held, or, reading it all again, to the selected request.
-    const reach = anew ? keep.current : rows[0]?.id;
+    // How far back to read: to what is held, or, reading it all again, to the oldest held.
+    const reach = (anew ? rows[rows.length - 1] : rows[0])?.id;
+    const first = anew || !rows.length ? EVENT_PAGE : POLL_PAGE;
+    // The most pages: a short first one is not counted against catching up.
+    const most = anew ? Math.ceil(rows.length / EVENT_PAGE) + CATCH_UP_PAGES : CATCH_UP_PAGES + (first === POLL_PAGE ? 1 : 0);
     const base: EventQuery = { key, kind };
     void (async () => {
       try {
-        const pages: EventPage[] = [await client.events({ ...base, limit: anew || !rows.length ? EVENT_PAGE : POLL_PAGE })];
+        const pages: EventPage[] = [await client.events({ ...base, limit: first })];
         // More may have arrived than a page holds.
-        for (let last = pages[0]!; !stale() && reach !== undefined && last.more && last.next_before! > reach && pages.length < CATCH_UP_PAGES; ) {
+        for (let last = pages[0]!; !stale() && reach !== undefined && last.more && last.next_before! > reach && pages.length < most; ) {
           last = await client.events({ ...base, limit: EVENT_PAGE, before: last.next_before });
           pages.push(last);
         }

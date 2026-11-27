@@ -287,23 +287,38 @@ describe('the requests table', () => {
     const client = traffic();
     client.exposeClients = false;
     client.incidents = [];
-    client.requests = Array.from({ length: 450 }, (_, i) => request({ id: i + 1, client_address: '203.0.113.7' }, (450 - i) * 1000));
+    client.requests = Array.from({ length: 1450 }, (_, i) => request({ id: i + 1, client_address: '203.0.113.7' }, (1450 - i) * 1000));
     const m = mount(client, SMALL, 100);
     await until(() => m.screen().includes('live'), 'the first load');
     await m.press('5');
     await until(() => m.screen().includes('200 loaded'), 'a page');
-    await m.press('G', 'j');
-    await until(() => m.screen().includes('400 loaded'), 'the next');
+    for (const count of [400, 600, 800, 1000, 1200, 1400]) {
+      await m.press('G', 'j');
+      await until(() => m.screen().includes(`${count} loaded`), `${count}`);
+    }
     await m.press('G');
     expect(m.screen()).not.toContain('ADDRESS');
     const asked = vi.spyOn(client, 'events');
     client.exposeClients = true;
     await until(() => m.screen().includes('ADDRESS'), 'the column');
     await m.settle();
-    // The selected row, three pages down, has its address and is still the selected one.
+    // The selected row, seven pages down, has its address and is still the selected one,
+    // and every row held is still held.
     expect(selectedRow(m)).toContain('203.0.113.7');
+    expect(m.screen()).toContain('1400 loaded');
     expect(asked.mock.calls.some(([q]) => q?.before === 251)).toBe(true);
     m.unmount();
+  }, 30_000);
+
+  it('sizes the columns of every row held in well under a poll', () => {
+    const rows = Array.from({ length: 10_000 }, (_, i) => ({
+      e: request({ id: 10_000 - i, asn_label: `Société ${i % 40} — réseau`, client: i % 3 ? 'curl/8' : undefined }, i * 60_000),
+    }));
+    const start = performance.now();
+    const cols = columns(rows, 200, NOW, false);
+    expect(performance.now() - start).toBeLessThan(200);
+    // The oldest are from days ago, so the time column takes a date.
+    expect(cols[0]).toEqual({ column: 'time', width: 11 });
   });
 
   it('asks for a short page once it holds rows', async () => {

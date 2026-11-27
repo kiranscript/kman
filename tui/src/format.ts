@@ -123,6 +123,8 @@ export function graphemeWidth(g: string): number {
 
 /** The terminal cells a string takes: a CJK or emoji character is two. */
 export function textWidth(text: string): number {
+  // Most text is plain ASCII, a cell a character, and needs no segmenting.
+  if (/^[ -~]*$/.test(text)) return text.length;
   let n = 0;
   for (const g of graphemes(text)) n += graphemeWidth(g);
   return n;
