@@ -729,6 +729,86 @@ describe('safety', () => {
     m.unmount();
   });
 
+  it('takes a proxy’s 502 after a rotation for a rotation, not a failure', async () => {
+    const client = leaked();
+    const rotate = client.rotateKey.bind(client);
+    client.rotateKey = async (id, n) => {
+      await rotate(id, n);
+      throw new ApiError('internal', 'the admin API answered 502', 502);
+    };
+    const m = mount(client, WIDE);
+    await opened(m);
+    await m.press('o', 'prod-api', ENTER);
+    const said = m.screen().replace(/\s+/g, ' ');
+    expect(said).toContain('prod-api was rotated by owner, but no new secret arrived here');
+    expect(said).toContain('run kman key rotate prod-api for one you can see');
+    expect(said).not.toContain('Could not rotate');
+    m.unmount();
+  });
+
+  it('warns that a key may have been rotated after a 502 that records nothing, then says what a refusal left unknown', async () => {
+    const client = leaked();
+    client.rotateKey = async () => {
+      throw new ApiError('internal', 'the admin API answered 504', 504);
+    };
+    const m = mount(client, WIDE);
+    await opened(m);
+    await m.press('o', 'prod-api', ENTER);
+    expect(m.screen().replace(/[│\s]+/g, ' ')).toContain('If prod-api was rotated');
+    client.rotateKey = async () => {
+      Object.assign(client.incidents[0]!, { state: 'resolved', resolution: 'false_positive', resolved_by: 'alice' });
+      throw new ApiError('conflict', 'incident 12 is already resolved', 409);
+    };
+    await m.press(ENTER);
+    const said = m.screen().replace(/\s+/g, ' ');
+    expect(said).toContain('An earlier try to rotate prod-api brought no new secret, and this one was refused');
+    expect(said).toContain('If prod-api was rotated');
+    m.unmount();
+  });
+
+  it('says it was rotated when the poll is what finds the incident resolved after a lost answer', async () => {
+    const client = leaked();
+    const rotate = client.rotateKey.bind(client);
+    const detail = client.incident.bind(client);
+    client.rotateKey = async (id, n) => {
+      await rotate(id, n);
+      let failed = false;
+      // The look straight after fails too.
+      client.incident = async (x) => {
+        if (failed) return detail(x);
+        failed = true;
+        throw new ApiError('unreachable', 'cannot reach it: timed out');
+      };
+      throw new ApiError('unreachable', 'cannot reach it: timed out');
+    };
+    const m = mount(client, WIDE, 0, 100);
+    await opened(m);
+    await m.press('o', 'prod-api', ENTER);
+    await until(() => m.screen().replace(/\s+/g, ' ').includes('prod-api was rotated by owner, but no new secret'), 'the news');
+    m.unmount();
+  });
+
+  it('says who got there first when it is marked a false positive just before this was me', async () => {
+    const client = leaked();
+    client.thisWasMe = async () => {
+      Object.assign(client.incidents[0]!, { state: 'resolved', resolution: 'false_positive', resolved_by: 'alice' });
+      return { incident: structuredClone(client.incidents[0]!), added: [{ id: 1, kind: 'country', value: 'NL', label: 'this was me' }] };
+    };
+    const m = mount(client, WIDE);
+    await opened(m);
+    await m.press('m', ' ', ENTER);
+    expect(m.screen().replace(/\s+/g, ' ')).toContain('Incident #12 was already resolved by alice as false positive. Added 1 known source.');
+    m.unmount();
+  });
+
+  it('says a canary’s use was refused, and where it was planted', async () => {
+    const m = mount(leaked(), WIDE);
+    await opened(m, 13);
+    expect(m.screen()).toContain('planted: the .env of the wiki');
+    expect(m.screen()).toMatch(/refused/);
+    m.unmount();
+  });
+
   it('says only that there was no answer when someone else resolved it and no rotation is recorded', async () => {
     const client = leaked();
     client.rotateKey = async () => {
@@ -739,7 +819,7 @@ describe('safety', () => {
     await opened(m);
     await m.press('o', 'prod-api', ENTER);
     const said = m.screen().replace(/\s+/g, ' ');
-    expect(said).toContain('was resolved by alice as false positive. No answer to rotating prod-api');
+    expect(said).toContain('was resolved by alice as false positive. No new secret came back from rotating prod-api');
     expect(said).toContain('If prod-api was rotated');
     expect(said).not.toContain('Could not rotate');
     m.unmount();

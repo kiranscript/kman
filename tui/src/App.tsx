@@ -92,6 +92,18 @@ const endsWith = (m: Mode, id: number) =>
 
 const CHANGED = 'What it saw has changed: check the boxes again.';
 
+const maybeRotated = (label: string) => `If ${label} was rotated, run ${cli.rotate(label)} for a secret you can see.`;
+
+/**
+ * What to say when the incident records a rotation of the key whose new secret never
+ * reached this screen: it happened, whatever became of the answer. `how` says what ended
+ * the incident.
+ */
+function rotatedUnseen(ended: IncidentDetail, key: { id: string; label: string }, how: string): string | undefined {
+  const done = ended.actions?.find((x) => x.action === 'key.rotate' && x.target_id === key.id);
+  return done ? `${key.label} was rotated by ${done.actor}, but no new secret arrived here: run ${cli.rotate(key.label)} for one you can see. ${how}` : undefined;
+}
+
 export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, copy, noticeMs = 6000, secretGuardMs, actionGuardMs = 400 }: AppProps) {
   const { exit } = useApp();
   const win = useWindowSize();
@@ -214,8 +226,9 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   // one turning up resolved was someone else's doing.
   const seenOpen = useRef<number | undefined>(undefined);
   const resolving = useRef(new Set<number>());
-  // A rotation that got no answer: said again if its incident turns up resolved.
-  const lost = useRef<{ id: number; warning: string } | undefined>(undefined);
+  // A rotation that brought no new secret and may have happened: said again if its
+  // incident turns up resolved.
+  const lost = useRef<{ id: number; key: { id: string; label: string } } | undefined>(undefined);
 
   useEffect(() => {
     if (!opened) return;
@@ -226,8 +239,9 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     if (seenOpen.current !== opened.id || resolving.current.has(opened.id)) return;
     seenOpen.current = undefined;
     setMode((m) => (endsWith(m, opened.id) ? { kind: 'none' } : m));
-    const warning = lost.current?.id === opened.id ? ` ${lost.current.warning}` : '';
-    setNotice({ tone: 'error', text: `Incident #${opened.id} ${endedText(opened)}.${warning}` });
+    const how = `Incident #${opened.id} ${endedText(opened)}.`;
+    const of = lost.current?.id === opened.id ? lost.current.key : undefined;
+    setNotice({ tone: 'error', text: of ? (rotatedUnseen(opened, of, how) ?? `${how} ${maybeRotated(of.label)}`) : how });
   }, [opened]);
 
   // A box ticks every value of its kind, so what was ticked is ticked again if they change.
@@ -446,6 +460,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     if (held()) return;
     setDialogError(undefined);
     let said = '';
+    let by: string | undefined;
     const { error, ended } = await onIncident(id, `resolving incident #${id}`, true, async () => {
       // Looked at again first: it may have been resolved, or have seen more, since it was drawn.
       const latest = await client.incident(id);
@@ -459,6 +474,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
         id,
         kinds.length ? { add_known_sources: true, kinds, ...(everyKey ? { install_wide: true } : {}) } : { add_known_sources: false },
       );
+      by = got.incident.resolved_by;
       said = [
         kinds.length ? ` Added ${plural(got.added.length, 'known source')}${everyKey ? ' for every key' : ''}.` : '',
         got.already_known ? ` ${plural(got.already_known, 'place was', 'places were')} already known.` : '',
@@ -471,7 +487,13 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       return setDialogError(error);
     }
     setMode({ kind: 'none' });
-    setNotice({ tone: 'ok', text: `#${id} resolved: false positive.${said}` });
+    // Marked a false positive since it was looked at: kman takes it again, and still adds
+    // what was ticked.
+    setNotice(
+      by && data.actor && by !== data.actor
+        ? { tone: 'error', text: `Incident #${id} was already resolved by ${by} as false positive.${said}` }
+        : { tone: 'ok', text: `#${id} resolved: false positive.${said}` },
+    );
   }
 
   async function resetCanary(id: number, canary: string, name: string) {
@@ -540,25 +562,27 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       try {
         rotated = await client.rotateKey(key.id, id);
       } catch (err) {
-        // No answer, or a success that could not be read. A refusal changed nothing.
-        unanswered = err instanceof ApiError && (err.code === 'unreachable' || (err.status !== undefined && err.status >= 200 && err.status < 300));
+        // Only a refusal says that nothing changed. No answer, a success that could not be
+        // read, and a failure such as a proxy's 502 may all follow a rotation.
+        unanswered = !(err instanceof ApiError && err.status !== undefined && err.status >= 400 && err.status < 500);
         throw err;
       }
     });
+    const of = { id: key.id, label: keyLabel(key) };
     // An answer that was lost may have been of a rotation that happened: its secret is gone with it.
-    const maybe = `If ${keyLabel(key)} was rotated, run ${cli.rotate(keyLabel(key))} for a secret you can see.`;
-    if (unanswered) lost.current = { id, warning: maybe };
-    // This try, or an earlier one for this incident that got no answer.
-    const warning = lost.current?.id === id ? maybe : undefined;
+    if (unanswered) lost.current = { id, key: of };
+    // This try, or an earlier one for this incident that brought no secret.
+    const warning = lost.current?.id === id ? maybeRotated(of.label) : undefined;
     if (ended) {
       const how = `Incident #${id} ${endedText(ended)}.`;
-      // Refused every time it was asked, so nothing was rotated from here.
-      if (!warning) return setNotice({ tone: 'error', text: `${how} Could not rotate: ${error}.` });
-      // A rotation recorded on the incident happened, whatever became of its answer.
-      const done = ended.actions?.find((x) => x.action === 'key.rotate' && x.target_id === key.id);
+      const done = rotatedUnseen(ended, of, how);
       const text = done
-        ? `${keyLabel(key)} was rotated by ${done.actor}, but no new secret arrived here: run ${cli.rotate(keyLabel(key))} for one you can see. ${how} (${error})`
-        : `${how} No answer to rotating ${keyLabel(key)}: ${error}. ${warning}`;
+        ? `${done} (${error})`
+        : !warning
+          ? `${how} Could not rotate: ${error}.`
+          : unanswered
+            ? `${how} No new secret came back from rotating ${of.label}: ${error}. ${warning}`
+            : `${how} An earlier try to rotate ${of.label} brought no new secret, and this one was refused: ${error}. ${warning}`;
       return setNotice({ tone: 'error', text });
     }
     if (error || !rotated) return setDialogError(`${error ?? 'kman did not return the new secret'}${warning ? `. ${warning}` : ''}`);
