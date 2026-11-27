@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import type { Incident, Key } from '../api.js';
 import { ago, clock, fit, padEnd, plural, textWidth, wrapLines } from '../format.js';
-import { actionKeys, actions, allRefused, isCanary, resolvedText, timeline, whatFired, whereFrom } from '../incidents.js';
+import { actionKeys, actions, allRefused, isCanary, resolvedText, timeline, usualText, whatFired, whereFrom } from '../incidents.js';
 import type { Action } from '../incidents.js';
 import { incidentRisk } from '../risk.js';
 import { Frame } from '../ui/frame.js';
@@ -90,11 +90,12 @@ function lines(state: IncidentState, listed: Incident | undefined, key: Key | un
   const fired = whatFired(d.detections);
   // Said once when it is the same for all of them: the rows are few at the smallest size.
   const together = allRefused(fired);
-  const whatW = Math.max(0, ...fired.map((f) => textWidth(f.what))) + 2;
+  // Never more than half: a long rule name must leave room for what it saw.
+  const whatW = Math.min(Math.floor(width / 2), Math.max(0, ...fired.map((f) => textWidth(f.what))) + 2);
   const valueW = Math.min(24, Math.max(0, ...fired.map((f) => textWidth(f.observed)))) + 2;
   fired.forEach((f, n) => {
     const value = `${f.observed}${f.times > 1 ? ` ×${f.times}` : ''}`;
-    const usual = f.usual ? `usually ${f.usual}` : '';
+    const usual = f.usual ? usualText(f.usual) : '';
     // The usual stands beside what was seen when both fit, and under it when not.
     const column = Math.max(valueW, textWidth(value) + 2);
     const beside = usual !== '' && whatW + column + textWidth(usual) <= width;
@@ -224,8 +225,8 @@ export function IncidentView({
               ))}
             </Box>
           ))}
-          {noteLines.map((n) => (
-            <Text key={n.text} color={n.tone} dimColor={!n.tone}>
+          {noteLines.map((n, i) => (
+            <Text key={i} color={n.tone} dimColor={!n.tone}>
               {n.text}
             </Text>
           ))}

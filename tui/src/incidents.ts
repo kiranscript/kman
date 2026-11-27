@@ -26,9 +26,6 @@ export const actionKeys: Record<Action, string> = {
 
 export const actionFor = (input: string) => (Object.keys(actionKeys) as Action[]).find((a) => actionKeys[a] === input);
 
-/** The actions on an incident's own case: they end when it does. */
-export const endsWithIncident: ReadonlySet<Action> = new Set<Action>(['acknowledge', 'thisWasMe', 'resolve', 'disable', 'rotate', 'revoke']);
-
 /**
  * What can be done from an incident, in the order shown. A canary is answered by
  * acknowledging, resolving and arming it again: resolving does not arm it, so that stays
@@ -102,6 +99,9 @@ export function whatFired(detections: Detection[]): Fired[] {
   }
   return [...seen.values()];
 }
+
+/** "usually US", or kman's own sentence about what is usual, which says so already. */
+export const usualText = (usual: string) => (/\busual\b/.test(usual) ? usual : `usually ${usual}`);
 
 /** Why every request behind what fired was refused, when they all were, for one reason. */
 export function allRefused(fired: Fired[]): string | undefined {

@@ -2,6 +2,7 @@ import { Box, Text, useInput } from 'ink';
 import { useState } from 'react';
 import type { Resolution } from '../api.js';
 import { cli, resolutionWord } from '../commands.js';
+import { isChord } from '../keys.js';
 import { Command } from '../ui/command.js';
 import { Panel, Wrapped } from '../ui/parts.js';
 import { color, severityGlyph } from '../ui/theme.js';
@@ -36,6 +37,7 @@ export function ResolveDialog({
   useInput((input, key) => {
     if (busy) return;
     if (key.escape) return onCancel();
+    if (isChord(key)) return;
     if (!as) {
       const choice = choices.find((c) => c.key === input);
       if (choice && armed()) setAs(choice.as);

@@ -21,3 +21,10 @@ export function visibleKeys(keys: Key[], filter: string): Key[] {
         keyLabel(a).localeCompare(keyLabel(b), undefined, { numeric: true }),
     );
 }
+
+/**
+ * A key pressed with Ctrl or Alt: a terminal's or a multiplexer's shortcut, which Ink gives
+ * as the plain letter, so it must not answer a question or act on anything. Ink also marks
+ * Esc this way, which is not one.
+ */
+export const isChord = (key: { ctrl: boolean; meta: boolean; escape: boolean }) => key.ctrl || (key.meta && !key.escape);

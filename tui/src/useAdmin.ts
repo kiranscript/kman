@@ -94,7 +94,9 @@ export function useAdmin(client: AdminClient, intervalMs = 3000) {
         findings: findings.error ? last.findings : findings.value,
         findingsError: findings.error,
       }));
-      lastOk.current = Date.now();
+      // Always later than the last, even within a millisecond: what is fetched beside each
+      // poll goes by this changing.
+      lastOk.current = Math.max((lastOk.current ?? 0) + 1, Date.now());
       setNow(lastOk.current);
       setLink({ state: 'ok', at: lastOk.current });
       if (incidents.error) return { message: `incidents did not load: ${incidents.error}`, partial: true };

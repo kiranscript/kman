@@ -423,6 +423,130 @@ describe('at the smallest size', () => {
 });
 
 describe('safety', () => {
+  it('takes no Ctrl or Alt chord for an action, a choice, a tick or a yes', async () => {
+    const m = mount();
+    await opened(m);
+    const ctrl = (c: string) => String.fromCharCode(c.charCodeAt(0) - 96);
+    await m.press(ctrl('a'), ctrl('d'), ctrl('x'), '\u001ba', '\u001bd');
+    expect(m.screen()).toContain('WHAT FIRED');
+    expect(m.screen()).not.toContain('Disable this key?');
+    await m.press('d', ctrl('y'), '\u001by');
+    expect(m.screen()).toContain('Disable this key?');
+    await m.press(ESC, 'R', ctrl('f'), ctrl('c'));
+    expect(m.screen()).toContain('Was it real?');
+    await m.press('c', ctrl('y'));
+    expect(m.screen()).toContain('Resolve it as confirmed?');
+    await m.press(ESC, 'm', '\u001b ');
+    expect(m.screen()).toContain('[ ] country');
+    expect(changes(m.client)).toEqual([]);
+    m.unmount();
+  });
+
+  it('closes the enable dialog when someone else resolves the incident', async () => {
+    const client = leaked();
+    client.keys.at(-1)!.status = 'disabled';
+    const m = mount(client, WIDE, 0, 100);
+    await opened(m);
+    await m.press('e');
+    expect(m.screen()).toContain('Enable this key?');
+    Object.assign(client.incidents[0]!, { state: 'resolved', resolution: 'confirmed', resolved_by: 'alice' });
+    await until(() => m.screen().includes('resolved by alice'), 'the news');
+    await m.settle();
+    expect(m.screen()).not.toContain('Enable this key?');
+    await m.press('y');
+    expect(changes(client)).toEqual([]);
+    m.unmount();
+  });
+
+  it('does not enable a key for an incident resolved before the screen heard of it', async () => {
+    const client = leaked();
+    client.keys.at(-1)!.status = 'disabled';
+    const m = mount(client, WIDE);
+    await opened(m);
+    await m.press('e');
+    Object.assign(client.incidents[0]!, { state: 'resolved', resolution: 'confirmed', resolved_by: 'alice' });
+    await m.press('y');
+    expect(changes(client)).toEqual([]);
+    expect(m.screen()).toContain('was resolved by alice as confirmed.');
+    m.unmount();
+  });
+
+  it('says nothing of a lost secret when a rotation is refused', async () => {
+    const client = leaked();
+    const m = mount(client, WIDE);
+    await opened(m);
+    await m.press('o', 'prod-api');
+    Object.assign(client.incidents[0]!, { state: 'resolved', resolution: 'false_positive', resolved_by: 'alice' });
+    await m.press(ENTER);
+    const said = m.screen().replace(/\s+/g, ' ');
+    expect(said).toContain('was resolved by alice as false positive. Could not rotate');
+    expect(said).not.toContain('was rotated');
+    m.unmount();
+  });
+
+  it('warns of a lost secret when a rotation answers with something unreadable', async () => {
+    const client = leaked();
+    client.rotateKey = async () => {
+      throw new ApiError('internal', 'the admin API sent a reply that is not JSON', 200);
+    };
+    const m = mount(client);
+    await opened(m);
+    await m.press('o', 'prod-api', ENTER);
+    expect(m.screen().replace(/[│\s]+/g, ' ')).toContain('If prod-api was rotated');
+    m.unmount();
+  });
+
+  it('ignores Enter for a moment when the boxes of this was me change under it', async () => {
+    const client = leaked();
+    const m = mount(client, WIDE, 600, 100);
+    await opened(m);
+    await tick(650);
+    await m.press('m');
+    await tick(650);
+    await m.press(' ');
+    client.recorded[12]!.known_source_candidates!.push({ kind: 'country', value: 'RU' });
+    await until(() => m.screen().includes('What it saw has changed'), 'the change');
+    await m.press(ENTER, ' ');
+    expect(changes(client)).toEqual([]);
+    expect(m.screen()).toContain('[ ] country');
+    await tick(650);
+    await m.press(ENTER);
+    expect(changes(client)).toEqual(['this-was-me 12 {"add_known_sources":false}']);
+    m.unmount();
+  });
+
+  it('does not say "usually" twice of what kman words as a sentence', async () => {
+    const client = leaked();
+    client.recorded[12] = {
+      detections: [
+        detection(1, 'new_network', { address_withheld: true, baseline: '2 usual networks' }),
+        detection(2, 'new_country', { country: 'DE', baseline: 'no usual places recorded' }),
+      ],
+    };
+    const m = mount(client, WIDE);
+    await opened(m);
+    expect(m.screen()).toContain('2 usual networks');
+    expect(m.screen()).toContain('no usual places recorded');
+    expect(m.screen()).not.toContain('usually 2');
+    expect(m.screen()).not.toContain('usually no');
+    m.unmount();
+  });
+
+  it('asks for fresh data once after a change made for an incident', async () => {
+    const client = leaked();
+    let polls = 0;
+    const list = client.listKeys.bind(client);
+    client.listKeys = async () => (polls++, list());
+    const m = mount(client);
+    await opened(m);
+    for (const keys of [['d', 'y'], ['x', 'prod-api', ENTER]]) {
+      const before = polls;
+      await m.press(...keys);
+      expect(polls - before, keys.join()).toBe(1);
+    }
+    m.unmount();
+  });
+
   it('ignores action keys just after the view appears, and just after a dialog does', async () => {
     const m = mount(leaked(), SMALL, 600);
     await opened(m);

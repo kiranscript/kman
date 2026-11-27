@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { PickKind } from '../api.js';
 import { cli } from '../commands.js';
 import { plural, wrapLines } from '../format.js';
+import { isChord } from '../keys.js';
 import type { Pick } from '../incidents.js';
 import { Command } from '../ui/command.js';
 import { Panel, Wrapped } from '../ui/parts.js';
@@ -56,7 +57,9 @@ export function ThisWasMeDialog({
 }) {
   const [cursor, setCursor] = useState(0);
   const [everyKey, setEveryKey] = useState(false);
-  const armed = useArmed(guardMs);
+  // Boxes that change under the cursor are a screen just shown: a key meant for the old
+  // ones does nothing.
+  const armed = useArmed(guardMs, JSON.stringify(picks));
   const boxes = picks ?? [];
   // The scope is the row under the boxes.
   const rows = boxes.length ? boxes.length + 1 : 0;
@@ -68,6 +71,7 @@ export function ThisWasMeDialog({
   useInput((input, key) => {
     if (busy) return;
     if (key.escape) return onCancel();
+    if (isChord(key)) return;
     if (key.upArrow || input === 'k') return setCursor(Math.max(0, at - 1));
     if (key.downArrow || input === 'j') return setCursor(Math.min(Math.max(0, rows - 1), at + 1));
     if (!armed() || !picks) return;
@@ -103,7 +107,7 @@ export function ThisWasMeDialog({
                 <Text dimColor>expose_client_addresses is off</Text>
               </>
             ) : (
-              valueLines(p.values, valueW).map((line) => <Text key={line}>{line}</Text>)
+              valueLines(p.values, valueW).map((line, i) => <Text key={i}>{line}</Text>)
             )}
           </Box>
         </Box>

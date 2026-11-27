@@ -14,7 +14,7 @@ import { cli, resolutionWord } from './commands.js';
 import { fit, plural } from './format.js';
 import { actionFor, actions, incidentFor, isCanary, picks, resolvedText } from './incidents.js';
 import type { Action } from './incidents.js';
-import { keyLabel, visibleKeys } from './keys.js';
+import { isChord, keyLabel, visibleKeys } from './keys.js';
 import { attention, otherIncidents, unknowns, upstreamAttention } from './risk.js';
 import { layout, hasFilterRow, listArea, summaryRows } from './layout.js';
 import type { ListPanel } from './layout.js';
@@ -71,10 +71,13 @@ type Mode =
 export const MIN_COLUMNS = 80;
 export const MIN_ROWS = 24;
 
-/** Whether a dialog is for answering this incident, so is moot once it is resolved. */
+/**
+ * Whether a dialog is for answering this incident, so is moot once it is resolved. Enable
+ * is one: whoever resolved it may have found the leak real, so the key stays as it is.
+ * Arming a canary again is not, as resolving does not arm it.
+ */
 const endsWith = (m: Mode, id: number) =>
-  (m.kind === 'rotate' || m.kind === 'resolve' || m.kind === 'thisWasMe' || m.kind === 'revoke' || (m.kind === 'confirm' && m.action === 'disable')) &&
-  m.incident === id;
+  (m.kind === 'rotate' || m.kind === 'resolve' || m.kind === 'thisWasMe' || m.kind === 'revoke' || m.kind === 'confirm') && m.incident === id;
 
 const CHANGED = 'What it saw has changed: check the boxes again.';
 
@@ -388,11 +391,15 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     if (id !== undefined && offline()) return;
     setNotice({ tone: 'info', text: `${action === 'disable' ? 'Disabling' : 'Enabling'} ${keyLabel(key)}…` });
     const doing = `${action === 'disable' ? 'disabling' : 'enabling'} ${keyLabel(key)}`;
-    // Only disabling is done for the incident: kman records no incident on an enable.
+    const change = async () => {
+      if (action === 'disable') return client.disableKey(key.id, id);
+      // kman records no incident on an enable, so it would not refuse one for an incident
+      // resolved since it was asked: look first.
+      if (id !== undefined && (await client.incident(id)).state === 'resolved') throw new Error(`incident ${id} is already resolved`);
+      return client.enableKey(key.id);
+    };
     const { error: err, ended } =
-      action === 'disable' && id !== undefined
-        ? await onIncident(id, doing, false, () => client.disableKey(key.id, id))
-        : { error: await call('toggle', doing, () => (action === 'disable' ? client.disableKey(key.id) : client.enableKey(key.id))), ended: undefined };
+      id === undefined ? { error: await call('toggle', doing, change), ended: undefined } : await onIncident(id, doing, false, change);
     if (ended) return;
     if (err) setNotice({ tone: 'error', text: `Could not ${action} ${keyLabel(key)}: ${err}` });
     else
@@ -404,7 +411,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
               `Disabled ${keyLabel(key)}. ${id === undefined ? 'It is refused from its next request.' : `Incident #${id} stays open.`}`
             : `Enabled ${keyLabel(key)}.`,
       });
-    void refresh();
+    // A change made for an incident has already asked for fresh data.
+    if (id === undefined) void refresh();
   }
 
   async function revoke(key: Key, id?: number) {
@@ -418,7 +426,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     if (error) return setDialogError(error);
     setMode({ kind: 'none' });
     setNotice({ tone: 'ok', text: `Revoked ${keyLabel(key)}. ${id === undefined ? 'It cannot be used again.' : `Incident #${id} resolved as confirmed.`}` });
-    void refresh();
+    if (id === undefined) void refresh();
   }
 
   async function rotate(key: Key, id: number) {
@@ -430,15 +438,20 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       try {
         rotated = await client.rotateKey(key.id, id);
       } catch (err) {
-        unanswered = err instanceof ApiError && err.code === 'unreachable';
+        // No answer, or a success that could not be read. A refusal changed nothing.
+        unanswered = err instanceof ApiError && (err.code === 'unreachable' || (err.status !== undefined && err.status >= 200 && err.status < 300));
         throw err;
       }
     });
     // An answer that was lost may have been of a rotation that happened: its secret is gone with it.
     const maybe = `If ${keyLabel(key)} was rotated, run ${cli.rotate(keyLabel(key))} for a secret you can see.`;
-    if (ended) return setNotice({ tone: 'error', text: `Incident #${id} was ${resolvedText(ended)}. Could not rotate: ${error}. ${maybe}` });
     if (unanswered) lost.current = { id, warning: maybe };
-    if (error || !rotated) return setDialogError(`${error ?? 'kman did not return the new secret'}${unanswered ? `. ${maybe}` : ''}`);
+    // This try, or an earlier one for this incident that got no answer.
+    const warning = lost.current?.id === id ? maybe : undefined;
+    if (ended) {
+      return setNotice({ tone: 'error', text: `Incident #${id} was ${resolvedText(ended)}. Could not rotate: ${error}.${warning ? ` ${warning}` : ''}` });
+    }
+    if (error || !rotated) return setDialogError(`${error ?? 'kman did not return the new secret'}${warning ? `. ${warning}` : ''}`);
     setNotice(undefined);
     setMode({ kind: 'secret', shown: { was: 'rotated', note: `Incident #${id} is resolved as confirmed.`, ...rotated } });
   }
@@ -553,6 +566,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
         return setFilter((f) => editText(f, input, key, 40));
       }
       if (mode.kind === 'confirm' || mode.kind === 'reset') {
+        if (isChord(key)) return;
         // From an incident it is y/N: Enter says no, and neither answers a dialog just shown.
         const guarded = mode.kind === 'reset' || mode.incident !== undefined;
         if (input === 'n' || input === 'N' || key.escape || (guarded && key.return && armed())) setMode({ kind: 'none' });
@@ -622,7 +636,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       if (input === 'K') return setScrollTop((t) => Math.max(0, t - 3));
 
       if (viewing !== undefined) {
-        const action = actionFor(input);
+        const action = isChord(key) ? undefined : actionFor(input);
         if (action) ask(action);
         return;
       }
