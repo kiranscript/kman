@@ -275,10 +275,11 @@ describe('the requests table', () => {
     Object.assign(network.detections[0]!.evidence, { network: '203.0.113.0/24', address_withheld: false });
     await until(() => /^│ ! /.test(m.table()[0] ?? ''), 'the flag');
     expect(m.screen()).toContain('203.0.113.7');
-    // Off again, and the next answer holds no row with an address to say so.
-    client.events = async () => ({ events: [], more: true, next_before: 1 });
+    // Off again, and no more events answer to say so: the row held loses its address.
+    client.events = () => new Promise(() => {});
     client.exposeClients = false;
     await until(() => !m.screen().includes('203.0.113.7'), 'it gone');
+    expect(m.table()).toHaveLength(1);
     m.unmount();
   });
 
@@ -309,14 +310,17 @@ describe('the requests table', () => {
     }
   });
 
-  it('asks for no events until the first poll has answered', async () => {
-    const client = traffic();
-    client.listKeys = () => new Promise(() => {});
-    const asked = vi.spyOn(client, 'events');
-    const m = mount(client);
-    await tick(300);
-    expect(asked).not.toHaveBeenCalled();
-    m.unmount();
+  it('asks for no events until a poll has succeeded', async () => {
+    for (const fail of [undefined, new ApiError('unreachable', 'connection refused')]) {
+      const client = traffic();
+      if (fail) client.fail = fail;
+      else client.listKeys = () => new Promise(() => {});
+      const asked = vi.spyOn(client, 'events');
+      const m = mount(client, SMALL, 100);
+      await tick(300);
+      expect(asked, String(fail?.message)).not.toHaveBeenCalled();
+      m.unmount();
+    }
   });
 
   it('offers v on a canary’s row in Status, and names it while its requests load', async () => {
