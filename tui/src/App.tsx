@@ -204,6 +204,13 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     const first = tableShown[0]?.e.id;
     if (tab === 'requests' && settled && place.id === undefined && first !== undefined) setPlace({ id: first, seen: first });
   }, [tab, settled, place.id, tableShown]);
+  // A selected request that had to be let go is not passed off as another: the selection
+  // starts again at the newest, and says why.
+  useEffect(() => {
+    if (!requests.lost) return;
+    setPlace({});
+    if (tab === 'requests') setNotice({ tone: 'info', text: 'Too many new requests to keep your place: showing the newest.' });
+  }, [requests.lost]);
   // A kman found to have no events, after the panel was asked for, has no panel to be on.
   useEffect(() => {
     if (tab === 'requests' && !hasRequests) setTab('keys');

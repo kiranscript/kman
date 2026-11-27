@@ -248,8 +248,11 @@ export function useIncident(client: AdminClient, id: number | undefined, at: num
 export const EVENT_PAGE = 200;
 /** What a poll asks for once rows are held: it reads further back only if more than this arrived. */
 export const POLL_PAGE = 25;
-/** The most full pages one poll reads to meet the rows already held before it starts over. */
-const CATCH_UP_PAGES = 5;
+/**
+ * The most pages one poll reads to meet the rows already held before it starts over:
+ * enough to cross as many new requests as can ever be held, and a few to spare.
+ */
+const CATCH_UP_PAGES = (2 * MAX_ROWS) / EVENT_PAGE + 5;
 
 export interface Requests extends Feed {
   /** Whether anything has been answered for this query. */
@@ -261,6 +264,8 @@ export interface Requests extends Feed {
   /** The server has no such route (an older kman). */
   unsupported?: boolean;
   loadingOlder: boolean;
+  /** How many times the selected request has had to be let go. */
+  lost?: number;
 }
 
 const noRequests: Requests = { rows: [], more: false, loaded: false, loadingOlder: false };
@@ -334,20 +339,24 @@ export function useRequests(
     // How far back to read: to what is held, or, reading it all again, to the oldest held.
     const reach = (anew ? rows[rows.length - 1] : rows[0])?.id;
     const first = anew || !rows.length ? EVENT_PAGE : POLL_PAGE;
-    // The most pages: a short first one is not counted against catching up.
-    const most = anew ? Math.ceil(rows.length / EVENT_PAGE) + CATCH_UP_PAGES : CATCH_UP_PAGES + (first === POLL_PAGE ? 1 : 0);
     const base: EventQuery = { key, kind };
     void (async () => {
       try {
         const pages: EventPage[] = [await client.events({ ...base, limit: first })];
         // More may have arrived than a page holds.
-        for (let last = pages[0]!; !stale() && reach !== undefined && last.more && last.next_before! > reach && pages.length < most; ) {
+        for (let last = pages[0]!; !stale() && reach !== undefined && last.more && last.next_before! > reach && pages.length < CATCH_UP_PAGES; ) {
           last = await client.events({ ...base, limit: EVENT_PAGE, before: last.next_before });
           pages.push(last);
         }
         if (stale()) return;
         if (anew) again.current = false;
-        update(query, (s) => ({ ...mergeNewest(anew ? { rows: [], more: false } : s, pages, keep.current), loaded: true, at: Date.now(), error: undefined }));
+        const selected = keep.current;
+        update(query, (s) => {
+          const next = mergeNewest(anew ? { rows: [], more: false } : s, pages, selected);
+          // More arrived than could be read back across: the selected request was let go.
+          const gone = selected !== undefined && s.rows.some((r) => r.id === selected) && !next.rows.some((r) => r.id === selected);
+          return { ...next, lost: (s.lost ?? 0) + (gone ? 1 : 0), loaded: true, at: Date.now(), error: undefined };
+        });
       } catch (err) {
         if (stale()) return;
         if (!key && isMissingRoute(err)) {
@@ -427,25 +436,36 @@ export interface KeyRequestsState {
   error?: string;
 }
 
-/** The last few requests of the key `id`, fetched as its places are. */
+/**
+ * The last few requests of the key `id`, fetched again on every poll, one read at a time:
+ * an answer slower than a poll still counts while the key is still the one shown.
+ */
 export function useKeyRequests(client: AdminClient, id: string | undefined, at: number): KeyRequestsState {
   const [state, setState] = useState<KeyRequestsState>({});
+  const shown = useRef(id);
+  shown.current = id;
+  const reading = useRef<{ id: string }>(undefined);
   useEffect(() => {
-    if (!id) return;
-    let live = true;
-    client.events({ key: id, limit: KEY_REQUESTS }).then(
-      (page) => live && setState({ id, events: page.events }),
-      (err: unknown) => {
-        if (!live) return;
-        // An older kman, or a key that has gone: nothing to list.
-        if (isMissingRoute(err)) return setState({ id });
-        const error = err instanceof Error ? err.message : String(err);
-        setState((s) => ({ id, events: s.id === id ? s.events : undefined, error }));
-      },
-    );
-    return () => {
-      live = false;
-    };
+    if (!id || reading.current?.id === id) return;
+    const mine = (reading.current = { id });
+    const wanted = () => reading.current === mine && shown.current === id;
+    client
+      .events({ key: id, limit: KEY_REQUESTS })
+      .then(
+        (page) => {
+          if (wanted()) setState({ id, events: page.events });
+        },
+        (err: unknown) => {
+          if (!wanted()) return;
+          // An older kman, or a key that has gone: nothing to list.
+          if (isMissingRoute(err)) return setState({ id });
+          const error = err instanceof Error ? err.message : String(err);
+          setState((s) => ({ id, events: s.id === id ? s.events : undefined, error }));
+        },
+      )
+      .finally(() => {
+        if (reading.current === mine) reading.current = undefined;
+      });
   }, [client, id, at]);
   return state.id === id ? state : { id };
 }
