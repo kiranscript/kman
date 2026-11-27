@@ -45,7 +45,7 @@ printf 'Authorization: Bearer %s\n' "$virtual_key" |
 unset virtual_key
 ```
 
-**2. Spend warning.** Start the in-memory demo with `(cd tui && ./node_modules/.bin/tsx test/demo.tsx)`. The expected key is `ci-evals`, at $0.90 of $1 daily with $0.10 remaining. The other near-cap key, `prod-api`, is at 86%. Quit and relaunch the demo to reset its data.
+**2. Investigate a leak.** Start the in-memory demo with `(cd tui && ./node_modules/.bin/tsx test/demo.tsx)`. The expected key is `prod-api`, with open incident #12 (high) for a new country, a new ASN and a new client. It turned up from NL, AS60729, with `curl/8`. All 57 of those requests were refused, because the key is locked to `10.20.0.0/16`. Its usual places are US, AS16509 and `openai-python/1`. `kman incident show 12` shows the incident. A good answer also notices the canary incident #13 for `wiki-canary`, which ranks above it. Quit and relaunch the demo to reset its data.
 
 **3. Key lifecycle.** On the real install with the test upstream added, seed the pair once. Discard their generated secrets. Launch or return to `node tui/dist/cli.js`.
 

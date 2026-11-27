@@ -3,14 +3,16 @@
 import { Box, Text, measureElement } from 'ink';
 import type { DOMElement } from 'ink';
 import { useEffect, useRef, useState } from 'react';
-import type { AuditEntry, Key, Upstream } from '../api.js';
-import { capMoney, clock, dateTime, fit, money, padEnd, plural, requestsText, until } from '../format.js';
+import type { AuditEntry, Incident, Key, Place, PlaceKind, Upstream } from '../api.js';
+import { ago, capMoney, clock, dateTime, fit, money, padEnd, plural, requestsText, until } from '../format.js';
 import { keyLabel } from '../keys.js';
-import { keyRisks } from '../risk.js';
+import { incidentRisk, keyRisks, ruleText } from '../risk.js';
+import type { Risk, Watch } from '../risk.js';
 import { Frame, titleFits } from '../ui/frame.js';
 import { Field, Meter, RiskLine, SectionTitle, StatusBadge, UpstreamSetup, Wrapped } from '../ui/parts.js';
 import { color, severityColor, severityGlyph } from '../ui/theme.js';
 import { AUDIT_LIMIT } from '../useAdmin.js';
+import type { PlacesState } from '../useAdmin.js';
 import { actionColor, rowTarget, targetName, targetText } from './audit.js';
 import type { Names } from './audit.js';
 
@@ -184,6 +186,68 @@ function SpendRow({ which, k, barW, roomy }: { which: 'today' | 'month'; k: Key;
   );
 }
 
+/** A risk, and under it the command that answers it. */
+function RiskWithFix({ risk, width }: { risk: Risk; width: number }) {
+  return (
+    <Box flexDirection="column">
+      <RiskLine risk={risk} />
+      {risk.fix ? (
+        <Text dimColor wrap="truncate-end">
+          {'  '}
+          {fit(risk.fix, Math.max(8, width - 2))}
+        </Text>
+      ) : null}
+    </Box>
+  );
+}
+
+const placeKinds: { kind: PlaceKind; label: string }[] = [
+  { kind: 'country', label: 'country' },
+  { kind: 'asn', label: 'ASN' },
+  { kind: 'network', label: 'network' },
+  { kind: 'client', label: 'client' },
+];
+
+/** "AS3320 Deutsche Telekom AG", "DE", "openai-python/3", or "others" for the row past the first 1,000. */
+function placeName(p: Place): string {
+  if (p.other) return 'others';
+  const v = p.kind === 'asn' ? `AS${p.value}` : p.value || 'none';
+  return p.label ? `${v} ${p.label}` : v;
+}
+
+/**
+ * Where a key was used from, a kind to a block, most recently seen first: each place with
+ * when it was last seen and how many requests were forwarded and refused from it. A
+ * refused request is shown in colour: it is what a locked key turning up elsewhere looks like.
+ */
+function Places({ state, k, width, perKind, now }: { state: PlacesState | undefined; k: Key; width: number; perKind: number; now: number }) {
+  if (!state || (!state.places && !state.error)) return <Text dimColor>loading…</Text>;
+  if (!state.places) return <Text dimColor wrap="wrap">{`Could not load: ${state.error}`}</Text>;
+  const { places, networks_withheld: withheld } = state.places;
+  if (places.length === 0) return <Text dimColor>Not used yet.</Text>;
+  const valueW = Math.max(6, Math.min(34, width - 12 - 22));
+  const more = placeKinds.reduce((n, { kind }) => n + Math.max(0, places.filter((p) => p.kind === kind).length - perKind), 0);
+  return (
+    <Box flexDirection="column">
+      {placeKinds.map(({ kind, label }) =>
+        places
+          .filter((p) => p.kind === kind)
+          .slice(0, perKind)
+          .map((p, i) => (
+            <Field key={`${kind}:${p.value}:${p.other ? 'o' : ''}`} label={i === 0 ? label : ''}>
+              <Text>{padEnd(fit(placeName(p), valueW), valueW)}</Text>
+              <Text dimColor>{` ${ago(p.last_seen, now)}`}</Text>
+              {p.requests ? <Text dimColor>{` · ${p.requests} fwd`}</Text> : null}
+              {p.refused ? <Text color={color.warn}>{` · ${p.refused} refused`}</Text> : null}
+            </Field>
+          )),
+      )}
+      {more > 0 ? <Text dimColor wrap="truncate-end">{`+${more} more: kman key places ${k.name ?? k.id}`}</Text> : null}
+      {withheld ? <Text dimColor wrap="truncate-end">networks hidden: kman settings set expose_client_addresses on</Text> : null}
+    </Box>
+  );
+}
+
 /**
  * Every fact about a key, at every size. Beside the list it is laid out with headings;
  * under it (portrait) the same facts are packed tighter, and J and K scroll to the rest.
@@ -195,8 +259,10 @@ export function KeyMain({
   now,
   compact,
   scroll,
+  watch,
+  places,
   none = 'No key selected.',
-}: Size & { keyData: Key | undefined; now: number; compact: boolean; scroll: Scroll; none?: string }) {
+}: Size & { keyData: Key | undefined; now: number; compact: boolean; scroll: Scroll; watch?: Watch; places?: PlacesState; none?: string }) {
   const { onMax } = scroll;
   useEffect(() => {
     if (!k) onMax(0);
@@ -209,7 +275,7 @@ export function KeyMain({
     );
   }
   // The badge already says "expired", so that risk is not said twice.
-  const risks = keyRisks(k, now).filter((r) => !(k.expired && k.status === 'active' && r.label === 'expired'));
+  const risks = keyRisks(k, now, watch).filter((r) => !(k.expired && k.status === 'active' && r.label === 'expired'));
   const p = k.policy;
   const gap = compact ? 0 : 1;
   // The title is cut at the panel's width; two names can differ only at the end.
@@ -254,21 +320,25 @@ export function KeyMain({
                 ))}
               </Text>
             ) : (
-              risks.map((r) => <RiskLine key={r.label} risk={r} />)
+              risks.map((r) => <RiskWithFix key={r.label} risk={r} width={width - 4} />)
             )}
           </Box>
         ) : null}
 
-        {k.spend ? (
-          <Box flexDirection="column" marginTop={gap}>
-            {compact ? null : <SectionTitle>SPEND</SectionTitle>}
-            <SpendRow which="today" k={k} barW={barW} roomy={!compact} />
-            <SpendRow which="month" k={k} barW={barW} roomy={!compact} />
-          </Box>
-        ) : null}
+        <Box flexDirection="column" marginTop={gap}>
+          <SectionTitle>WHERE IT IS USED</SectionTitle>
+          <Places state={places?.id === k.id ? places : undefined} k={k} width={width - 4} perKind={compact ? 2 : 3} now={now} />
+        </Box>
 
         <Box flexDirection="column" marginTop={gap}>
           {compact ? null : <SectionTitle>POLICY</SectionTitle>}
+          <Field label="from">
+            {p.allowed_cidrs?.length || p.allowed_countries?.length ? (
+              [...(p.allowed_cidrs ?? []), ...(p.allowed_countries ?? [])].join(', ')
+            ) : (
+              <Text color={color.warn}>{severityGlyph.warn} any address</Text>
+            )}
+          </Field>
           <Field label="models">{p.allowed_models?.length ? p.allowed_models.join(', ') : 'any'}</Field>
           <Field label="rate">{p.rpm_limit ? `${p.rpm_limit} requests/min` : 'unlimited'}</Field>
           <Field label="paths">{p.allowed_paths?.length ? p.allowed_paths.join(', ') : 'upstream default'}</Field>
@@ -279,6 +349,44 @@ export function KeyMain({
           {k.credential ? <Field label="credential">{k.credential}</Field> : null}
           <Field label="created">{dateTime(k.created_at)}</Field>
           {k.note ? <Field label="note">{k.note}</Field> : null}
+        </Box>
+
+        {/* The spend comes last: what it bounds is the loss from a leak, which the rest is for catching. */}
+        {k.spend ? (
+          <Box flexDirection="column" marginTop={gap}>
+            {compact ? null : <SectionTitle>SPEND</SectionTitle>}
+            <SpendRow which="today" k={k} barW={barW} roomy={!compact} />
+            <SpendRow which="month" k={k} barW={barW} roomy={!compact} />
+          </Box>
+        ) : null}
+      </Body>
+    </ScrollFrame>
+  );
+}
+
+// ---- Incident about a canary ------------------------------------------------
+
+/** An incident whose key is not in the key list: a canary. What fired, and the commands that answer it. */
+export function IncidentMain({ incident: i, width, height, scroll, now }: Size & { incident: Incident; scroll: Scroll; now: number }) {
+  const r = incidentRisk(i);
+  const name = i.key_name ?? i.key_id;
+  return (
+    <ScrollFrame title={`Incident #${i.id}`} width={width} height={height} scroll={scroll}>
+      <Body>
+        <RiskLine risk={r} />
+        <Box flexDirection="column" marginTop={1}>
+          <Field label="key">{i.key_name ? `${i.key_name} (${i.key_id})` : i.key_id}</Field>
+          <Field label="rules">{i.rules.map(ruleText).join(', ') || '—'}</Field>
+          <Field label="state">{`${i.state}${i.quiet ? ', quiet' : ''}`}</Field>
+          <Field label="opened">{`${dateTime(i.opened_at)} (${ago(i.opened_at, now)})`}</Field>
+          <Field label="last fired">{`${dateTime(i.last_fired_at)} (${ago(i.last_fired_at, now)})`}</Field>
+          <Field label="detections">{String(i.detection_count)}</Field>
+        </Box>
+        <Box flexDirection="column" marginTop={1}>
+          <SectionTitle>ANSWER IT</SectionTitle>
+          <Text wrap="truncate-end">{fit(`kman incident show ${i.id}`, width - 4)}</Text>
+          {i.rules.includes('canary') ? <Text wrap="truncate-end">{fit(`kman canary show ${name}`, width - 4)}</Text> : null}
+          <Text wrap="truncate-end">{fit(`kman incident resolve ${i.id}`, width - 4)}</Text>
         </Box>
       </Body>
     </ScrollFrame>

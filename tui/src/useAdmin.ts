@@ -2,7 +2,7 @@
 // shows stale data marked as stale rather than an empty screen.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from './api.js';
-import type { AdminClient, AuditEntry, Key, PriceDataStatus, Settings, Upstream } from './api.js';
+import type { AdminClient, AuditEntry, ExposureFinding, Incident, Key, KeyPlaces, PriceDataStatus, Settings, Upstream } from './api.js';
 
 export interface AdminData {
   keys: Key[];
@@ -12,6 +12,10 @@ export interface AdminData {
   price?: PriceDataStatus;
   settings?: Settings;
   actor?: string;
+  /** Incidents not yet resolved. Undefined when the server did not say (an older kman). */
+  incidents?: Incident[];
+  /** Exposure findings. Undefined when the server did not say. */
+  findings?: ExposureFinding[];
 }
 
 export type Link =
@@ -39,12 +43,14 @@ export function useAdmin(client: AdminClient, intervalMs = 3000) {
   const load = useCallback(async (): Promise<string | undefined> => {
     if (denied.current) return denied.current;
     try {
-      const [keys, upstreams, audit, price, settings] = await Promise.all([
+      const [keys, upstreams, audit, price, settings, incidents, findings] = await Promise.all([
         client.listKeys(),
         client.listUpstreams(),
         client.latestAudit(AUDIT_LIMIT),
         client.priceStatus().catch(() => undefined),
         client.settings().catch(() => undefined),
+        client.openIncidents().catch(() => undefined),
+        client.exposure().catch(() => undefined),
       ]);
       actor.current ??= await client.whoami().catch(() => undefined);
       const newest = [...audit].reverse();
@@ -52,7 +58,7 @@ export function useAdmin(client: AdminClient, intervalMs = 3000) {
       const prev = maxAudit.current;
       setFresh(prev === undefined ? new Set() : new Set(newest.filter((e) => e.id > prev).map((e) => e.id)));
       maxAudit.current = audit.reduce((m, e) => Math.max(m, e.id), prev ?? 0);
-      setData({ keys, upstreams, audit: newest, price, settings, actor: actor.current });
+      setData({ keys, upstreams, audit: newest, price, settings, actor: actor.current, incidents, findings });
       lastOk.current = Date.now();
       setNow(lastOk.current);
       setLink({ state: 'ok', at: lastOk.current });
@@ -103,4 +109,32 @@ export function useAdmin(client: AdminClient, intervalMs = 3000) {
   }, [refresh, intervalMs]);
 
   return { data, link, now, fresh, refresh };
+}
+
+export interface PlacesState {
+  /** The key they are for. */
+  id?: string;
+  places?: KeyPlaces;
+  error?: string;
+}
+
+/**
+ * Where the key `id` was used from, fetched when it changes and again on every poll
+ * (`at` is when the last one answered). The last answer stays while the next is fetched,
+ * and an answer for a key that is no longer shown is dropped.
+ */
+export function usePlaces(client: AdminClient, id: string | undefined, at: number): PlacesState {
+  const [state, setState] = useState<PlacesState>({});
+  useEffect(() => {
+    if (!id) return;
+    let live = true;
+    client.keyPlaces(id).then(
+      (places) => live && setState({ id, places }),
+      (err: unknown) => live && setState((s) => (s.id === id && s.places ? s : { id, error: err instanceof Error ? err.message : String(err) })),
+    );
+    return () => {
+      live = false;
+    };
+  }, [client, id, at]);
+  return state.id === id ? state : { id };
 }

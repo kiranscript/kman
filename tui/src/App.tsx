@@ -8,7 +8,7 @@ import { RevokeDialog } from './dialogs/RevokeDialog.js';
 import { SecretDialog } from './dialogs/SecretDialog.js';
 import { fit } from './format.js';
 import { keyLabel, visibleKeys } from './keys.js';
-import { attention, upstreamAttention } from './risk.js';
+import { attention, otherIncidents, upstreamAttention } from './risk.js';
 import { layout, hasFilterRow, listArea, summaryRows } from './layout.js';
 import type { ListPanel } from './layout.js';
 import { Footer, noticeRows, TABS } from './ui/chrome.js';
@@ -16,8 +16,8 @@ import type { HintItem, Notice, Tab } from './ui/chrome.js';
 import { Hint, Panel } from './ui/parts.js';
 import { editText } from './ui/TextField.js';
 import { color } from './ui/theme.js';
-import { AUDIT_LIMIT, useAdmin } from './useAdmin.js';
-import { AuditMain, KeyMain, StartMain, StatusMain, UpstreamMain } from './views/detail.js';
+import { AUDIT_LIMIT, useAdmin, usePlaces } from './useAdmin.js';
+import { AuditMain, IncidentMain, KeyMain, StartMain, StatusMain, UpstreamMain } from './views/detail.js';
 import type { Scroll } from './views/detail.js';
 import { attentionItems, AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
 
@@ -102,10 +102,15 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const visible = useMemo(() => visibleKeys(data.keys, filter), [data.keys, filter]);
   const selectedId = visible.some((k) => k.id === keySel) ? keySel : visible[0]?.id;
   const selectedKey = visible.find((k) => k.id === selectedId);
-  const needs = useMemo(() => attention(data.keys, now), [data.keys, now]);
+  const watch = useMemo(() => ({ incidents: data.incidents, findings: data.findings }), [data.incidents, data.findings]);
+  const needs = useMemo(() => attention(data.keys, now, watch), [data.keys, now, watch]);
   const upNeeds = useMemo(() => upstreamAttention(data.upstreams), [data.upstreams]);
-  const items = useMemo(() => attentionItems(needs, upNeeds, data.upstreams.length), [needs, upNeeds, data.upstreams.length]);
+  const canaries = useMemo(() => otherIncidents(data.keys, data.incidents), [data.keys, data.incidents]);
+  const items = useMemo(() => attentionItems(needs, upNeeds, data.upstreams.length, canaries), [needs, upNeeds, data.upstreams.length, canaries]);
   const attnItem = items[Math.min(attentionSel, Math.max(0, items.length - 1))];
+  // Where the key in the main panel was used from: loaded for that one key, and again on every poll.
+  const shownKeyId = tab === 'status' ? attnItem?.key?.id : tab === 'keys' ? selectedKey?.id : undefined;
+  const places = usePlaces(client, shownKeyId, link.state === 'ok' ? link.at : 0);
   const watching = `${tab}:${tab === 'keys' ? selectedId : tab === 'status' ? attnItem?.id : tab === 'upstreams' ? upstreamSel : auditSel}`;
   useEffect(() => setScrollTop(0), [watching]);
   const scroll: Scroll = {
@@ -412,6 +417,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
         selected={attentionSel}
         price={data.price}
         upstreamCount={data.upstreams.length}
+        watch={watch}
       />
       <KeysPanel
         width={lay.leftW}
@@ -425,6 +431,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
         filtering={mode.kind === 'filter'}
         hasUpstreams={data.upstreams.length > 0}
         now={now}
+        watch={watch}
       />
       <UpstreamsPanel
         width={lay.leftW}
@@ -567,7 +574,9 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     const main =
       tab === 'status' ? (
         attn ? (
-          <KeyMain key={attn.id} keyData={attn} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} />
+          <KeyMain key={attn.id} keyData={attn} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} watch={watch} places={places} />
+        ) : attnItem?.incident ? (
+          <IncidentMain key={attnItem.id} incident={attnItem.incident} width={lay.mainW} height={lay.mainH} scroll={scroll} now={now} />
         ) : attnItem?.noUpstream ? (
           <UpstreamMain upstream={undefined} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} none={NO_UPSTREAM} />
         ) : attnUp ? (
@@ -587,6 +596,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
           now={now}
           compact={!lay.wide}
           scroll={scroll}
+          watch={watch}
+          places={places}
           none={data.keys.length === 0 ? 'No keys yet.' : `No key matches "${filter}".`}
         />
       ) : tab === 'upstreams' ? (

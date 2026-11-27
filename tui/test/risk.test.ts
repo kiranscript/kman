@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Key } from '../src/api.js';
-import { upstream } from './fakes.js';
-import { keyRisks, upstreamAttention, upstreamRisks } from '../src/risk.js';
+import { incident, upstream } from './fakes.js';
+import { attention, keyRisks, otherIncidents, topRisk, upstreamAttention, upstreamRisks } from '../src/risk.js';
 
 const now = Date.parse('2026-11-17T12:00:00Z');
 const day = 86_400_000;
@@ -85,4 +85,43 @@ it('keeps local plaintext visible on the upstream without crowding out actionabl
     expect(upstreamAttention([{ ...u, credentials: [] }])[0]?.risks.map((r) => r.short)).toEqual(['no credential']);
   }
   expect(upstreamAttention([{ ...upstream, tls: false, host: '127.0.0.1.example' }])).toHaveLength(1);
+});
+
+describe('who and where come first', () => {
+  const near = () => {
+    const k = key({ id: 'k_near', name: 'near' });
+    k.spend!.today.cost_micro = 950_000;
+    return k;
+  };
+
+  it('puts an open incident ahead of every other risk, even a contained key', () => {
+    const k = near();
+    const watch = { incidents: [incident({ id: 4, key_id: 'k_near' })] };
+    expect(topRisk(keyRisks(k, now, watch))).toMatchObject({ severity: 'danger', short: 'incident', fix: 'kman incident show 4' });
+    // A disabled key is contained, but its incident is still a case to answer.
+    expect(keyRisks({ ...k, status: 'disabled' }, now, watch).map((r) => r.short)).toEqual(['incident']);
+    // Resolved is over.
+    expect(keyRisks(k, now, { incidents: [incident({ id: 4, key_id: 'k_near', state: 'resolved' })] }).map((r) => r.short)).not.toContain('incident');
+  });
+
+  it('marks an acknowledged or low incident as a warning, and a canary as used', () => {
+    expect(keyRisks(key(), now, { incidents: [incident({ id: 1, key_id: 'k1', state: 'acknowledged' })] })[0]).toMatchObject({ severity: 'warn' });
+    expect(keyRisks(key(), now, { incidents: [incident({ id: 1, key_id: 'k1', severity: 'low' })] })[0]).toMatchObject({ severity: 'warn' });
+    expect(keyRisks(key(), now, { incidents: [incident({ id: 1, key_id: 'k1', rules: ['canary'] })] })[0]).toMatchObject({ short: 'canary used', listLabel: 'canary used' });
+  });
+
+  it('ranks a key open to every address, or unused, above one near its cap', () => {
+    const open = key({ id: 'k_open', name: 'open' });
+    const idle = key({ id: 'k_idle', name: 'idle' });
+    const findings = [
+      { key_id: 'k_open', rule: 'open_to_every_address', message: '', fix: 'kman key update open' },
+      { key_id: 'k_idle', rule: 'unused', message: '', fix: 'kman key disable idle' },
+    ];
+    expect(attention([near(), idle, open], now, { findings }).map((a) => a.key.name)).toEqual(['open', 'idle', 'near']);
+  });
+
+  it('finds the incidents whose key is not in the list: canaries', () => {
+    const list = [incident({ id: 1, key_id: 'k1' }), incident({ id: 2, key_id: 'k_canary', rules: ['canary'] })];
+    expect(otherIncidents([key()], list).map((i) => i.id)).toEqual([2]);
+  });
 });

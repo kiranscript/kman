@@ -1,8 +1,10 @@
-// "Key at risk" (GLOSSARY): a virtual key whose settings or state would make a
-// leak more costly. v0.1.0 has no address locks, so the signals are no spend
-// cap, close to a cap, and about to expire (or already expired).
+// What needs a look, worst first. kman is for seeing who uses a key and where,
+// and for answering a leak, so an open incident (a key turning up somewhere new,
+// or a canary being used) comes first. Then the "key at risk" signals (GLOSSARY):
+// open to every address, unused, about to expire, and last the spend: at or
+// close to a cap, unmetered requests, no cap.
 import { BlockList, isIP } from 'node:net';
-import type { Key, SpendPeriod, Upstream } from './api.js';
+import type { ExposureFinding, Incident, Key, SpendPeriod, Upstream } from './api.js';
 import { daysCeil, daysLeft } from './format.js';
 
 export type Severity = 'danger' | 'warn' | 'info';
@@ -15,6 +17,58 @@ export interface Risk {
   listLabel?: string;
   /** How pressing it is among risks of one severity: higher is sooner. */
   weight: number;
+  /** The kman command that answers it, ready to run. */
+  fix?: string;
+}
+
+/** What the admin API says about leaks: undefined when it was not asked or could not say. */
+export interface Watch {
+  /** Incidents not yet resolved. */
+  incidents?: Incident[];
+  findings?: ExposureFinding[];
+}
+
+const ruleWords: Record<string, string> = {
+  new_country: 'new country',
+  new_asn: 'new ASN',
+  new_network: 'new network',
+  new_client: 'new client',
+  canary: 'canary used',
+};
+
+/** "new country", or the rule's own name for one this client does not know. */
+export const ruleText = (rule: string) => ruleWords[rule] ?? rule.replace(/_/g, ' ');
+
+const severityRank: Record<Incident['severity'], number> = { low: 0, medium: 1, high: 2, critical: 3 };
+
+/** An incident as a risk: high and critical are red until someone acknowledges it. */
+export function incidentRisk(i: Incident): Risk {
+  const acked = i.state === 'acknowledged';
+  const rules = i.rules.length ? i.rules.map(ruleText).join(', ') : 'a detection';
+  const canary = i.rules.includes('canary');
+  const first = i.rules[0] ? ruleText(i.rules[0]) : 'incident';
+  return {
+    severity: !acked && severityRank[i.severity] >= 2 ? 'danger' : 'warn',
+    label: `incident #${i.id} (${i.severity}${acked ? ', acknowledged' : ''}${i.quiet ? ', quiet' : ''}): ${rules}`,
+    short: canary ? 'canary used' : 'incident',
+    listLabel: i.rules.length > 1 ? `${first} +${i.rules.length - 1}` : first,
+    weight: (acked ? 2500 : 4000) + severityRank[i.severity] * 100,
+    fix: `kman incident show ${i.id}`,
+  };
+}
+
+/** An exposure finding as a risk, or undefined for a rule this client does not know. */
+function findingRisk(f: ExposureFinding): Risk | undefined {
+  switch (f.rule) {
+    case 'open_to_every_address':
+      return { severity: 'warn', label: 'open to every address: anyone who holds it can use it from anywhere', short: 'open to all', weight: 2000, fix: f.fix };
+    case 'never_expires':
+      return { severity: 'warn', label: 'never expires', short: 'no expiry', weight: 1500, fix: f.fix };
+    case 'unused':
+      return { severity: 'warn', label: f.last_used_at ? 'not used for 30 days' : 'never used', short: 'unused', weight: 1200, fix: f.fix };
+    default:
+      return undefined;
+  }
 }
 
 /** Fraction of a cap used, counting what is reserved for requests in flight. Undefined with no cap. */
@@ -35,10 +89,18 @@ export function tightestCap(key: Key): { ratio: number; period: 'daily' | 'month
 export const NEAR_CAP = 0.8;
 export const EXPIRING_DAYS = 7;
 
-/** Risks for a key that can still be used. A disabled or revoked key is contained, so it has none. */
-export function keyRisks(key: Key, now: number): Risk[] {
-  if (key.status !== 'active') return [];
-  const risks: Risk[] = [];
+/**
+ * A key's risks. An incident not yet resolved is one whatever the key's state, since it is
+ * a case still to answer. The rest are only for a key that can still be used: a disabled or
+ * revoked key is contained.
+ */
+export function keyRisks(key: Key, now: number, watch: Watch = {}): Risk[] {
+  const risks: Risk[] = (watch.incidents ?? []).filter((i) => i.key_id === key.id && i.state !== 'resolved').map(incidentRisk);
+  if (key.status !== 'active') return risks;
+  for (const f of watch.findings ?? []) {
+    const r = f.key_id === key.id ? findingRisk(f) : undefined;
+    if (r) risks.push(r);
+  }
 
   if (key.expired) {
     risks.push({ severity: 'danger', label: 'expired', short: 'expired', weight: 2000 });
@@ -91,10 +153,10 @@ export interface Attention {
   top: Severity;
 }
 
-/** Active keys with something to look at, worst first. */
-export function attention(keys: Key[], now: number): Attention[] {
+/** Keys with something to look at, worst first. */
+export function attention(keys: Key[], now: number, watch: Watch = {}): Attention[] {
   return keys
-    .map((key) => ({ key, risks: keyRisks(key, now) }))
+    .map((key) => ({ key, risks: keyRisks(key, now, watch) }))
     .filter((a) => a.risks.length > 0)
     .map((a) => ({ ...a, top: worst(a.risks) ?? 'info' }))
     .sort(
@@ -106,6 +168,12 @@ export function attention(keys: Key[], now: number): Attention[] {
 }
 
 /** The most pressing risk of a key, for ordering keys of one severity. */
+/** Incidents about a key that is not in the list: a canary, which GET /keys leaves out. */
+export function otherIncidents(keys: Key[], incidents: Incident[] = []): Incident[] {
+  const ids = new Set(keys.map((k) => k.id));
+  return incidents.filter((i) => i.state !== 'resolved' && !ids.has(i.key_id));
+}
+
 function weightOf(a: { risks: Risk[]; top: Severity }): number {
   return Math.max(...a.risks.filter((r) => r.severity === a.top).map((r) => r.weight));
 }

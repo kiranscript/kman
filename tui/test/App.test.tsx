@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api.js';
 import { App } from '../src/App.js';
-import { fakeClient, key, tick, until, upstream } from './fakes.js';
+import { fakeClient, incident, key, place, tick, until, upstream } from './fakes.js';
 import { render } from './render.js';
 
 const SIZE = { columns: 100, rows: 34 };
@@ -802,6 +802,8 @@ describe('App', () => {
       ]);
       const m = mount(client, { columns: 80, rows: 24 });
       await loaded(m);
+      // The spend is the last part of the detail: scroll down to it.
+      for (let i = 0; i < 10 && !m.screen().includes('12k reqs'); i++) await m.press('J');
       expect(m.screen()).toContain('424 requests');
       expect(m.screen()).toContain('12k reqs');
       m.unmount();
@@ -1972,7 +1974,7 @@ describe('review round 1', () => {
     }
   });
 
-  it('keeps a key warning on its row beside a long name, ahead of the spend', async () => {
+  it('keeps a key warning on its row beside a long name, and no spend', async () => {
     const client = fakeClient();
     const name = 'checkout-service-with-a-fairly-long-name';
     client.keys[0] = {
@@ -1988,8 +1990,9 @@ describe('review round 1', () => {
     await m.press('2');
     const row = m.screen().split('\n').find((l) => /^[│┃] checkou/.test(l)) ?? '';
     expect(row).toContain('● active');
-    // Long name, narrow column: the warning keeps its mark and the spend stays, the words go.
-    expect(row).toMatch(/▲ +\$0\.108/);
+    // Long name, narrow column: the warning keeps its mark. The spend is in the detail, not the row.
+    expect(row).toContain('▲');
+    expect(row).not.toContain('$');
     m.unmount();
   });
 
@@ -2045,7 +2048,8 @@ describe('review round 1', () => {
           await loaded(m);
           const s = m.screen();
           const label = `${size.columns}x${size.rows} extra=${extra} stale=${stale}`;
-          expect(s, label).toContain('$12.34');
+          expect(s, label).toContain('no ');
+          expect(s, label).toMatch(/✔ no (open )?incidents/);
           expect(s, label).toContain('1 disabled');
           expect(s, label).toContain('1 revoked');
           expect(s, label).toContain(stale ? '▲ price' : 'price');
@@ -2377,8 +2381,7 @@ describe('review round 3', () => {
     expect(rows).toHaveLength(2);
     const at = (l: string) => l.indexOf('● active');
     expect(at(rows[0]!)).toBe(at(rows[1]!));
-    const cost = (l: string) => l.search(/\$0\.\d+/) + l.match(/\$0\.\d+/)![0].length;
-    expect(cost(rows[0]!)).toBe(cost(rows[1]!));
+    expect(rows.join('\n')).not.toContain('$');
     m.unmount();
   });
 
@@ -2694,16 +2697,18 @@ describe('review round 7', () => {
     m.unmount();
   });
 
-  it('keeps the spend column in the Keys list at 100x30 with a long-named, mixed set', async () => {
+  it('puts an incident on its key row, and no spend, at 100x30 with a long-named, mixed set', async () => {
     const client = fakeClient();
     client.keys.push(
       key({ id: 'k_prod', name: 'prod-api', spend: { today: { period: 'd', cost_micro: 4_300_000, requests: 812, cap_micro: 5_000_000 }, month: { period: 'm', cost_micro: 61_000_000, requests: 9100, cap_micro: 200_000_000 } } }),
       key({ id: 'k_rev', name: 'leaked-demo', status: 'revoked' }),
     );
+    client.incidents = [incident({ id: 3, key_id: 'k_prod', key_name: 'prod-api' })];
     const m = mount(client, { columns: 100, rows: 34 });
     await loaded(m);
     await m.press('2');
-    expect(lines(m).find((l) => /^[│┃] checkout/.test(l))).toMatch(/\$0\.108/);
+    expect(lines(m).find((l) => /^[│┃] prod-api/.test(l))).toContain('✖ incident');
+    expect(lines(m).find((l) => /^[│┃] checkout/.test(l))).not.toContain('$');
     m.unmount();
   });
 });
@@ -2899,12 +2904,12 @@ describe('review round 12', () => {
     m.unmount();
   });
 
-  it('keeps the spend ahead of the owner line when the title carries two badges', async () => {
+  it('keeps the incidents ahead of the owner line when the title carries two badges', async () => {
     const client = fakeClient();
     client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
     const m = mount(client, { columns: 100, rows: 30 });
     await loaded(m);
-    expect(m.screen()).toContain('$1.12 today');
+    expect(m.screen()).toContain('✔ no open incidents');
     m.unmount();
   });
 
@@ -2999,5 +3004,92 @@ describe('NO_COLOR', () => {
       delete process.env.NO_COLOR;
       vi.resetModules();
     }
+  });
+});
+describe('who and where come first', () => {
+  const lines = (m: ReturnType<typeof mount>) => m.screen().split('\n');
+
+  it('leads Status with an open incident, ahead of a key near its cap', async () => {
+    const client = fakeClient();
+    client.incidents = [incident({ id: 7, key_id: 'k_checkout', key_name: 'checkout' })];
+    const m = mount(client);
+    await loaded(m);
+    expect(m.screen()).toContain('✖ 1 open incident');
+    // The money is in the key detail, not in Status.
+    expect(lines(m).map((l) => l.slice(0, 44)).join('\n')).not.toContain('$');
+    const first = lines(m).findIndex((l) => l.includes('NEEDS ATTENTION'));
+    expect(lines(m)[first + 1]).toMatch(/✖ checkout +new country \+1/);
+    // Its detail names the incident and the command that shows it.
+    expect(m.screen()).toContain('incident #7 (high): new country, new ASN');
+    expect(m.screen()).toContain('kman incident show 7');
+    m.unmount();
+  });
+
+  it('shows where a key was used from, refused requests marked, before its policy and spend', async () => {
+    const client = fakeClient();
+    client.places.k_checkout = {
+      key_id: 'k_checkout',
+      places: [
+        place({ kind: 'country', value: 'DE', requests: 0, refused: 57 }),
+        place({ kind: 'asn', value: '60729', label: 'Example Exit', requests: 0, refused: 57 }),
+        place({ kind: 'client', value: 'curl/8', requests: 0, refused: 57 }),
+        place({ kind: 'country', value: 'US', requests: 420 }),
+      ],
+      networks_withheld: true,
+    };
+    const m = mount(client, { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    await until(() => m.screen().includes('57 refused'), 'the places');
+    const s = m.screen();
+    expect(s).toMatch(/country +DE .*57 refused/);
+    expect(s).toMatch(/ +US .*420 fwd/);
+    expect(s).toContain('AS60729 Example Exit');
+    expect(s).toMatch(/client +curl\/8/);
+    expect(s).toContain('kman settings set expose_client_addresses on');
+    expect(s.indexOf('WHERE IT IS USED')).toBeLessThan(s.indexOf('POLICY'));
+    expect(s.indexOf('POLICY')).toBeLessThan(s.indexOf('SPEND'));
+    m.unmount();
+  });
+
+  it('ranks a key open to every address above one near its cap, with the fix', async () => {
+    const client = fakeClient();
+    client.findings = [
+      { key_id: 'k_checkout', name: 'checkout', rule: 'open_to_every_address', message: 'open', fix: `kman key update checkout --policy '{"allowed_cidrs":["<network/bits>"]}'` },
+    ];
+    const m = mount(client);
+    await loaded(m);
+    const first = lines(m).findIndex((l) => l.includes('NEEDS ATTENTION'));
+    expect(lines(m)[first + 1]).toMatch(/▲ checkout +open to all/);
+    expect(lines(m)[first + 2]).toContain('ci-evals');
+    expect(m.screen()).toContain('▲ 1 exposed');
+    expect(m.screen()).toContain('kman key update checkout --policy');
+    m.unmount();
+  });
+
+  it('lists a canary incident, which has no key row, and says how to answer it', async () => {
+    const client = fakeClient();
+    client.incidents = [incident({ id: 9, key_id: 'k_canary', key_name: 'wiki-canary', severity: 'critical', rules: ['canary'] })];
+    const m = mount(client);
+    await loaded(m);
+    const first = lines(m).findIndex((l) => l.includes('NEEDS ATTENTION'));
+    expect(lines(m)[first + 1]).toMatch(/✖ wiki-canary +canary used/);
+    expect(m.screen()).toContain('Incident #9');
+    expect(m.screen()).toContain('kman canary show wiki-canary');
+    // Enter has no key to open, and does nothing.
+    await m.press(ENTER);
+    expect(m.screen()).toContain('Incident #9');
+    m.unmount();
+  });
+
+  it('says nothing about incidents to an older kman that does not list them', async () => {
+    const client = fakeClient();
+    client.openIncidents = async () => {
+      throw new ApiError('not_found', 'no route', 404);
+    };
+    const m = mount(client);
+    await loaded(m);
+    expect(m.screen()).not.toContain('incident');
+    m.unmount();
   });
 });

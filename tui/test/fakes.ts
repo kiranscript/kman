@@ -1,4 +1,4 @@
-import type { AdminClient, AuditEntry, Key, KeyClients, Upstream } from '../src/api.js';
+import type { AdminClient, AuditEntry, ExposureFinding, Incident, Key, KeyClients, KeyPlaces, Place, Upstream } from '../src/api.js';
 import { ApiError } from '../src/api.js';
 
 export const NOW = Date.parse('2026-11-17T12:30:00Z');
@@ -18,6 +18,28 @@ export function key(over: Partial<Key> & { id: string }): Key {
       today: { period: '2026-11-17', cost_micro: 108_000, requests: 3, cap_micro: 5_000_000 },
       month: { period: '2026-11', cost_micro: 108_000, requests: 3, cap_micro: 50_000_000 },
     },
+    ...over,
+  };
+}
+
+export function incident(over: Partial<Incident> & { id: number; key_id: string }): Incident {
+  return {
+    state: 'open',
+    severity: 'high',
+    rules: ['new_country', 'new_asn'],
+    detection_count: 1,
+    opened_at: new Date(NOW - 40 * 60_000).toISOString(),
+    last_fired_at: new Date(NOW - 40 * 60_000).toISOString(),
+    ...over,
+  };
+}
+
+export function place(over: Partial<Place> & Pick<Place, 'kind' | 'value'>): Place {
+  return {
+    first_seen: new Date(NOW - 20 * day).toISOString(),
+    last_seen: new Date(NOW - 60_000).toISOString(),
+    requests: 10,
+    refused: 0,
     ...over,
   };
 }
@@ -51,6 +73,11 @@ export interface Fake extends AdminClient {
   clients: Record<string, KeyClients>;
   /** Whether the install gives addresses out (expose_client_addresses). */
   exposeClients: boolean;
+  /** Each key's places, by key id. */
+  places: Record<string, KeyPlaces>;
+  /** Incidents; openIncidents leaves out the resolved ones. */
+  incidents: Incident[];
+  findings: ExposureFinding[];
 }
 
 /** An in-memory admin API that records the changes it is asked to make. */
@@ -69,6 +96,9 @@ export function fakeClient(keys: Key[] = defaultKeys()): Fake {
     upstreams: [upstream],
     clients: {},
     exposeClients: true,
+    places: {},
+    incidents: [],
+    findings: [],
     async whoami() {
       guard();
       return 'owner';
@@ -126,6 +156,19 @@ export function fakeClient(keys: Key[] = defaultKeys()): Fake {
       }
       find(id);
       return structuredClone(fake.clients[id] ?? { key_id: id, clients: [], total: 0 });
+    },
+    async keyPlaces(id) {
+      guard();
+      find(id);
+      return structuredClone(fake.places[id] ?? { key_id: id, places: [] });
+    },
+    async openIncidents() {
+      guard();
+      return structuredClone(fake.incidents.filter((i) => i.state !== 'resolved'));
+    },
+    async exposure() {
+      guard();
+      return structuredClone(fake.findings);
     },
     async revokeKey(id) {
       guard();
