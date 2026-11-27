@@ -722,8 +722,26 @@ describe('safety', () => {
     // The warning wraps in the footer.
     const said = m.screen().replace(/\s+/g, ' ');
     expect(said).toContain('timed out');
-    expect(said).toContain('run kman key rotate prod-api for a secret you can see');
+    expect(said).toContain('prod-api was rotated by owner, but no new secret arrived here');
+    expect(said).toContain('run kman key rotate prod-api for one you can see');
+    expect(said).not.toContain('Could not rotate');
     expect(m.screen()).toContain('Resolved by owner as confirmed');
+    m.unmount();
+  });
+
+  it('says only that there was no answer when someone else resolved it and no rotation is recorded', async () => {
+    const client = leaked();
+    client.rotateKey = async () => {
+      Object.assign(client.incidents[0]!, { state: 'resolved', resolution: 'false_positive', resolved_by: 'alice' });
+      throw new ApiError('unreachable', 'cannot reach it: timed out');
+    };
+    const m = mount(client, WIDE);
+    await opened(m);
+    await m.press('o', 'prod-api', ENTER);
+    const said = m.screen().replace(/\s+/g, ' ');
+    expect(said).toContain('was resolved by alice as false positive. No answer to rotating prod-api');
+    expect(said).toContain('If prod-api was rotated');
+    expect(said).not.toContain('Could not rotate');
     m.unmount();
   });
 });
