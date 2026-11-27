@@ -95,13 +95,24 @@ const CHANGED = 'What it saw has changed: check the boxes again.';
 const maybeRotated = (label: string) => `If ${label} was rotated, run ${cli.rotate(label)} for a secret you can see.`;
 
 /**
- * What to say when the incident records a rotation of the key whose new secret never
- * reached this screen: it happened, whatever became of the answer. `how` says what ended
- * the incident.
+ * What to say when the incident that ended records a rotation of the key, whose new secret
+ * is not on this screen; `how` says what ended the incident. Another rotation is advised
+ * only when this screen's own answer was lost and the rotation is this operator's (`me`):
+ * after anyone else's, one more would end the secret they were given. kman records the
+ * rotation in the same step as it resolves the incident, so none recorded is none made.
  */
-function rotatedUnseen(ended: IncidentDetail, key: { id: string; label: string }, how: string): string | undefined {
+function rotationSaid(
+  ended: IncidentDetail,
+  key: { id: string; label: string },
+  how: string,
+  { me, lost }: { me: string | undefined; lost: boolean },
+): string | undefined {
   const done = ended.actions?.find((x) => x.action === 'key.rotate' && x.target_id === key.id);
-  return done ? `${key.label} was rotated by ${done.actor}, but no new secret arrived here: run ${cli.rotate(key.label)} for one you can see. ${how}` : undefined;
+  if (!done) return undefined;
+  if (lost && (!me || done.actor === me)) {
+    return `${key.label} was rotated by ${done.actor}, but no new secret arrived here: run ${cli.rotate(key.label)} for one you can see. ${how}`;
+  }
+  return `${how} ${key.label} was rotated by ${done.actor}, and the new secret did not come here: another rotation would end it.`;
 }
 
 export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, copy, noticeMs = 6000, secretGuardMs, actionGuardMs = 400 }: AppProps) {
@@ -233,8 +244,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   // one turning up resolved was someone else's doing.
   const seenOpen = useRef<number | undefined>(undefined);
   const resolving = useRef(new Set<number>());
-  // A rotation that brought no new secret and may have happened: said again if its
-  // incident turns up resolved.
+  // A rotation that brought no new secret and may have happened: if its incident turns up
+  // resolved, what it records of that is said.
   const lost = useRef<{ id: number; key: { id: string; label: string } } | undefined>(undefined);
 
   useEffect(() => {
@@ -248,7 +259,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     setMode((m) => (endsWith(m, opened.id) ? { kind: 'none' } : m));
     const how = `Incident #${opened.id} ${endedText(opened)}.`;
     const of = lost.current?.id === opened.id ? lost.current.key : undefined;
-    setNotice({ tone: 'error', text: of ? (rotatedUnseen(opened, of, how) ?? `${how} ${maybeRotated(of.label)}`) : how });
+    setNotice({ tone: 'error', text: (of && rotationSaid(opened, of, how, { me: data.actor, lost: true })) || how });
   }, [opened]);
 
   // A box ticks every value of its kind, so what was ticked is ticked again if they change.
@@ -586,14 +597,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     const warning = lost.current?.id === id ? maybeRotated(of.label) : undefined;
     if (ended) {
       const how = `Incident #${id} ${endedText(ended)}.`;
-      const done = rotatedUnseen(ended, of, how);
-      const text = done
-        ? `${done} (${error})`
-        : !warning
-          ? `${how} Could not rotate: ${error}.`
-          : unanswered
-            ? `${how} No new secret came back from rotating ${of.label}: ${error}. ${warning}`
-            : `${how} An earlier try to rotate ${of.label} brought no new secret, and this one was refused: ${error}. ${warning}`;
+      const done = rotationSaid(ended, of, how, { me: data.actor, lost: warning !== undefined });
+      const text = done ? `${done} (${error})` : `${how} Could not rotate: ${error}.`;
       return setNotice({ tone: 'error', text });
     }
     if (error || !rotated) return setDialogError(`${error ?? 'kman did not return the new secret'}${warning ? `. ${warning}` : ''}`);
