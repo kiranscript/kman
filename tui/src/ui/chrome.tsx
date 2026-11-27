@@ -78,7 +78,7 @@ export function fitHints(hints: HintItem[], width: number): HintItem[] {
   return kept;
 }
 
-const noticeMark = (n: Notice) => `${n.tone === 'ok' ? okGlyph : n.tone === 'error' ? severityGlyph.danger : '·'} `;
+const noticeMark = (n: Notice) => `${n.tone === 'ok' ? okGlyph : n.tone === 'error' ? severityGlyph.danger : severityGlyph.info} `;
 const NOTICE_LINES = 3;
 
 /** The lines of a notice: one for most, and up to three, hanging under the mark, for a failure. */

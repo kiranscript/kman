@@ -3009,11 +3009,14 @@ describe('a note mark', () => {
   });
 
   it('is not doubled after a separator in the one-line Status', async () => {
-    const m = mount(onlyANote(), { columns: 80, rows: 24 });
+    const client = onlyANote();
+    // A stale price comes first on that line, so something is there to part the note from.
+    client.priceStatus = async () => ({ age_days: 99, generated_at: '2026-08-10T00:00:00Z', stale: true });
+    const m = mount(client, { columns: 80, rows: 24 });
     await loaded(m);
     await m.press('2');
     const strip = m.screen().split('\n').find((l) => l.includes('[1] Status'))!;
-    expect(strip).toContain('· solo · no cap');
+    expect(strip).toContain('▲ price stale · solo · no cap');
     expect(strip).not.toContain('· · ');
     m.unmount();
   });

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from './render.js';
 
 // The colours the selected line is drawn with. Ink only writes them when told the output
@@ -22,14 +22,22 @@ async function draw(env: { NO_COLOR?: string }, focused: boolean): Promise<strin
   return frame;
 }
 
-vi.hoisted(() => {
+const forced = vi.hoisted(() => {
+  const was = process.env.FORCE_COLOR;
   process.env.FORCE_COLOR = '1';
+  return { was };
 });
 
 afterEach(() => vi.unstubAllEnvs());
+afterAll(() => {
+  if (forced.was === undefined) delete process.env.FORCE_COLOR;
+  else process.env.FORCE_COLOR = forced.was;
+});
 
 const esc = '\u001b[';
 const RED = `${esc}31m`;
+/** Any foreground colour but the default. */
+const ANY_FOREGROUND = /\u001b\[(?:3[0-7]|9[0-7]|38;[0-9;]+)m/;
 const BLUE_BG = `${esc}44m`;
 const DIM = `${esc}2m`;
 const INVERSE = `${esc}7m`;
@@ -39,7 +47,7 @@ describe('the selected line', () => {
   it('is drawn in the default foreground on the bar of the focused panel', async () => {
     const frame = await draw({}, true);
     expect(frame).toContain(BLUE_BG);
-    expect(frame).not.toContain(RED);
+    expect(frame).not.toMatch(ANY_FOREGROUND);
     expect(frame).not.toContain(DIM);
     // The mark and the word still say how severe it is.
     expect(plain(frame)).toMatch(/^! prod-api +incident old$/);

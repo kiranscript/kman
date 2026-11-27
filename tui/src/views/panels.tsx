@@ -604,7 +604,7 @@ export function UpstreamsPanel({
           focused={focused}
           left={[...lead, { t: u.name }]}
           right={[
-            // The warnings are glyphs when the name needs the room: ▲ no credential, ▲ http.
+            // The warnings are glyphs when the name needs the room: ! no credential, ▲ http.
             ...fitParts(
               [
                 // The same marks as Status gives them: no credential is !, plain http ▲, an update ·.
