@@ -47,12 +47,15 @@ Colour uses the terminal's own 16 colours. `NO_COLOR` turns it off and keeps bol
 
 ## What needs attention
 
-Status puts the leak first. Its third line counts the open incidents and the keys that are exposed (`✖ 2 open incidents · ▲ 2 exposed`), and Needs attention lists, worst first:
+Status puts the leak first. Its summary counts the open incidents and the keys that are exposed (`✖ 2 open incidents · ▲ 2 exposed`), and Needs attention lists, worst first:
 
-1. **Open incidents**: a key used from a new country, ASN, network or client after its learning period, or a canary being used. High and critical ones are red until someone acknowledges them. A canary is not in the key list, so its incident has a row of its own, and its detail gives the commands that answer it.
-2. **Exposed keys**, from `kman exposure`: open to every address, never expiring, or unused for 30 days.
-3. **Expiry**: expired, or expiring within 7 days.
-4. **Spend**: at or near a cap (with the percentage and whether the cap is daily or monthly), unmetered requests, and last, no cap at all.
+1. **Open incidents**, whatever their colour: a key used from a new country, ASN, network or client after its learning period, or a canary being used. High and critical ones are red until someone acknowledges them, and come before the others. A canary is not in the key list, so its incident has a row of its own, and its detail gives the commands that answer it.
+2. **Whatever else is red**: an expired key, a key at its cap, an upstream with no credential.
+3. **Exposed keys**, from `kman exposure`: open to every address, never expiring, or unused for 30 days.
+4. **Expiry** within 7 days.
+5. **Spend**: near a cap (with the percentage and whether the cap is daily or monthly), unmetered requests, and last, no cap at all.
+
+If incidents or exposure fail to load, the TUI keeps the last answer and marks it old, or says it is unknown. It never reports that there is nothing to review while it cannot tell. A kman too old to have them leaves them out.
 
 With the detail beside the list, an incident or exposure warning has the kman command that answers it under it, such as `kman incident show 12`.
 

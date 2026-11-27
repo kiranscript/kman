@@ -120,6 +120,34 @@ describe('who and where come first', () => {
     expect(attention([near(), idle, open], now, { findings }).map((a) => a.key.name)).toEqual(['open', 'idle', 'near']);
   });
 
+  it('ranks any unresolved incident above red spend, expiry and a missing credential', () => {
+    const capped = key({ id: 'capped', name: 'capped' });
+    capped.spend!.today.cost_micro = 1_000_000;
+    const expired = key({ id: 'expired', name: 'expired', expired: true });
+    const low = key({ id: 'low', name: 'low' });
+    const acked = key({ id: 'acked', name: 'acked' });
+    const hot = key({ id: 'hot', name: 'hot' });
+    const watch = {
+      incidents: [
+        incident({ id: 1, key_id: 'low', severity: 'low' }),
+        incident({ id: 2, key_id: 'acked', severity: 'critical', state: 'acknowledged' }),
+        incident({ id: 3, key_id: 'hot', severity: 'high' }),
+      ],
+    };
+    const needs = attention([capped, expired, low, acked, hot], now, watch);
+    // Red incidents first, then the others, then what is red for another reason.
+    expect(needs.map((a) => a.key.id)).toEqual(['hot', 'low', 'acked', 'expired', 'capped']);
+    const both = keyRisks({ ...capped, id: 'low' }, now, watch);
+    expect(topRisk(both)?.short).toBe('incident');
+  });
+
+  it('puts any expiry ahead of a cap nearly reached', () => {
+    const full = near();
+    full.spend!.today.cost_micro = 999_000;
+    const soon = key({ id: 'soon', name: 'soon', expires_at: new Date(now + 6.9 * day).toISOString() });
+    expect(attention([full, soon], now).map((a) => a.key.id)).toEqual(['soon', 'k_near']);
+  });
+
   it('finds the incidents whose key is not in the list: canaries', () => {
     const list = [incident({ id: 1, key_id: 'k1' }), incident({ id: 2, key_id: 'k_canary', rules: ['canary'] })];
     expect(otherIncidents([key()], list).map((i) => i.id)).toEqual([2]);

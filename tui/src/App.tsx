@@ -8,7 +8,7 @@ import { RevokeDialog } from './dialogs/RevokeDialog.js';
 import { SecretDialog } from './dialogs/SecretDialog.js';
 import { fit } from './format.js';
 import { keyLabel, visibleKeys } from './keys.js';
-import { attention, otherIncidents, upstreamAttention } from './risk.js';
+import { attention, otherIncidents, unknowns, upstreamAttention } from './risk.js';
 import { layout, hasFilterRow, listArea, summaryRows } from './layout.js';
 import type { ListPanel } from './layout.js';
 import { Footer, noticeRows, TABS } from './ui/chrome.js';
@@ -17,7 +17,7 @@ import { Hint, Panel } from './ui/parts.js';
 import { editText } from './ui/TextField.js';
 import { color } from './ui/theme.js';
 import { AUDIT_LIMIT, useAdmin, usePlaces } from './useAdmin.js';
-import { AuditMain, IncidentMain, KeyMain, StartMain, StatusMain, UpstreamMain } from './views/detail.js';
+import { AuditMain, IncidentMain, KeyMain, StartMain, StatusMain, UnknownMain, UpstreamMain } from './views/detail.js';
 import type { Scroll } from './views/detail.js';
 import { attentionItems, AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
 
@@ -102,15 +102,22 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const visible = useMemo(() => visibleKeys(data.keys, filter), [data.keys, filter]);
   const selectedId = visible.some((k) => k.id === keySel) ? keySel : visible[0]?.id;
   const selectedKey = visible.find((k) => k.id === selectedId);
-  const watch = useMemo(() => ({ incidents: data.incidents, findings: data.findings }), [data.incidents, data.findings]);
+  const watch = useMemo(
+    () => ({ incidents: data.incidents, incidentsError: data.incidentsError, findings: data.findings, findingsError: data.findingsError }),
+    [data.incidents, data.incidentsError, data.findings, data.findingsError],
+  );
   const needs = useMemo(() => attention(data.keys, now, watch), [data.keys, now, watch]);
   const upNeeds = useMemo(() => upstreamAttention(data.upstreams), [data.upstreams]);
   const canaries = useMemo(() => otherIncidents(data.keys, data.incidents), [data.keys, data.incidents]);
-  const items = useMemo(() => attentionItems(needs, upNeeds, data.upstreams.length, canaries), [needs, upNeeds, data.upstreams.length, canaries]);
+  const items = useMemo(
+    () => attentionItems(needs, upNeeds, data.upstreams.length, canaries, unknowns(watch)),
+    [needs, upNeeds, data.upstreams.length, canaries, watch],
+  );
   const attnItem = items[Math.min(attentionSel, Math.max(0, items.length - 1))];
   // Where the key in the main panel was used from: loaded for that one key, and again on every poll.
   const shownKeyId = tab === 'status' ? attnItem?.key?.id : tab === 'keys' ? selectedKey?.id : undefined;
-  const places = usePlaces(client, shownKeyId, link.state === 'ok' ? link.at : 0);
+  // `now` is when the last poll answered.
+  const places = usePlaces(client, shownKeyId, now);
   const watching = `${tab}:${tab === 'keys' ? selectedId : tab === 'status' ? attnItem?.id : tab === 'upstreams' ? upstreamSel : auditSel}`;
   useEffect(() => setScrollTop(0), [watching]);
   const scroll: Scroll = {
@@ -329,7 +336,14 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       if (input === 'r') {
         setNotice({ tone: 'info', text: 'Refreshing…' });
         void refresh().then((why) =>
-          setNotice(why ? { tone: 'error', untilReconnect: true, text: `Could not refresh: ${why}` } : { tone: 'ok', text: 'Refreshed.' }),
+          setNotice(
+            !why
+              ? { tone: 'ok', text: 'Refreshed.' }
+              : why.partial
+                ? // The connection is fine, so the next poll does not answer this.
+                  { tone: 'error', text: `Refreshed, but ${why.message}` }
+                : { tone: 'error', untilReconnect: true, text: `Could not refresh: ${why.message}` },
+          ),
         );
         return;
       }
@@ -577,6 +591,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
           <KeyMain key={attn.id} keyData={attn} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} watch={watch} places={places} />
         ) : attnItem?.incident ? (
           <IncidentMain key={attnItem.id} incident={attnItem.incident} width={lay.mainW} height={lay.mainH} scroll={scroll} now={now} />
+        ) : attnItem?.unknown ? (
+          <UnknownMain key={attnItem.id} unknown={attnItem.unknown} width={lay.mainW} height={lay.mainH} scroll={scroll} />
         ) : attnItem?.noUpstream ? (
           <UpstreamMain upstream={undefined} keys={data.keys} width={lay.mainW} height={lay.mainH} scroll={scroll} none={NO_UPSTREAM} />
         ) : attnUp ? (
@@ -644,6 +660,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
                   key: selectedKey,
                   filtered: filter !== '',
                   selectable,
+                  // An incident about a canary, or a part that did not load, has no list to open.
+                  openable: Boolean(attnItem?.key || attnItem?.upstream || attnItem?.noUpstream),
                   movable,
                   revokeReady,
                   offline: link.state === 'down',
@@ -692,6 +710,8 @@ interface HintState {
   scrollable: boolean;
   /** The detail panel has the keyboard. */
   detail: boolean;
+  /** Enter on the selected Status row goes somewhere. */
+  openable: boolean;
 }
 
 /**
@@ -699,7 +719,7 @@ interface HintState {
  * missed go first (`rank`): scrolling and the panel keys, then selecting, and last the
  * actions on the selected row, which stay unless nothing else can.
  */
-function hintsFor({ tab, mode, key, filtered, selectable, movable, revokeReady, offline, working, canCreate, hasKeys, scrollable, detail }: HintState): HintItem[] {
+function hintsFor({ tab, mode, key, filtered, selectable, movable, revokeReady, offline, working, canCreate, hasKeys, scrollable, detail, openable }: HintState): HintItem[] {
   const canChange = !offline && !working;
   if (mode === 'confirm') return [{ k: 'y', label: 'yes' }, { k: 'n', label: 'cancel' }];
   if (mode === 'filter') {
@@ -764,7 +784,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, revokeReady, 
     ];
   }
   if (tab === 'status') {
-    return [...select, ...(selectable ? [{ k: 'Enter', label: 'open', rank: 5 }] : []), ...create, ...common];
+    return [...select, ...(openable ? [{ k: 'Enter', label: 'open', rank: 5 }] : []), ...create, ...common];
   }
   return [...select, ...open, ...create, ...common];
 }

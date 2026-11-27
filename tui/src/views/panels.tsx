@@ -5,9 +5,9 @@ import { Box, Text } from 'ink';
 import type { AuditEntry, Incident, Key, PriceDataStatus, Upstream } from '../api.js';
 import { clock, fitMiddle, padEnd, since, tailCells, textWidth } from '../format.js';
 import { keyLabel } from '../keys.js';
-import { incidentRisk, keyRisks, topRisk, upstreamRisks } from '../risk.js';
+import { compareTop, incidentRisk, keyRisks, topRisk, unknowns, upstreamRisks } from '../risk.js';
 import { hasFilterRow, listArea } from '../layout.js';
-import type { Attention, Severity, Risk, UpstreamAttention, Watch } from '../risk.js';
+import type { Attention, Severity, Risk, Unknown, UpstreamAttention, Watch } from '../risk.js';
 import { linkBadge, useTick } from '../ui/chrome.js';
 import { Frame, Strip, stripLabelWidth, subtitleFits } from '../ui/frame.js';
 import type { ReactNode } from 'react';
@@ -108,15 +108,14 @@ export interface Item {
   upstream?: Upstream;
   /** An incident about a key that is not in the key list: a canary. */
   incident?: Incident;
+  /** Incidents or exposure that did not load. */
+  unknown?: Unknown;
   /** Nothing to act on yet: an install with no upstream is told so here. */
   noUpstream?: boolean;
 }
 
-const severityOrder: Record<Severity, number> = { danger: 0, warn: 1, info: 2 };
-const weightOf = (i: Item) => topRisk(i.risks)?.weight ?? 0;
-
 /** Everything that needs a look as one list, worst first: a key and an upstream rank alike. */
-export function attentionItems(needs: Attention[], ups: UpstreamAttention[], upstreamCount = 1, canaries: Incident[] = []): Item[] {
+export function attentionItems(needs: Attention[], ups: UpstreamAttention[], upstreamCount = 1, canaries: Incident[] = [], missing: Unknown[] = []): Item[] {
   const setup: Item[] =
     upstreamCount === 0
       ? [
@@ -131,15 +130,16 @@ export function attentionItems(needs: Attention[], ups: UpstreamAttention[], ups
       : [];
   const all: Item[] = [
     ...setup,
+    ...missing.map((u) => ({ id: `unknown:${u.what}`, name: u.what, risks: [u.risk], top: u.risk.severity, unknown: u })),
     ...canaries.map((i) => {
       const r = incidentRisk(i);
-      return { id: `incident:${i.id}`, name: i.key_name ?? i.key_id, risks: [r], top: r.severity, incident: i };
+      return { id: `incident:${i.id}`, name: i.key_name || i.key_id, risks: [r], top: r.severity, incident: i };
     }),
     ...needs.map((n) => ({ id: n.key.id, name: keyLabel(n.key), risks: n.risks, top: n.top, key: n.key })),
     ...ups.map((u) => ({ id: `upstream:${u.upstream.id}`, name: u.upstream.name, risks: u.risks, top: u.top, upstream: u.upstream })),
   ];
   // The sort is stable: keys already came worst first, and stay in that order among equals.
-  return all.sort((a, b) => severityOrder[a.top] - severityOrder[b.top] || weightOf(b) - weightOf(a));
+  return all.sort(compareTop);
 }
 
 /** Status: the summary of the install and, when focused, what needs attention. */
@@ -173,7 +173,12 @@ export function StatusPanel({
   const disabled = keys.filter((k) => k.status === 'disabled').length;
   const revoked = keys.filter((k) => k.status === 'revoked').length;
   // Who and where comes before the money: the open incidents, then the keys that are easy to abuse.
-  const open = (watch.incidents ?? []).filter((i) => i.state !== 'resolved').length;
+  const unresolved = (watch.incidents ?? []).filter((i) => i.state !== 'resolved');
+  const open = unresolved.length;
+  // Red only while one of them is: an acknowledged or a lesser incident is amber, as in the list.
+  const openTone: Severity = unresolved.some((i) => incidentRisk(i).severity === 'danger') ? 'danger' : 'warn';
+  const missing = unknowns(watch);
+  const incidentsMissing = missing.some((u) => u.what === 'incidents');
   const exposed = new Set((watch.findings ?? []).map((f) => f.key_id)).size;
   const title = '[1] Status';
   // How many need a look, by how much: "✖1 ▲3 ○1". The border counts the same rows.
@@ -212,18 +217,26 @@ export function StatusPanel({
   const badgePart: Seg[][] = link.state === 'ok' ? [] : [[badgeSeg]];
   const dot: Seg = { t: '·', dim: true };
   const whereSeg: Seg[] = [dot, { t: ' ' + where, dim: true }];
-  // An install with no keys and nothing open has nothing to watch yet: no line for it.
+  /** The incidents: how many are open, and never "none" while they did not load. */
+  const incidentSegs = (compact: boolean): Seg[] => {
+    if (open) {
+      const words = `${open} ${compact ? '' : 'open '}${open === 1 ? 'incident' : 'incidents'}${incidentsMissing ? ' (old)' : ''}`;
+      return [{ t: `${severityGlyph[openTone]} ${words}`, color: severityColor[openTone], bold: true }];
+    }
+    if (incidentsMissing) return [{ t: `${severityGlyph.warn} incidents unknown`, color: color.warn, bold: true }];
+    // An install with no keys has nothing to watch yet: no line for it.
+    if (watch.incidents === undefined || keys.length === 0) return [];
+    return [{ t: compact ? '✔ no incidents' : '✔ no open incidents', color: color.ok }];
+  };
+  const exposureSegs: Seg[] = missing.some((u) => u.what === 'exposure')
+    ? [{ t: `${severityGlyph.warn} ${exposed ? `${exposed} exposed (old)` : 'exposure unknown'}`, color: color.warn }]
+    : exposed && keys.length > 0
+      ? [{ t: `${severityGlyph.warn} ${exposed} exposed`, color: color.warn }]
+      : [];
   const watchSegs = (compact: boolean): Seg[] => {
-    if (watch.incidents === undefined && !exposed) return [];
-    if (keys.length === 0 && !open) return [];
-    const segs: Seg[] =
-      watch.incidents === undefined
-        ? []
-        : open
-          ? [{ t: `${severityGlyph.danger} ${open} ${compact ? '' : 'open '}${open === 1 ? 'incident' : 'incidents'}`, color: color.danger, bold: true }]
-          : [{ t: compact ? '✔ no incidents' : '✔ no open incidents', color: color.ok }];
-    if (exposed) segs.push(...(segs.length ? [{ t: ' ' }, dot] : []), { t: `${segs.length ? ' ' : ''}${severityGlyph.warn} ${exposed} exposed`, color: color.warn });
-    return segs;
+    const inc = incidentSegs(compact);
+    if (!inc.length) return exposureSegs;
+    return exposureSegs.length ? [...inc, { t: ' ' }, dot, { t: ' ' }, ...exposureSegs] : inc;
   };
   const priceOk = price && !price.stale ? [[dot, { t: ' ' }, ...priceSeg(true)]] : [];
   const priceStale = price?.stale ? [[dot, { t: ' ' }, ...priceSeg(true)]] : [];
@@ -248,12 +261,15 @@ export function StatusPanel({
         ...priceStale,
         // The first thing to look at comes ahead of the counts: it cannot be seen from another panel.
         ...(strip && attentionPart ? [attentionPart] : []),
+        // An incident, or not knowing of one, comes ahead of the count.
+        ...(open || incidentsMissing ? [[dot, { t: ' ' }, ...incidentSegs(true)]] : []),
         ...(noKeys
           ? []
           : [
               [dot, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
             ]),
-        ...(watchSegs(true).length ? [[dot, { t: ' ' }, ...watchSegs(true)]] : []),
+        ...(!(open || incidentsMissing) && incidentSegs(true).length ? [[dot, { t: ' ' }, ...incidentSegs(true)]] : []),
+        ...(exposureSegs.length ? [[dot, { t: ' ' }, ...exposureSegs]] : []),
         ...(whereAs ? [whereAs] : []),
         ...priceOk,
       ],
@@ -273,6 +289,9 @@ export function StatusPanel({
         { t: `${live} active`, color: live > 0 ? color.ok : undefined },
         { t: ` · ${disabled} disabled · ${revoked} revoked`, dim: true },
       ];
+  /** The longest of the incidents' wordings that fits a line: never dropped for being long. */
+  const watchFitted =
+    [watchSegs(false), watchSegs(true), incidentSegs(true)].find((s) => s.length > 0 && segLen(s) <= inner - 1) ?? watchSegs(true);
   // A fresh price joins the first line; a stale or unknown one keeps a line to itself.
   const priceJoins = price !== undefined && !price.stale;
   const fullLines: Seg[][] = [
@@ -280,7 +299,7 @@ export function StatusPanel({
       ? [{ t: linkText, dim: true }, ...(priceJoins ? [{ t: ' ' }, dot, { t: ' ' }, ...priceSeg(true)] : [])]
       : [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }, ...(priceJoins ? [{ t: ' ' }, dot, { t: ' ' }, ...priceSeg(true)] : [])],
     countsLine,
-    watchSegs(false),
+    watchFitted,
     // Who and where come after the numbers: the border carries the address when it fits.
     ...(inBorder ? [] : [whereLine]),
     ...(priceJoins ? [] : [priceSeg(false)]),
@@ -299,7 +318,7 @@ export function StatusPanel({
   const watch2 = (above: Seg[]): Seg[] =>
     fitParts(
       [
-        ...(watchSegs(false).length ? [watchSegs(false)] : watchSegs(true).length ? [watchSegs(true)] : []),
+        ...(watchFitted.length ? [watchFitted] : []),
         ...(above.some((x) => x.t.includes('price')) ? [] : price && !noKeys ? [[dot, { t: ' ' }, ...priceSeg(true)]] : []),
       ],
       inner - 1,
@@ -308,7 +327,7 @@ export function StatusPanel({
   // the price and a stale warning longest. Nothing is said twice.
   const tierFor = (n: number): Seg[][] => {
     // With no keys to count, the one row is what is left: updated and the price (and the problem, if stacked short).
-    if (n <= 1) return [noKeys && !strip ? head(false) : compactLine];
+    if (n <= 1) return [noKeys && !strip && !open && !incidentsMissing ? head(false) : compactLine];
     if (n === 2) return [head(true), watch2(head(true))];
     return [head(false), countsLine, watch2(head(false)), ...(inBorder ? [] : [whereLine])];
   };

@@ -4,10 +4,10 @@ import { Box, Text, measureElement } from 'ink';
 import type { DOMElement } from 'ink';
 import { useEffect, useRef, useState } from 'react';
 import type { AuditEntry, Incident, Key, Place, PlaceKind, Upstream } from '../api.js';
-import { ago, capMoney, clock, dateTime, fit, money, padEnd, plural, requestsText, until } from '../format.js';
+import { ago, capMoney, clock, dateTime, fit, fitMiddle, money, padEnd, plural, requestsText, shortCount, textWidth, until } from '../format.js';
 import { keyLabel } from '../keys.js';
-import { incidentRisk, keyRisks, ruleText } from '../risk.js';
-import type { Risk, Watch } from '../risk.js';
+import { incidentRisk, keyRisks, neverExpires, ruleText, unknowns } from '../risk.js';
+import type { Risk, Unknown, Watch } from '../risk.js';
 import { Frame, titleFits } from '../ui/frame.js';
 import { Field, Meter, RiskLine, SectionTitle, StatusBadge, UpstreamSetup, Wrapped } from '../ui/parts.js';
 import { color, severityColor, severityGlyph } from '../ui/theme.js';
@@ -186,16 +186,17 @@ function SpendRow({ which, k, barW, roomy }: { which: 'today' | 'month'; k: Key;
   );
 }
 
-/** A risk, and under it the command that answers it. */
-function RiskWithFix({ risk, width }: { risk: Risk; width: number }) {
+/** A risk, and under it the command that answers it, wrapped: a cut command cannot be run. */
+function RiskWithFix({ risk }: { risk: Risk }) {
   return (
     <Box flexDirection="column">
       <RiskLine risk={risk} />
       {risk.fix ? (
-        <Text dimColor wrap="truncate-end">
-          {'  '}
-          {fit(risk.fix, Math.max(8, width - 2))}
-        </Text>
+        <Box paddingLeft={2}>
+          <Text dimColor wrap="wrap">
+            {risk.fix}
+          </Text>
+        </Box>
       ) : null}
     </Box>
   );
@@ -224,26 +225,51 @@ function Places({ state, k, width, perKind, now }: { state: PlacesState | undefi
   if (!state || (!state.places && !state.error)) return <Text dimColor>loading…</Text>;
   if (!state.places) return <Text dimColor wrap="wrap">{`Could not load: ${state.error}`}</Text>;
   const { places, networks_withheld: withheld } = state.places;
-  if (places.length === 0) return <Text dimColor>Not used yet.</Text>;
-  const valueW = Math.max(6, Math.min(34, width - 12 - 22));
-  const more = placeKinds.reduce((n, { kind }) => n + Math.max(0, places.filter((p) => p.kind === kind).length - perKind), 0);
+  const groups = placeKinds.map(({ kind, label }) => ({ kind, label, all: places.filter((p) => p.kind === kind) }));
+  const more = groups.reduce((n, g) => n + Math.max(0, g.all.length - perKind), 0);
+  const rows = groups.flatMap(({ kind, label, all }) =>
+    all.slice(0, perKind).map((p, i) => ({
+      p,
+      kind,
+      label: i === 0 ? label : '',
+      seen: ago(p.last_seen, now),
+      forwarded: p.requests ? ` · ${shortCount(p.requests)} fwd` : '',
+      refused: p.refused ? ` · ${shortCount(p.refused)} refused` : '',
+    })),
+  );
+  // The value column is what the longest value needs, beside the longest counts. Where that
+  // would cut values short, the counts go on a line of their own under each.
+  const room = Math.max(6, width - 12);
+  const longest = Math.min(34, Math.max(0, ...rows.map((r) => textWidth(placeName(r.p)))));
+  const counts = Math.max(0, ...rows.map((r) => 1 + textWidth(r.seen + r.forwarded + r.refused)));
+  const split = room - counts < Math.min(longest, 24);
+  const valueW = Math.min(longest, split ? room : room - counts);
+  // Left to right the same on one line or two.
+  const stats = (r: (typeof rows)[number]) => (
+    <Text wrap="truncate-end">
+      <Text dimColor>{`${split ? '' : ' '}${r.seen}${r.forwarded}`}</Text>
+      {r.refused ? <Text color={color.warn}>{r.refused}</Text> : null}
+    </Text>
+  );
+  // A network's end says how wide it is, so it is cut in the middle.
+  const value = (r: (typeof rows)[number]) => (r.kind === 'network' ? fitMiddle(placeName(r.p), valueW) : fit(placeName(r.p), valueW));
+  // An id still names a revoked key, whose name no longer does.
+  const ref = k.status === 'revoked' || !k.name ? k.id : k.name;
   return (
     <Box flexDirection="column">
-      {placeKinds.map(({ kind, label }) =>
-        places
-          .filter((p) => p.kind === kind)
-          .slice(0, perKind)
-          .map((p, i) => (
-            <Field key={`${kind}:${p.value}:${p.other ? 'o' : ''}`} label={i === 0 ? label : ''}>
-              <Text>{padEnd(fit(placeName(p), valueW), valueW)}</Text>
-              <Text dimColor>{` ${ago(p.last_seen, now)}`}</Text>
-              {p.requests ? <Text dimColor>{` · ${p.requests} fwd`}</Text> : null}
-              {p.refused ? <Text color={color.warn}>{` · ${p.refused} refused`}</Text> : null}
-            </Field>
-          )),
-      )}
-      {more > 0 ? <Text dimColor wrap="truncate-end">{`+${more} more: kman key places ${k.name ?? k.id}`}</Text> : null}
-      {withheld ? <Text dimColor wrap="truncate-end">networks hidden: kman settings set expose_client_addresses on</Text> : null}
+      {state.error ? <Text color={color.warn} wrap="wrap">{`${severityGlyph.warn} not updated: ${state.error}`}</Text> : null}
+      {places.length === 0 && !withheld ? <Text dimColor>Not used yet.</Text> : null}
+      {rows.map((r) => (
+        <Box key={`${r.kind}:${r.p.value}:${r.p.other ? 'o' : ''}`} flexDirection="column">
+          <Field label={r.label}>
+            <Text>{padEnd(value(r), valueW)}</Text>
+            {split ? null : stats(r)}
+          </Field>
+          {split ? <Field label="">{stats(r)}</Field> : null}
+        </Box>
+      ))}
+      {more > 0 ? <Text dimColor wrap="wrap">{`+${more} more: kman key places ${ref}`}</Text> : null}
+      {withheld ? <Text dimColor wrap="wrap">networks hidden: kman settings set expose_client_addresses on</Text> : null}
     </Box>
   );
 }
@@ -275,7 +301,11 @@ export function KeyMain({
     );
   }
   // The badge already says "expired", so that risk is not said twice.
-  const risks = keyRisks(k, now, watch).filter((r) => !(k.expired && k.status === 'active' && r.label === 'expired'));
+  const risks = [
+    ...keyRisks(k, now, watch).filter((r) => !(k.expired && k.status === 'active' && r.label === 'expired')),
+    // Without these, no warning here does not mean there is none.
+    ...unknowns(watch ?? {}).map((u) => u.risk),
+  ];
   const p = k.policy;
   const gap = compact ? 0 : 1;
   // The title is cut at the panel's width; two names can differ only at the end.
@@ -284,7 +314,12 @@ export function KeyMain({
   const barW = compact ? 10 : Math.min(14, Math.max(8, width - 4 - 26));
   // An expiry warning already says how long is left, so the line then gives only the date.
   const soon = risks.some((r) => r.label.startsWith('expires'));
-  const expires = k.status === 'revoked' ? 'ended for good' : `expires ${dateTime(k.expires_at)}${soon ? '' : ` (${until(k.expires_at, now)})`}`;
+  const expires =
+    k.status === 'revoked'
+      ? 'ended for good'
+      : neverExpires(k.expires_at)
+        ? 'never expires'
+        : `expires ${dateTime(k.expires_at)}${soon ? '' : ` (${until(k.expires_at, now)})`}`;
   return (
     <ScrollFrame title={`Key: ${label}`} width={width} height={height} scroll={scroll}>
       <Body>
@@ -320,15 +355,17 @@ export function KeyMain({
                 ))}
               </Text>
             ) : (
-              risks.map((r) => <RiskWithFix key={r.label} risk={r} width={width - 4} />)
+              risks.map((r) => <RiskWithFix key={r.label} risk={r} />)
             )}
           </Box>
         ) : null}
 
-        <Box flexDirection="column" marginTop={gap}>
-          <SectionTitle>WHERE IT IS USED</SectionTitle>
-          <Places state={places?.id === k.id ? places : undefined} k={k} width={width - 4} perKind={compact ? 2 : 3} now={now} />
-        </Box>
+        {places?.id === k.id && places.unsupported ? null : (
+          <Box flexDirection="column" marginTop={gap}>
+            <SectionTitle>WHERE IT IS USED</SectionTitle>
+            <Places state={places?.id === k.id ? places : undefined} k={k} width={width - 4} perKind={compact ? 2 : 3} now={now} />
+          </Box>
+        )}
 
         <Box flexDirection="column" marginTop={gap}>
           {compact ? null : <SectionTitle>POLICY</SectionTitle>}
@@ -366,14 +403,31 @@ export function KeyMain({
 
 // ---- Incident about a canary ------------------------------------------------
 
-/** An incident whose key is not in the key list: a canary. What fired, and the commands that answer it. */
+/** An incident whose key is not in the key list: a canary. The commands that answer it, and what fired. */
 export function IncidentMain({ incident: i, width, height, scroll, now }: Size & { incident: Incident; scroll: Scroll; now: number }) {
   const r = incidentRisk(i);
-  const name = i.key_name ?? i.key_id;
+  const canary = i.rules.includes('canary');
+  // By id: a revoked canary may have passed its name on.
+  const commands = [
+    `kman incident show ${i.id}`,
+    ...(canary ? [`kman canary show ${i.key_id}`] : []),
+    `kman incident resolve ${i.id}`,
+    ...(canary ? [`kman canary reset ${i.key_id}`] : []),
+  ];
   return (
     <ScrollFrame title={`Incident #${i.id}`} width={width} height={height} scroll={scroll}>
       <Body>
         <RiskLine risk={r} />
+        {/* First, so they show without scrolling at the smallest size. */}
+        <Box flexDirection="column" marginTop={1}>
+          <SectionTitle>ANSWER IT</SectionTitle>
+          {commands.map((c) => (
+            <Text key={c} wrap="wrap">
+              {c}
+            </Text>
+          ))}
+          {canary ? <Text dimColor wrap="wrap">A fired canary stays silent until it is reset.</Text> : null}
+        </Box>
         <Box flexDirection="column" marginTop={1}>
           <Field label="key">{i.key_name ? `${i.key_name} (${i.key_id})` : i.key_id}</Field>
           <Field label="rules">{i.rules.map(ruleText).join(', ') || '—'}</Field>
@@ -382,11 +436,29 @@ export function IncidentMain({ incident: i, width, height, scroll, now }: Size &
           <Field label="last fired">{`${dateTime(i.last_fired_at)} (${ago(i.last_fired_at, now)})`}</Field>
           <Field label="detections">{String(i.detection_count)}</Field>
         </Box>
+      </Body>
+    </ScrollFrame>
+  );
+}
+
+/** Incidents or exposure that did not load: what that means, and where else to look. */
+export function UnknownMain({ unknown: u, width, height, scroll }: Size & { unknown: Unknown; scroll: Scroll }) {
+  const what = u.what === 'incidents' ? 'open incidents' : 'exposed keys';
+  return (
+    <ScrollFrame title={u.what === 'incidents' ? 'Incidents' : 'Exposure'} width={width} height={height} scroll={scroll}>
+      <Body>
+        <RiskLine risk={u.risk} />
         <Box flexDirection="column" marginTop={1}>
-          <SectionTitle>ANSWER IT</SectionTitle>
-          <Text wrap="truncate-end">{fit(`kman incident show ${i.id}`, width - 4)}</Text>
-          {i.rules.includes('canary') ? <Text wrap="truncate-end">{fit(`kman canary show ${name}`, width - 4)}</Text> : null}
-          <Text wrap="truncate-end">{fit(`kman incident resolve ${i.id}`, width - 4)}</Text>
+          <Text wrap="wrap">
+            {u.stale
+              ? `What is shown about ${what} is from an earlier answer. There may be newer ones.`
+              : `kman could not say whether there are ${what}. An empty list does not mean there are none.`}
+          </Text>
+          <Text dimColor wrap="wrap">It is tried again on every poll. r tries now.</Text>
+        </Box>
+        <Box flexDirection="column" marginTop={1}>
+          <SectionTitle>CHECK IT</SectionTitle>
+          <Text wrap="wrap">{u.risk.fix}</Text>
         </Box>
       </Body>
     </ScrollFrame>

@@ -3075,8 +3075,11 @@ describe('who and where come first', () => {
     const first = lines(m).findIndex((l) => l.includes('NEEDS ATTENTION'));
     expect(lines(m)[first + 1]).toMatch(/✖ wiki-canary +canary used/);
     expect(m.screen()).toContain('Incident #9');
-    expect(m.screen()).toContain('kman canary show wiki-canary');
-    // Enter has no key to open, and does nothing.
+    // By id: a revoked canary may have passed its name on.
+    expect(m.screen()).toContain('kman canary show k_canary');
+    expect(m.screen()).toContain('kman canary reset k_canary');
+    // Enter has no key to open, so it is not offered, and does nothing.
+    expect(m.screen()).not.toContain('Enter open');
     await m.press(ENTER);
     expect(m.screen()).toContain('Incident #9');
     m.unmount();
@@ -3090,6 +3093,167 @@ describe('who and where come first', () => {
     const m = mount(client);
     await loaded(m);
     expect(m.screen()).not.toContain('incident');
+    m.unmount();
+  });
+
+  /** A request that failed, as against a route that is not there. */
+  const broken = async (): Promise<never> => {
+    throw new ApiError('internal', 'database is locked', 500);
+  };
+
+  it('keeps the last incidents, marked old, when they stop loading', async () => {
+    const client = fakeClient();
+    client.incidents = [incident({ id: 7, key_id: 'k_checkout', key_name: 'checkout' })];
+    const m = mount(client, { columns: 120, rows: 34 });
+    await loaded(m);
+    client.openIncidents = broken;
+    await m.press('r');
+    await until(() => m.screen().includes('(old)'), 'the old mark');
+    const s = m.screen();
+    expect(s).toContain('✖ 1 open incident (old)');
+    expect(s).toMatch(/✖ checkout +new country \+1/);
+    expect(s).toMatch(/▲ incidents +not updated/);
+    expect(s).toContain('incidents did not load: database is locked');
+    m.unmount();
+  });
+
+  it('never says there is nothing to review while the incidents are unknown', async () => {
+    for (const size of [SIZE, { columns: 80, rows: 24 }, { columns: 140, rows: 40 }]) {
+      const client = fakeClient([key({ id: 'k_quiet', name: 'quiet' })]);
+      client.openIncidents = broken;
+      const m = mount(client, size);
+      await loaded(m);
+      const s = m.screen();
+      expect(s).toContain('incidents unknown');
+      expect(s).not.toContain('nothing to review');
+      expect(s).not.toMatch(/no (open )?incidents/);
+      m.unmount();
+    }
+  });
+
+  it('says so in a key\'s detail and in Status when exposure does not load', async () => {
+    const client = fakeClient([key({ id: 'k_quiet', name: 'quiet' })]);
+    client.exposure = broken;
+    const m = mount(client, { columns: 140, rows: 40 });
+    await loaded(m);
+    expect(m.screen()).toContain('exposure unknown');
+    expect(m.screen()).not.toContain('nothing to review');
+    await m.press('2');
+    expect(m.screen()).toContain('exposure unknown: database is locked');
+    m.unmount();
+  });
+
+  it('ranks a medium or acknowledged incident above a key at its cap, and names it on the row', async () => {
+    const capped = key({ id: 'k_capped', name: 'capped' });
+    capped.spend!.today.cost_micro = capped.spend!.today.cap_micro!;
+    const leaked = key({ id: 'k_leaked', name: 'leaked' });
+    leaked.spend!.today.cost_micro = leaked.spend!.today.cap_micro!;
+    const old = key({ id: 'k_old', name: 'old', expired: true });
+    const client = fakeClient([capped, old, leaked]);
+    client.incidents = [incident({ id: 3, key_id: 'k_leaked', severity: 'medium', rules: ['new_asn'] })];
+    const m = mount(client, { columns: 120, rows: 34 });
+    await loaded(m);
+    const first = lines(m).findIndex((l) => l.includes('NEEDS ATTENTION'));
+    expect(lines(m)[first + 1]).toMatch(/▲ leaked +new ASN \+1 issue/);
+    expect(m.screen()).toContain('▲ 1 open incident');
+    await m.press('2');
+    expect(m.screen()).toMatch(/leaked +● active +▲ incident/);
+    m.unmount();
+  });
+
+  it('leaves out where a key was used on a kman without that route', async () => {
+    const client = fakeClient();
+    client.keyPlaces = async () => {
+      throw new ApiError('not_found', 'no such admin API route', 404);
+    };
+    const m = mount(client, { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    expect(m.screen()).toContain('POLICY');
+    expect(m.screen()).not.toContain('WHERE IT IS USED');
+    expect(m.screen()).not.toContain('Could not load');
+    m.unmount();
+  });
+
+  it('marks places that stop loading, and keeps what it had', async () => {
+    const client = fakeClient();
+    client.places.k_checkout = { key_id: 'k_checkout', places: [place({ kind: 'country', value: 'DE' })] };
+    const m = mount(client, { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    await until(() => /country +DE/.test(m.screen()), 'the places');
+    client.keyPlaces = broken;
+    await m.press('r');
+    await until(() => m.screen().includes('not updated: database is locked'), 'the mark');
+    expect(m.screen()).toMatch(/country +DE/);
+    m.unmount();
+  });
+
+  it('does not call a key unused when all it has to show is hidden networks', async () => {
+    const client = fakeClient();
+    client.places.k_checkout = { key_id: 'k_checkout', places: [], networks_withheld: true };
+    const m = mount(client, { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    await until(() => m.screen().includes('networks hidden'), 'the hint');
+    expect(m.screen()).not.toContain('Not used yet');
+    m.unmount();
+  });
+
+  it('names a revoked key by its id in the command for the rest of its places', async () => {
+    const client = fakeClient([key({ id: 'k_gone', name: 'leaked', status: 'revoked' })]);
+    client.places.k_gone = { key_id: 'k_gone', places: ['DE', 'US', 'NL', 'FR'].map((value) => place({ kind: 'country', value })) };
+    const m = mount(client, { columns: 140, rows: 40 });
+    await loaded(m);
+    await m.press('2');
+    await until(() => m.screen().includes('+1 more'), 'the places');
+    expect(m.screen()).toContain('+1 more: kman key places k_gone');
+    m.unmount();
+  });
+
+  it('keeps each count whole and a network\'s width, however narrow the detail', async () => {
+    const client = fakeClient();
+    client.places.k_checkout = {
+      key_id: 'k_checkout',
+      places: [
+        place({ kind: 'asn', value: '60729', label: 'An Organisation With A Very Long Name', requests: 12_500, refused: 57 }),
+        place({ kind: 'network', value: '2001:db8:1234:5678::/64', requests: 12_500, refused: 57 }),
+      ],
+    };
+    for (const columns of [80, 100, 120, 140]) {
+      const m = mount(client, { columns, rows: 40 });
+      await loaded(m);
+      await m.press('2');
+      await until(() => m.screen().includes('/64'), `the places at ${columns}`);
+      expect(m.screen().match(/13k fwd · 57 refused/g)).toHaveLength(2);
+      expect(m.screen()).toContain('2001:db8:1234:5678::/64');
+      m.unmount();
+    }
+  });
+
+  it('shows a fix command whole, however long', async () => {
+    const fix = `kman key update checkout --policy '{"allowed_cidrs":["<network/bits>"],"daily_cap_micro":5000000}'`;
+    const client = fakeClient();
+    client.findings = [{ key_id: 'k_checkout', rule: 'open_to_every_address', message: '', fix }];
+    for (const columns of [100, 120]) {
+      const m = mount(client, { columns, rows: 40 });
+      await loaded(m);
+      // The detail's lines, joined: where the command wrapped does not matter.
+      const x = lines(m)[0]!.indexOf('╭─ Key');
+      const detail = lines(m).map((l) => l.slice(x + 1).replace(/│\s*$/, '').trim()).join('');
+      expect(detail.replace(/\s/g, '')).toContain(fix.replace(/\s/g, ''));
+      m.unmount();
+    }
+  });
+
+  it('says a key with no expiry never expires, not that it is about to', async () => {
+    const client = fakeClient([key({ id: 'k_forever', name: 'forever', expires_at: '0001-01-01T00:00:00Z' })]);
+    client.findings = [{ key_id: 'k_forever', rule: 'never_expires', message: '', fix: 'kman key update forever --ttl 90d' }];
+    const m = mount(client, { columns: 140, rows: 40 });
+    await loaded(m);
+    expect(m.screen()).toContain('never expires');
+    expect(m.screen()).not.toContain('expires within a day');
+    expect(m.screen()).not.toMatch(/expires \d/);
     m.unmount();
   });
 });
