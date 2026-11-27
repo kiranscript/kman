@@ -12,7 +12,7 @@ export function StatusBadge({ status, expired }: { status: KeyStatus; expired?: 
   const lapsed = status === 'active' && expired;
   return (
     <Text color={lapsed ? color.danger : s.color} dimColor={s.dim}>
-      {lapsed ? '✖' : s.glyph} {lapsed ? 'expired' : status}
+      {lapsed ? severityGlyph.danger : s.glyph} {lapsed ? 'expired' : status}
     </Text>
   );
 }
@@ -86,7 +86,7 @@ export function Wrapped({
   maxLines: number;
   tone?: string;
   dim?: boolean;
-  /** Starts the first line ("✖ "); the lines after it are indented under the text. */
+  /** Starts the first line ("! "); the lines after it are indented under the text. */
   marker?: string;
 }) {
   const hang = [...marker].length;

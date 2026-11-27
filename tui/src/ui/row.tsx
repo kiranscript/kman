@@ -1,6 +1,8 @@
 // One line of a list. The selected line of the focused panel is a solid blue bar
 // across the whole width (inverse without colour); in an unfocused panel the
-// selected line is only bold, as in lazygit.
+// selected line is only bold, as in lazygit. The text on the bar is the default
+// foreground, as a colour such as red on blue is hard to read: its marks and words
+// still say how severe it is.
 import { Text } from 'ink';
 import { graphemes, graphemeWidth, textWidth } from '../format.js';
 import { color } from './theme.js';
@@ -59,7 +61,7 @@ export function Row({
   const gap = Math.max(0, width - len(l) - len(r));
   const on = Boolean(selected && focused);
   const part = (s: Seg, i: number) => (
-    <Text key={i} color={s.color} dimColor={s.dim && !on} bold={s.bold}>
+    <Text key={i} color={on ? undefined : s.color} dimColor={s.dim && !on} bold={s.bold}>
       {s.t}
     </Text>
   );

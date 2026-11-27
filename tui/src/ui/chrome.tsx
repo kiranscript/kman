@@ -2,7 +2,7 @@ import { Box, Text } from 'ink';
 import { useEffect, useState } from 'react';
 import { fit, wrapLines } from '../format.js';
 import { Hint } from './parts.js';
-import { color } from './theme.js';
+import { color, okGlyph, severityGlyph } from './theme.js';
 import type { Link } from '../useAdmin.js';
 
 /** The panels on the left, in order. The number is the key that jumps to each. */
@@ -24,11 +24,11 @@ export function linkBadge(link: Link): { glyph: string; word: string; color?: st
       if (link.answered) {
         const st = link.status ?? 500;
         const word = st < 400 ? 'invalid reply' : st >= 500 ? 'server error' : st === 429 ? 'rate limited' : 'refused';
-        return { glyph: '✖', word, color: color.danger };
+        return { glyph: severityGlyph.danger, word, color: color.danger };
       }
       return { glyph: '◌', word: link.lastOk ? 'offline' : 'cannot connect', color: color.warn };
     case 'denied':
-      return { glyph: '✖', word: 'token refused', color: color.danger };
+      return { glyph: severityGlyph.danger, word: 'token refused', color: color.danger };
     default:
       return { glyph: '◌', word: 'connecting' };
   }
@@ -78,7 +78,7 @@ export function fitHints(hints: HintItem[], width: number): HintItem[] {
   return kept;
 }
 
-const noticeMark = (n: Notice) => `${n.tone === 'ok' ? '✔' : n.tone === 'error' ? '✖' : '·'} `;
+const noticeMark = (n: Notice) => `${n.tone === 'ok' ? okGlyph : n.tone === 'error' ? severityGlyph.danger : severityGlyph.info} `;
 const NOTICE_LINES = 3;
 
 /** The lines of a notice: one for most, and up to three, hanging under the mark, for a failure. */

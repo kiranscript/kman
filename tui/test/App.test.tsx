@@ -59,7 +59,7 @@ describe('App', () => {
     await m.press('2');
     const s = m.screen();
     expect(s).toContain('● active');
-    expect(s).toContain('◐ disabled');
+    expect(s).toContain('○ disabled');
     expect(s).toContain('$0.108 / $5');
     m.unmount();
   });
@@ -683,7 +683,7 @@ describe('App', () => {
       const s = m.screen();
       expect(s).toContain('Upstreams (14)');
       expect(s).toContain('1 of 14');
-      expect(lines(m).find((l) => l.includes('a-very') && l.includes('…'))).toContain('○ update');
+      expect(lines(m).find((l) => l.includes('a-very') && l.includes('…'))).toContain('· update');
       expect(lines(m).find((l) => /^[│┃] up-1 /.test(l))).toContain('▲ http');
       expect(lines(m).every((l) => [...l].length <= 100)).toBe(true);
       m.unmount();
@@ -1049,7 +1049,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('n');
       await m.press(CTRL_S);
-      await until(() => m.screen().includes('✖'), 'the error');
+      await until(() => /[│┃] ! \S/.test(m.screen()), 'the error');
       expect(m.screen()).toContain('two lines in the form');
       m.unmount();
     });
@@ -1119,7 +1119,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('n');
       await m.press(CTRL_S);
-      await until(() => m.screen().includes('✖'), 'the error');
+      await until(() => /[│┃] ! \S/.test(m.screen()), 'the error');
       const row = lines(m).find((l) => l.includes('is long enough'))!;
       expect(row).toMatch(/│ {3}is long enough/);
       m.unmount();
@@ -1344,7 +1344,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('n');
       await m.press(CTRL_S);
-      await until(() => m.screen().includes('✖'), 'the error');
+      await until(() => /[│┃] ! \S/.test(m.screen()), 'the error');
       expect(m.screen()).toContain('to list what exists.');
       expect(lines(m).length).toBeLessThanOrEqual(24);
       m.unmount();
@@ -1422,7 +1422,7 @@ describe('App', () => {
       await loaded(m);
       await m.press('n');
       await m.press(CTRL_S);
-      await until(() => m.screen().includes('✖'), 'the error');
+      await until(() => /[│┃] ! \S/.test(m.screen()), 'the error');
       expect(lines(m).some((l) => /│ {3}key on it\./.test(l))).toBe(true);
       expect(m.screen()).toContain('THE END');
       expect(lines(m).length).toBeLessThanOrEqual(24);
@@ -1504,7 +1504,7 @@ describe('App', () => {
       await m.press('x');
       await m.press('checkout');
       await m.press(ENTER);
-      await until(() => m.screen().includes('✖'), 'the error');
+      await until(() => /[│┃] ! \S/.test(m.screen()), 'the error');
       expect(m.screen()).toContain('THE END');
       expect(lines(m).length).toBeLessThanOrEqual(24);
       m.unmount();
@@ -1532,7 +1532,7 @@ describe('App', () => {
       const m = mount(client, { columns: 100, rows: 34 });
       await loaded(m);
       await m.press('3');
-      expect(lines(m).find((l) => /^[│┃] nocred/.test(l))).toContain('✖ no credential');
+      expect(lines(m).find((l) => /^[│┃] nocred/.test(l))).toContain('! no credential');
       expect(lines(m).find((l) => /^[│┃] healthy/.test(l))).not.toContain('▲');
       m.unmount();
     });
@@ -1924,7 +1924,7 @@ describe('review round 1', () => {
     await loaded(m);
     await m.press('2');
     const row = m.screen().split('\n').find((l) => /^[│┃] checkout/.test(l)) ?? '';
-    expect(row).toContain('✖ at cap');
+    expect(row).toContain('! at cap');
     expect(row).not.toContain('expiring');
     m.unmount();
   });
@@ -1958,7 +1958,7 @@ describe('review round 1', () => {
     await loaded(m);
     await m.press('3');
     const row = m.screen().split('\n').find((l) => /^[│┃] test-upstream/.test(l)) ?? '';
-    expect(row).toContain('✖ no credential');
+    expect(row).toContain('! no credential');
     m.unmount();
   });
 
@@ -2049,7 +2049,7 @@ describe('review round 1', () => {
           const s = m.screen();
           const label = `${size.columns}x${size.rows} extra=${extra} stale=${stale}`;
           expect(s, label).toContain('no ');
-          expect(s, label).toMatch(/✔ no (open )?incidents/);
+          expect(s, label).toMatch(/✓ no (open )?incidents/);
           expect(s, label).toContain('1 disabled');
           expect(s, label).toContain('1 revoked');
           expect(s, label).toContain(stale ? '▲ price' : 'price');
@@ -2140,7 +2140,7 @@ describe('review round 1', () => {
     const rows = m.screen().split('\n');
     expect(rows.find((l) => /^[│┃] checkout/.test(l))).toContain('● active');
     expect(rows.find((l) => /^[│┃] ci-evals/.test(l))).toMatch(/▲ near cap/);
-    expect(rows.find((l) => /^[│┃] old-proto/.test(l))).toContain('◐ disabled');
+    expect(rows.find((l) => /^[│┃] old-proto/.test(l))).toContain('○ disabled');
     m.unmount();
   });
 
@@ -2207,8 +2207,8 @@ describe('review round 2', () => {
     const m = mount(client, { columns: 100, rows: 30 });
     await loaded(m);
     expect(m.screen()).not.toContain('every key is capped and current');
-    expect(m.screen()).toMatch(/Status ✖1 ▲1/);
-    const row = lines(m).find((l) => l.includes('✖ ollama'))!;
+    expect(m.screen()).toMatch(/Status !1 ▲1/);
+    const row = lines(m).find((l) => l.includes('! ollama'))!;
     expect(row).toContain('no credential');
     // The worst comes first, so the upstream with no credential is the selected row.
     await m.press(ENTER);
@@ -2355,7 +2355,7 @@ describe('review round 3', () => {
     client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
     const m = mount(client, { columns: 140, rows: 40 });
     await loaded(m);
-    expect(lines(m)[0]).toMatch(/Status ✖1 ▲1/);
+    expect(lines(m)[0]).toMatch(/Status !1 ▲1/);
     expect(m.screen()).toContain('1 of 2');
     expect(m.screen()).not.toContain('need attention');
     m.unmount();
@@ -2509,11 +2509,11 @@ describe('review round 4', () => {
     client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
     const m = mount(client, { columns: 140, rows: 40 });
     await loaded(m);
-    expect(lines(m).find((l) => l.includes('ollama'))).toContain('✖');
+    expect(lines(m).find((l) => l.includes('ollama'))).toContain('!');
     await m.press('3');
     await m.press('j');
-    expect(lines(m).find((l) => /^[│┃] ollama/.test(l))).toContain('✖ no credential');
-    expect(m.screen()).toContain('✖ none: add one');
+    expect(lines(m).find((l) => /^[│┃] ollama/.test(l))).toContain('! no credential');
+    expect(m.screen()).toContain('! none: add one');
     m.unmount();
   });
 
@@ -2707,7 +2707,7 @@ describe('review round 7', () => {
     const m = mount(client, { columns: 100, rows: 34 });
     await loaded(m);
     await m.press('2');
-    expect(lines(m).find((l) => /^[│┃] prod-api/.test(l))).toContain('✖ incident');
+    expect(lines(m).find((l) => /^[│┃] prod-api/.test(l))).toContain('! incident');
     expect(lines(m).find((l) => /^[│┃] checkout/.test(l))).not.toContain('$');
     m.unmount();
   });
@@ -2748,7 +2748,7 @@ describe('review round 8', () => {
     const m = mount(client, { columns: 100, rows: 30 });
     await loaded(m);
     await m.press('2');
-    expect(lines(m).find((l) => /✖ ollama · no credential/.test(l))).toBeDefined();
+    expect(lines(m).find((l) => /! ollama · no credential/.test(l))).toBeDefined();
     m.unmount();
   });
 
@@ -2780,7 +2780,7 @@ describe('review round 9', () => {
     const m = mount(client, { columns: 80, rows: 24 });
     await loaded(m);
     await m.press('2');
-    expect(lines(m).find((l) => l.includes('[1] Status'))).toContain('✖ ollama · no credential');
+    expect(lines(m).find((l) => l.includes('[1] Status'))).toContain('! ollama · no credential');
     m.unmount();
   });
 
@@ -2883,7 +2883,7 @@ describe('review round 10', () => {
     client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
     const m = mount(client, { columns: 100, rows: 30 });
     await loaded(m);
-    expect(lines(m).find((l) => l.includes('✖ ollama'))).toContain('+1 issue');
+    expect(lines(m).find((l) => l.includes('! ollama'))).toContain('+1 issue');
     await m.press('2');
     expect(m.screen()).toMatch(/· \+1 more/);
     m.unmount();
@@ -2909,7 +2909,7 @@ describe('review round 12', () => {
     client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
     const m = mount(client, { columns: 100, rows: 30 });
     await loaded(m);
-    expect(m.screen()).toContain('✔ no open incidents');
+    expect(m.screen()).toContain('✓ no open incidents');
     m.unmount();
   });
 
@@ -2943,7 +2943,7 @@ describe('review round 13', () => {
     client.upstreams = [];
     const m = mount(client, { columns: 100, rows: 30 });
     await loaded(m);
-    const at = lines(m).findIndex((l) => l.includes('✖ no upstream'));
+    const at = lines(m).findIndex((l) => l.includes('! no upstream'));
     expect(at).toBeGreaterThan(0);
     expect(lines(m)[at + 1]).toMatch(/^╰|^┗/);
     m.unmount();
@@ -2991,6 +2991,37 @@ describe('review round 13', () => {
   });
 });
 
+describe('a note mark', () => {
+  // The mark for a note is the dot that also parts a summary line: it must not be dropped
+  // as a separator that opens a line, nor doubled after one.
+  const onlyANote = () => {
+    const client = fakeClient();
+    client.keys = [key({ id: 'k_a', name: 'solo', spend: undefined })];
+    return client;
+  };
+
+  it('stays in front of the first thing to look at under an unfocused Status', async () => {
+    const m = mount(onlyANote(), { columns: 100, rows: 34 });
+    await loaded(m);
+    await m.press('2');
+    expect(m.screen()).toMatch(/[│┃] · solo · no cap/);
+    m.unmount();
+  });
+
+  it('is not doubled after a separator in the one-line Status', async () => {
+    const client = onlyANote();
+    // A stale price comes first on that line, so something is there to part the note from.
+    client.priceStatus = async () => ({ age_days: 99, generated_at: '2026-08-10T00:00:00Z', stale: true });
+    const m = mount(client, { columns: 80, rows: 24 });
+    await loaded(m);
+    await m.press('2');
+    const strip = m.screen().split('\n').find((l) => l.includes('[1] Status'))!;
+    expect(strip).toContain('▲ price stale · solo · no cap');
+    expect(strip).not.toContain('· · ');
+    m.unmount();
+  });
+});
+
 describe('NO_COLOR', () => {
   it('removes every colour from the theme and leaves the rest of the styling to the app', async () => {
     const { vi } = await import('vitest');
@@ -3014,11 +3045,11 @@ describe('who and where come first', () => {
     client.incidents = [incident({ id: 7, key_id: 'k_checkout', key_name: 'checkout' })];
     const m = mount(client);
     await loaded(m);
-    expect(m.screen()).toContain('✖ 1 open incident');
+    expect(m.screen()).toContain('! 1 open incident');
     // The money is in the key detail, not in Status.
     expect(lines(m).map((l) => l.slice(0, 44)).join('\n')).not.toContain('$');
     const first = lines(m).findIndex((l) => l.includes('NEEDS ATTENTION'));
-    expect(lines(m)[first + 1]).toMatch(/✖ checkout +new country \+1/);
+    expect(lines(m)[first + 1]).toMatch(/! checkout +new country \+1/);
     // Its detail names the incident and the command that shows it.
     expect(m.screen()).toContain('incident #7 (high): new country, new ASN');
     expect(m.screen()).toContain('kman incident show 7');
@@ -3073,7 +3104,7 @@ describe('who and where come first', () => {
     const m = mount(client);
     await loaded(m);
     const first = lines(m).findIndex((l) => l.includes('NEEDS ATTENTION'));
-    expect(lines(m)[first + 1]).toMatch(/✖ wiki-canary +canary used/);
+    expect(lines(m)[first + 1]).toMatch(/! wiki-canary +canary used/);
     expect(m.screen()).toContain('Incident #9');
     // By id: a revoked canary may have passed its name on.
     expect(m.screen()).toContain('kman canary show k_canary');
@@ -3110,8 +3141,8 @@ describe('who and where come first', () => {
     await m.press('r');
     await until(() => m.screen().includes('(old)'), 'the old mark');
     const s = m.screen();
-    expect(s).toContain('✖ 1 open incident (old)');
-    expect(s).toMatch(/✖ checkout +new country \+1/);
+    expect(s).toContain('! 1 open incident (old)');
+    expect(s).toMatch(/! checkout +new country \+1/);
     expect(s).toMatch(/▲ incidents +not updated/);
     expect(s).toContain('incidents did not load: database is locked');
     m.unmount();

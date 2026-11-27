@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from 'ink';
 import type { Tab } from '../ui/chrome.js';
 import { Panel, SectionTitle } from '../ui/parts.js';
-import { color } from '../ui/theme.js';
+import { color, okGlyph, severityGlyph, statusStyle } from '../ui/theme.js';
 
 // Grouped as lazygit's keybindings menu is: what works everywhere, then per panel.
 const KEY_W = 24;
@@ -87,8 +87,12 @@ export function HelpDialog({ onClose, focus, detail }: { onClose: () => void; fo
       ))}
       <Box marginTop={1} flexDirection="column">
         <SectionTitle>MARKS</SectionTitle>
-        <Text dimColor>● active   ◐ disabled   ✖ revoked or danger   ▲ warning</Text>
-        <Text dimColor>○ note   ◆ new entry   ◌ not connected   · message</Text>
+        <Text dimColor>
+          {statusStyle.active.glyph} active   {statusStyle.disabled.glyph} disabled   {statusStyle.revoked.glyph} revoked   {okGlyph} ok
+        </Text>
+        <Text dimColor>
+          {severityGlyph.danger} danger   {severityGlyph.warn} warning   {severityGlyph.info} note or message   ◆ new entry   ◌ not connected
+        </Text>
       </Box>
     </Panel>
   );
