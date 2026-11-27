@@ -3,7 +3,7 @@
 // blue bar; the others shrink until only their selected line shows.
 import { Box, Text } from 'ink';
 import type { AuditEntry, Incident, Key, PriceDataStatus, Upstream } from '../api.js';
-import { clock, fitMiddle, padEnd, since, tailCells, textWidth } from '../format.js';
+import { clock, fitMiddle, padEnd, plural, since, tailCells, textWidth } from '../format.js';
 import { keyLabel } from '../keys.js';
 import { compareTop, incidentRisk, keyRisks, topRisk, unknowns, upstreamRisks } from '../risk.js';
 import { hasFilterRow, listArea } from '../layout.js';
@@ -187,14 +187,10 @@ export function StatusPanel({
   const incidentsMissing = missing.some((u) => u.what === 'incidents');
   const exposed = new Set((watch.findings ?? []).map((f) => f.key_id)).size;
   const title = '[1] Status';
-  // How many need a look, by how much: "!1 ▲3 ·1". The border counts the same rows.
-  const count =
-    (['danger', 'warn', 'info'] as const)
-      .map((sev) => ({ sev, n: items.filter((i) => i.top === sev).length }))
-      .filter((c) => c.n > 0)
-      .map((c) => `${severityGlyph[c.sev]}${c.n}`)
-      .join(' ') || undefined;
   const strip = height <= 1;
+  // The incidents, in words. A strip's own line says them, so its label does not too; and
+  // how many rows need a look is on the bottom border.
+  const count = !strip && open ? `${plural(open, 'incident')}${incidentsMissing ? ' (old)' : ''}` : undefined;
   const inner = innerWidth(width, height, title, count);
   const lead: Seg[] = strip ? [] : [{ t: ' ' }];
   // Who this is and where: in the top border when it fits, else a line of the summary.
@@ -212,11 +208,12 @@ export function StatusPanel({
         : link.state === 'denied'
           ? link.error
           : '';
+  /** `compact` shortens the warning of stale prices. */
   const priceSeg = (compact: boolean): Seg[] =>
     price
       ? price.stale
         ? [{ t: compact ? `${severityGlyph.warn} price stale` : `${severityGlyph.warn} price stale (${price.age_days}d) · upgrade kman`, color: color.warn }]
-        : [{ t: `price ${compact ? `${price.age_days}d` : `data ${price.age_days} days old`}`, dim: true }]
+        : [{ t: `prices ${price.age_days}d old`, dim: true }]
       : [{ t: 'price data unknown', dim: true }];
   const badgeSeg: Seg = { t: `${badge.glyph} ${badge.word}`, color: badge.color, dim: badge.color === undefined };
   // The connection is in the footer: here it is only said when it is not simply live.
@@ -479,9 +476,12 @@ export function KeysPanel({
     const risk = topRisk(lapsed0(k) ? risks.filter((r) => r.label !== 'expired') : risks);
     const lapsed = k.expired && k.status === 'active';
     const st = statusStyle[k.status];
+    // Active is the usual state and is dim, so that the others stand out from it.
+    const usual = k.status === 'active' && !lapsed;
+    const tone = lapsed ? color.danger : usual ? st.color : k.status === 'disabled' ? color.warn : undefined;
     const status: Seg[] = [
-      { t: lapsed ? severityGlyph.danger : st.glyph, color: lapsed ? color.danger : st.color, dim: st.dim },
-      { t: ` ${lapsed ? 'expired' : k.status}`, color: lapsed ? color.danger : undefined, dim: !lapsed },
+      { t: lapsed ? severityGlyph.danger : st.glyph, color: tone, dim: usual },
+      { t: ` ${lapsed ? 'expired' : k.status}`, color: usual ? undefined : tone, dim: usual },
     ];
     const warn: Seg[] = risk ? [{ t: `${severityGlyph[risk.severity]} ${risk.short}`, color: severityColor[risk.severity], dim: risk.severity === 'info' }] : [];
     return { label: keyLabel(k), status, risk: warn };
@@ -542,7 +542,7 @@ export function KeysPanel({
         return (
           <Row
             key={k.id}
-            left={[...lead, { t: fitMiddle(p.label, Math.max(6, inner - 3 - segLen(right))), dim: k.status === 'revoked' }]}
+            left={[...lead, { t: fitMiddle(p.label, Math.max(6, inner - 3 - segLen(right))) }]}
             right={[...right, { t: ' ' }]}
             width={inner}
             selected={k.id === selectedId}

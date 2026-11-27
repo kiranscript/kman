@@ -1,4 +1,5 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { key } from './fakes.js';
 import { render } from './render.js';
 
 // The colours the selected line is drawn with. Ink only writes them when told the output
@@ -42,6 +43,25 @@ const BLUE_BG = `${esc}44m`;
 const DIM = `${esc}2m`;
 const INVERSE = `${esc}7m`;
 const plain = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, '');
+
+describe('the Keys panel', () => {
+  it('dims active keys, and not disabled or revoked ones', async () => {
+    vi.resetModules();
+    const { KeysPanel } = await import('../src/views/panels.js');
+    const keys = [key({ id: 'a', name: 'working' }), key({ id: 'b', name: 'paused', status: 'disabled' }), key({ id: 'c', name: 'ended', status: 'revoked' })];
+    const app = render(
+      <KeysPanel width={60} height={10} focused={false} keys={keys} all={keys} total={3} filter="" filtering={false} hasUpstreams now={0} />,
+      60,
+    );
+    // What is between the name and the panel's right border: the mark and the word.
+    const status = (name: string) =>
+      (app.lastFrame() ?? '').split('\n').find((l) => l.includes(name))!.split(name)[1]!.replace(/(\u001b\[[0-9;]*m)*│.*$/, '');
+    expect(status('working')).toContain(DIM);
+    expect(status('paused')).not.toContain(DIM);
+    expect(status('ended')).not.toContain(DIM);
+    app.unmount();
+  });
+});
 
 describe('the selected line', () => {
   it('is drawn in the default foreground on the bar of the focused panel', async () => {

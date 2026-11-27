@@ -82,8 +82,9 @@ export function layout(
 ): Layout {
   // Stacked, whatever the width, when the main panel needs all of it, as a table does.
   const wide = columns >= WIDE && !stacked;
-  // About two fifths of the screen (44 cells at 100 columns), so names and targets keep room beside the detail.
-  const leftW = wide ? Math.min(56, Math.max(44, Math.floor(columns * 0.42))) : columns;
+  // As wide as a list's names, marks and targets need (44 cells, a few more on a wide
+  // screen), and no more: the width goes to the main panel.
+  const leftW = wide ? Math.min(48, Math.max(44, Math.floor(columns * 0.3))) : columns;
   const strips = !wide && (stacked || rows < STRIP_ROWS);
   const small = strips ? 1 : COLLAPSED;
   const of = (t: Tab) => (panels.includes(t) ? small : 0);
