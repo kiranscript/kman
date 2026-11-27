@@ -143,7 +143,7 @@ describe('the admin client', () => {
       respond = (_r, res) => half(res, status, () => res.destroy());
       const err = await createClient({ url, token: 't' }).whoami().catch((e: unknown) => e);
       expect(err, String(status)).toBeInstanceOf(ApiError);
-      expect(err).toMatchObject({ code: 'unreachable' });
+      expect(err).toMatchObject({ code: 'unreachable', message: `the reply from ${url} was cut off` });
     }
   });
 
