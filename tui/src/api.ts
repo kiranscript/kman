@@ -426,6 +426,13 @@ export function createClient(conn: Connection): AdminClient {
         { ...target.options, method, path, headers, timeout: TIMEOUT_MS },
         (res) => {
           const chunks: Buffer[] = [];
+          // A connection dropped part way through a reply gives no 'end', and no error on
+          // the request: without this the reply is waited on for ever.
+          const cut = () => {
+            if (!res.complete) reject(new ApiError('unreachable', `cannot reach ${conn.url}: the reply was cut off`));
+          };
+          res.on('error', cut);
+          res.on('close', cut);
           res.on('data', (c: Buffer) => chunks.push(c));
           res.on('end', () => {
             const text = Buffer.concat(chunks).toString('utf8');
