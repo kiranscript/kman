@@ -132,6 +132,29 @@ describe('the admin client', () => {
     expect(err.message).toContain('connection refused');
   });
 
+  /** Headers and the start of a reply, and then nothing more. */
+  const half = (res: http.ServerResponse, status: number, then: () => void = () => {}) => {
+    res.writeHead(status, { 'content-type': 'application/json', 'content-length': '100' });
+    res.write('{"actor":', then);
+  };
+
+  it('fails a reply that is dropped part way, as one that never came', async () => {
+    for (const status of [200, 409]) {
+      respond = (_r, res) => half(res, status, () => res.destroy());
+      const err = await createClient({ url, token: 't' }).whoami().catch((e: unknown) => e);
+      expect(err, String(status)).toBeInstanceOf(ApiError);
+      expect(err).toMatchObject({ code: 'unreachable' });
+    }
+  });
+
+  it('gives up on a reply that stalls part way', async () => {
+    let stalled: http.ServerResponse | undefined;
+    respond = (_r, res) => half((stalled = res), 200);
+    const err = await createClient({ url, token: 't' }).rotateKey('k', 1).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: 'unreachable' });
+    stalled!.destroy();
+  }, 10_000);
+
   it('never puts the token in an error', async () => {
     const dead = `http://127.0.0.1:${await closedPort()}`;
     const err = await createClient({ url: dead, token: 'kma_supersecret' }).whoami().catch((e) => e);
