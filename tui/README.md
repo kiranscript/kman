@@ -1,6 +1,6 @@
 # kman-tui
 
-A terminal client for a running kman, built with [Ink](https://github.com/vadimdemedes/ink) (React for the terminal). It is a thin client of the admin API: it shows what needs attention, virtual keys and their spend against caps, upstreams and the audit log, and can disable, enable, revoke and create virtual keys. [ADR 0009](../docs/adr/0009-the-tui-is-a-separate-thin-client.md) says why it is a separate package and what it may and may not do.
+A terminal client for a running kman, built with [Ink](https://github.com/vadimdemedes/ink) (React for the terminal). It is a thin client of the admin API. It shows who is using each virtual key and where: the open incidents (a key turning up from somewhere new, or a canary being used), the keys that would be easy to abuse if they leaked, and the countries, networks and clients each key was used from. It also shows each key's spend against its caps, the upstreams and the audit log, and can disable, enable, revoke and create virtual keys. [ADR 0009](../docs/adr/0009-the-tui-is-a-separate-thin-client.md) says why it is a separate package and what it may and may not do.
 
 It does not run the server. Start kman first (`kman serve`), then this.
 
@@ -41,11 +41,27 @@ The screen follows [lazygit](https://github.com/jesseduffield/lazygit): numbered
 | `?` | help |
 | `q`, `Ctrl+C` | quit |
 
-For keys approaching a cap, Needs attention shows the percentage used and whether the cap is daily or monthly. The key detail shows the remaining allowance after charges and in-flight reservations.
-
 A created key's secret is shown once, on a screen of its own. Only Enter closes it, `c` asks the terminal to copy it (OSC 52, which not every terminal allows), and it is gone from memory when it is closed. The screen also gives the SDK base URL on the kman host, including the bound proxy port. Older servers only supply the SDK path.
 
 Colour uses the terminal's own 16 colours. `NO_COLOR` turns it off and keeps bold and inverse. Every status has a glyph and a word as well as a colour.
+
+## What needs attention
+
+Status puts the leak first. Its summary counts the open incidents and the keys that are exposed (`✖ 2 open incidents · ▲ 2 exposed`), and Needs attention lists, worst first:
+
+1. **Open incidents**, whatever their colour: a key used from a new country, ASN, network or client after its learning period, or a canary being used. High and critical ones are red until someone acknowledges them, and come before the others. A canary is not in the key list, so its incident has a row of its own, and its detail gives the commands that answer it.
+2. **Whatever else is red**: an expired key, a key at its cap, an upstream with no credential.
+3. **Exposed keys**, from `kman exposure`: open to every address, never expiring, or unused for 30 days.
+4. **Expiry** within 7 days.
+5. **Spend**: near a cap (with the percentage and whether the cap is daily or monthly), unmetered requests, and last, no cap at all.
+
+If incidents or exposure fail to load, the TUI keeps the last answer and marks it old, or says it is unknown. It never reports that there is nothing to review while it cannot tell. A kman too old to have them leaves them out.
+
+With the detail beside the list, an incident or exposure warning has the kman command that answers it under it, such as `kman incident show 12`.
+
+## Where a key is used
+
+A key's detail opens with its warnings and then **Where it is used**: each country, ASN, network and client it was used from, most recently seen first, with when it was last seen and how many requests kman forwarded and refused from there. Refused requests are what a locked key turning up somewhere else looks like, so they are marked. These are the places `kman key places` lists, which kman keeps after the events are pruned. Networks are left out unless `expose_client_addresses` is on, as for the addresses below. After that come the policy (where the key may be used from first), and last the spend: today and this month against the caps, with what is left after charges and in-flight reservations.
 
 ## Which addresses used a key
 

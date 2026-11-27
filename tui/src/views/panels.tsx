@@ -2,19 +2,18 @@
 // Frame with a list in it. The focused one is tall and shows its selected line as a
 // blue bar; the others shrink until only their selected line shows.
 import { Box, Text } from 'ink';
-import type { AuditEntry, Key, PriceDataStatus, Upstream } from '../api.js';
-import { clock, fitMiddle, money, padEnd, since, tailCells, textWidth } from '../format.js';
+import type { AuditEntry, Incident, Key, PriceDataStatus, Upstream } from '../api.js';
+import { clock, fitMiddle, padEnd, since, tailCells, textWidth } from '../format.js';
 import { keyLabel } from '../keys.js';
-import { keyRisks, topRisk, upstreamRisks } from '../risk.js';
+import { compareTop, incidentRisk, keyRisks, topRisk, unknowns, upstreamRisks } from '../risk.js';
 import { hasFilterRow, listArea } from '../layout.js';
-import type { Attention, Severity, Risk, UpstreamAttention } from '../risk.js';
+import type { Attention, Severity, Risk, Unknown, UpstreamAttention, Watch } from '../risk.js';
 import { linkBadge, useTick } from '../ui/chrome.js';
 import { Frame, Strip, stripLabelWidth, subtitleFits } from '../ui/frame.js';
 import type { ReactNode } from 'react';
 import { Row } from '../ui/row.js';
 import type { Seg } from '../ui/row.js';
-import { color, ratioColor, severityColor, severityGlyph, statusStyle } from '../ui/theme.js';
-import { capRatio } from '../risk.js';
+import { color, severityColor, severityGlyph, statusStyle } from '../ui/theme.js';
 import type { Link } from '../useAdmin.js';
 import { actionColor, rowTarget } from './audit.js';
 import type { Names } from './audit.js';
@@ -72,8 +71,6 @@ const segLen = (segs: Seg[]) => segs.reduce((n, x) => n + textWidth(x.t), 0);
 
 /** The segments padded with spaces to `w` columns. */
 const pad = (segs: Seg[], w: number): Seg[] => [...segs, { t: ' '.repeat(Math.max(0, w - segLen(segs))) }];
-/** The segments right-aligned in `w` columns. */
-const padStartSegs = (segs: Seg[], w: number): Seg[] => [{ t: ' '.repeat(Math.max(0, w - segLen(segs))) }, ...segs];
 
 /** The segments without a dot at the start, and the space after it: a line has no separator to open it. */
 function withoutLeadingDot(segs: Seg[]): Seg[] {
@@ -109,15 +106,16 @@ export interface Item {
   /** Exactly one of these: what the row is. */
   key?: Key;
   upstream?: Upstream;
+  /** An incident about a key that is not in the key list: a canary. */
+  incident?: Incident;
+  /** Incidents or exposure that did not load. */
+  unknown?: Unknown;
   /** Nothing to act on yet: an install with no upstream is told so here. */
   noUpstream?: boolean;
 }
 
-const severityOrder: Record<Severity, number> = { danger: 0, warn: 1, info: 2 };
-const weightOf = (i: Item) => topRisk(i.risks)?.weight ?? 0;
-
 /** Everything that needs a look as one list, worst first: a key and an upstream rank alike. */
-export function attentionItems(needs: Attention[], ups: UpstreamAttention[], upstreamCount = 1): Item[] {
+export function attentionItems(needs: Attention[], ups: UpstreamAttention[], upstreamCount = 1, canaries: Incident[] = [], missing: Unknown[] = []): Item[] {
   const setup: Item[] =
     upstreamCount === 0
       ? [
@@ -132,11 +130,16 @@ export function attentionItems(needs: Attention[], ups: UpstreamAttention[], ups
       : [];
   const all: Item[] = [
     ...setup,
+    ...missing.map((u) => ({ id: `unknown:${u.what}`, name: u.what, risks: [u.risk], top: u.risk.severity, unknown: u })),
+    ...canaries.map((i) => {
+      const r = incidentRisk(i);
+      return { id: `incident:${i.id}`, name: i.key_name || i.key_id, risks: [r], top: r.severity, incident: i };
+    }),
     ...needs.map((n) => ({ id: n.key.id, name: keyLabel(n.key), risks: n.risks, top: n.top, key: n.key })),
     ...ups.map((u) => ({ id: `upstream:${u.upstream.id}`, name: u.upstream.name, risks: u.risks, top: u.top, upstream: u.upstream })),
   ];
   // The sort is stable: keys already came worst first, and stay in that order among equals.
-  return all.sort((a, b) => severityOrder[a.top] - severityOrder[b.top] || weightOf(b) - weightOf(a));
+  return all.sort(compareTop);
 }
 
 /** Status: the summary of the install and, when focused, what needs attention. */
@@ -152,6 +155,7 @@ export function StatusPanel({
   selected,
   price,
   upstreamCount,
+  watch = {},
 }: PanelProps & {
   link: Link;
   url: string;
@@ -161,13 +165,21 @@ export function StatusPanel({
   selected: number;
   price?: PriceDataStatus;
   upstreamCount: number;
+  watch?: Watch;
 }) {
   useTick(1000);
   const badge = linkBadge(link);
   const live = keys.filter((k) => k.status === 'active').length;
   const disabled = keys.filter((k) => k.status === 'disabled').length;
   const revoked = keys.filter((k) => k.status === 'revoked').length;
-  const spend = (which: 'today' | 'month') => keys.reduce((n, k) => n + (k.spend?.[which].cost_micro ?? 0), 0);
+  // Who and where comes before the money: the open incidents, then the keys that are easy to abuse.
+  const unresolved = (watch.incidents ?? []).filter((i) => i.state !== 'resolved');
+  const open = unresolved.length;
+  // Red only while one of them is: an acknowledged or a lesser incident is amber, as in the list.
+  const openTone: Severity = unresolved.some((i) => incidentRisk(i).severity === 'danger') ? 'danger' : 'warn';
+  const missing = unknowns(watch);
+  const incidentsMissing = missing.some((u) => u.what === 'incidents');
+  const exposed = new Set((watch.findings ?? []).map((f) => f.key_id)).size;
   const title = '[1] Status';
   // How many need a look, by how much: "✖1 ▲3 ○1". The border counts the same rows.
   const count =
@@ -205,9 +217,30 @@ export function StatusPanel({
   const badgePart: Seg[][] = link.state === 'ok' ? [] : [[badgeSeg]];
   const dot: Seg = { t: '·', dim: true };
   const whereSeg: Seg[] = [dot, { t: ' ' + where, dim: true }];
+  /** The incidents: how many are open, and never "none" while they did not load. */
+  const incidentSegs = (compact: boolean): Seg[] => {
+    if (open) {
+      const words = `${open} ${compact ? '' : 'open '}${open === 1 ? 'incident' : 'incidents'}${incidentsMissing ? ' (old)' : ''}`;
+      return [{ t: `${severityGlyph[openTone]} ${words}`, color: severityColor[openTone], bold: true }];
+    }
+    if (incidentsMissing) return [{ t: `${severityGlyph.warn} incidents unknown`, color: color.warn, bold: true }];
+    // An install with no keys has nothing to watch yet: no line for it.
+    if (watch.incidents === undefined || keys.length === 0) return [];
+    return [{ t: compact ? '✔ no incidents' : '✔ no open incidents', color: color.ok }];
+  };
+  const exposureSegs: Seg[] = missing.some((u) => u.what === 'exposure')
+    ? [{ t: `${severityGlyph.warn} ${exposed ? `${exposed} exposed (old)` : 'exposure unknown'}`, color: color.warn }]
+    : exposed && keys.length > 0
+      ? [{ t: `${severityGlyph.warn} ${exposed} exposed`, color: color.warn }]
+      : [];
+  const watchSegs = (compact: boolean): Seg[] => {
+    const inc = incidentSegs(compact);
+    if (!inc.length) return exposureSegs;
+    return exposureSegs.length ? [...inc, { t: ' ' }, dot, { t: ' ' }, ...exposureSegs] : inc;
+  };
   const priceOk = price && !price.stale ? [[dot, { t: ' ' }, ...priceSeg(true)]] : [];
   const priceStale = price?.stale ? [[dot, { t: ' ' }, ...priceSeg(true)]] : [];
-  // One line that carries the connection, the count, the spend, who and where, and the
+  // One line that carries the connection, the count, the incidents, who and where, and the
   // price: the summary when there is room for only one line. What does not fit is dropped
   // from the end.
   const noKeys = keys.length === 0;
@@ -228,12 +261,15 @@ export function StatusPanel({
         ...priceStale,
         // The first thing to look at comes ahead of the counts: it cannot be seen from another panel.
         ...(strip && attentionPart ? [attentionPart] : []),
+        // An incident, or not knowing of one, comes ahead of the count.
+        ...(open || incidentsMissing ? [[dot, { t: ' ' }, ...incidentSegs(true)]] : []),
         ...(noKeys
           ? []
           : [
               [dot, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
-              [dot, { t: ` ${money(spend('today'))} today`, bold: true }],
             ]),
+        ...(!(open || incidentsMissing) && incidentSegs(true).length ? [[dot, { t: ' ' }, ...incidentSegs(true)]] : []),
+        ...(exposureSegs.length ? [[dot, { t: ' ' }, ...exposureSegs]] : []),
         ...(whereAs ? [whereAs] : []),
         ...priceOk,
       ],
@@ -253,6 +289,9 @@ export function StatusPanel({
         { t: `${live} active`, color: live > 0 ? color.ok : undefined },
         { t: ` · ${disabled} disabled · ${revoked} revoked`, dim: true },
       ];
+  /** The longest of the incidents' wordings that fits a line: never dropped for being long. */
+  const watchFitted =
+    [watchSegs(false), watchSegs(true), incidentSegs(true)].find((s) => s.length > 0 && segLen(s) <= inner - 1) ?? watchSegs(true);
   // A fresh price joins the first line; a stale or unknown one keeps a line to itself.
   const priceJoins = price !== undefined && !price.stale;
   const fullLines: Seg[][] = [
@@ -260,14 +299,7 @@ export function StatusPanel({
       ? [{ t: linkText, dim: true }, ...(priceJoins ? [{ t: ' ' }, dot, { t: ' ' }, ...priceSeg(true)] : [])]
       : [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }, ...(priceJoins ? [{ t: ' ' }, dot, { t: ' ' }, ...priceSeg(true)] : [])],
     countsLine,
-    ...(noKeys
-      ? []
-      : [
-          [
-            { t: `${money(spend('today'))} today`, bold: true },
-            { t: ` · ${money(spend('month'))} this month`, dim: true },
-          ],
-        ]),
+    watchFitted,
     // Who and where come after the numbers: the border carries the address when it fits.
     ...(inBorder ? [] : [whereLine]),
     ...(priceJoins ? [] : [priceSeg(false)]),
@@ -282,25 +314,22 @@ export function StatusPanel({
   /** The connection, a stale price, and the count when `withCount`. */
   const head = (withCount: boolean): Seg[] =>
     fitParts([...(link.state === 'ok' ? [[{ t: linkText, dim: true }]] : badgePart), ...priceStale, ...(withCount ? [activePart] : []), ...priceOk], inner - 1);
-  /** The spend, with the price when the line above does not already carry it. */
-  const money2 = (above: Seg[]): Seg[] =>
-    noKeys
-      ? []
-      : fitParts(
+  /** The incidents, with the price when the line above does not already carry it. */
+  const watch2 = (above: Seg[]): Seg[] =>
+    fitParts(
       [
-        [{ t: `${money(spend('today'))} today`, bold: true }],
-        ...(above.some((x) => x.t.includes('price')) ? [] : price ? [[dot, { t: ' ' }, ...priceSeg(true)]] : []),
-        [dot, { t: ` ${money(spend('month'))} this month`, dim: true }],
+        ...(watchFitted.length ? [watchFitted] : []),
+        ...(above.some((x) => x.t.includes('price')) ? [] : price && !noKeys ? [[dot, { t: ' ' }, ...priceSeg(true)]] : []),
       ],
       inner - 1,
     );
-  // As rows run out the summary shrinks, keeping the connection, the count, the spend,
+  // As rows run out the summary shrinks, keeping the connection, the count, the incidents,
   // the price and a stale warning longest. Nothing is said twice.
   const tierFor = (n: number): Seg[][] => {
     // With no keys to count, the one row is what is left: updated and the price (and the problem, if stacked short).
-    if (n <= 1) return [noKeys && !strip ? head(false) : compactLine];
-    if (n === 2) return [head(true), money2(head(true))];
-    return [head(false), countsLine, money2(head(false)), ...(inBorder ? [] : [whereLine])];
+    if (n <= 1) return [noKeys && !strip && !open && !incidentsMissing ? head(false) : compactLine];
+    if (n === 2) return [head(true), watch2(head(true))];
+    return [head(false), countsLine, watch2(head(false)), ...(inBorder ? [] : [whereLine])];
   };
 
   const rows = Math.max(1, height - 2);
@@ -369,7 +398,7 @@ export function StatusPanel({
           ) : null}
           {items.length === 0 ? (
             keys.some((k) => k.status === 'active') ? (
-              <Text color={color.ok}> ✔ every key is capped and current</Text>
+              <Text color={color.ok} wrap="truncate-end"> ✔ nothing to review</Text>
             ) : (
               <Text dimColor wrap="truncate-end">
                 {keys.length > 0 ? ' No active keys. n creates one.' : upstreamCount === 0 ? ' No upstream yet: kman upstream add' : ' Nothing to review.'}
@@ -414,8 +443,11 @@ export function KeysPanel({
   hasUpstreams,
   now,
   all,
+  watch = {},
 }: PanelProps & {
   keys: Key[];
+  /** Incidents and exposure findings, for each row's warning. */
+  watch?: Watch;
   /** Every key, filtered or not: the columns are sized by these. */
   all: Key[];
   total: number;
@@ -435,13 +467,11 @@ export function KeysPanel({
   // The filter takes the last row, so a list that is empty still shows its message above it.
   const { rows } = listArea(height, { tab: 'keys', filterRow: showFilter });
   const { shown } = windowed(keys, sel, Math.max(1, rows));
-  /** What a key's row says on its right: the mark and word, the warning, today's spend. */
+  /** What a key's row says on its right: the mark and word, and its worst warning. */
   const parts = (k: Key) => {
-    const risks = keyRisks(k, now);
-    const risk = lapsed0(k) ? undefined : topRisk(risks);
-    const today = k.spend?.today;
-    const ratio = capRatio(today);
-    const gone = k.status !== 'active' || k.expired;
+    const risks = keyRisks(k, now, watch);
+    // An expired key's badge says so; an incident still comes first.
+    const risk = topRisk(lapsed0(k) ? risks.filter((r) => r.label !== 'expired') : risks);
     const lapsed = k.expired && k.status === 'active';
     const st = statusStyle[k.status];
     const status: Seg[] = [
@@ -449,12 +479,7 @@ export function KeysPanel({
       { t: ` ${lapsed ? 'expired' : k.status}`, color: lapsed ? color.danger : undefined, dim: !lapsed },
     ];
     const warn: Seg[] = risk ? [{ t: `${severityGlyph[risk.severity]} ${risk.short}`, color: severityColor[risk.severity], dim: risk.severity === 'info' }] : [];
-    const share = ratio !== undefined && inner >= 72 ? `${Math.round(ratio * 100)}% daily  ` : '';
-    const spend: Seg[] =
-      !gone && today
-        ? [{ t: share + money(today.cost_micro), color: ratio === undefined ? undefined : ratioColor(ratio), dim: ratio === undefined || ratio < 0.8 }]
-        : [];
-    return { label: keyLabel(k), status, risk: warn, spend };
+    return { label: keyLabel(k), status, risk: warn };
   };
   // The columns are as wide as the widest of all keys, not of those shown, so they do not
   // move while filtering or scrolling.
@@ -462,21 +487,15 @@ export function KeysPanel({
   const cols = {
     s: Math.max(0, ...rowsInfo.map((p) => segLen(p.status))),
     r: Math.max(0, ...rowsInfo.map((p) => segLen(p.risk))),
-    c: Math.max(0, ...rowsInfo.map((p) => segLen(p.spend))),
-    mode: 'tight' as 'all' | 'noSpend' | 'marksSpend' | 'marks' | 'tight',
+    mode: 'tight' as 'all' | 'marks' | 'tight',
   };
   {
     // The names get what they need (up to 20 cells) before a column does; as room runs
-    // out the spend goes, then the warning's words (its mark stays), always in columns.
+    // out the warning's words go (its mark stays), always in columns.
     const longest = Math.max(0, ...rowsInfo.map((p) => textWidth(p.label)));
     // A row is: a space, the name, a space, the columns and a space.
-    const room = inner - 3 - Math.min(longest, 20);
     const base = cols.s + (cols.r ? 1 + cols.r : 0);
-    // The spend before the warning's words: an amount cannot be read from the detail at a glance,
-    // and the mark still says what kind of warning it is.
-    if (base + (cols.c ? 1 + cols.c : 0) <= room) cols.mode = 'all';
-    else if (cols.s + (cols.r ? 2 : 0) + (cols.c ? 1 + cols.c : 0) <= inner - 3 - Math.min(longest, 12)) cols.mode = 'marksSpend';
-    else if (base <= inner - 3 - Math.min(longest, 12)) cols.mode = 'noSpend';
+    if (base <= inner - 3 - Math.min(longest, 12)) cols.mode = 'all';
     else if (cols.s + (cols.r ? 2 : 0) <= inner - 3 - Math.min(longest, 12)) cols.mode = 'marks';
   }
   return (
@@ -505,23 +524,16 @@ export function KeysPanel({
         const p = parts(k);
         const nameLen = textWidth(p.label);
         // Aligned columns when they fit beside a reasonable part of the names; if not the
-        // spend goes, then the alignment: the mark, its word and the warning are never dropped.
+        // alignment goes: the mark, its word and the warning are never dropped.
         const right: Seg[] =
           cols.mode === 'all'
-            ? [
-                ...pad(p.status, cols.s),
-                ...(cols.r ? [{ t: ' ' }, ...pad(p.risk, cols.r)] : []),
-                ...(cols.c ? [{ t: ' ' }, ...padStartSegs(p.spend, cols.c)] : []),
-              ]
-            : cols.mode === 'noSpend'
-              ? [...pad(p.status, cols.s), ...(cols.r ? [{ t: ' ' }, ...pad(p.risk, cols.r)] : [])]
-              : cols.mode === 'marks' || cols.mode === 'marksSpend'
-                ? [
-                    ...pad(p.status, cols.s),
-                    ...(cols.r ? [{ t: ' ' }, ...pad(p.risk.slice(0, 1).map((x) => ({ ...x, t: [...x.t][0] ?? ' ' })), 1)] : []),
-                    ...(cols.mode === 'marksSpend' && cols.c ? [{ t: ' ' }, ...padStartSegs(p.spend, cols.c)] : []),
-                  ]
-                : fitParts([p.status, ...(p.risk.length ? [p.risk] : [])], Math.max(0, inner - 2 - Math.min(nameLen, 6) - 1));
+            ? [...pad(p.status, cols.s), ...(cols.r ? [{ t: ' ' }, ...pad(p.risk, cols.r)] : [])]
+            : cols.mode === 'marks'
+              ? [
+                  ...pad(p.status, cols.s),
+                  ...(cols.r ? [{ t: ' ' }, ...pad(p.risk.slice(0, 1).map((x) => ({ ...x, t: [...x.t][0] ?? ' ' })), 1)] : []),
+                ]
+              : fitParts([p.status, ...(p.risk.length ? [p.risk] : [])], Math.max(0, inner - 2 - Math.min(nameLen, 6) - 1));
         return (
           <Row
             key={k.id}

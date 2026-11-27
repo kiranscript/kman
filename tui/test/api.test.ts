@@ -43,6 +43,24 @@ describe('the admin client', () => {
     expect(seen[0]).toMatchObject({ method: 'GET', url: '/admin/v1/whoami', auth: 'Bearer kma_abc' });
   });
 
+  it('takes control characters out of every string, so none can drive the terminal', async () => {
+    respond = (_r, res) =>
+      json(res, 200, { key_id: 'k', places: [{ kind: 'asn', value: '1', label: 'Evil\u001b[31m\nOrg\u009b\u202e' }] });
+    const got = await createClient({ url, token: 't' }).keyPlaces('k');
+    expect(got.places[0]?.label).toBe('Evil [31m Org  ');
+  });
+
+  it('reads every page of open incidents', async () => {
+    respond = (r, res) =>
+      r.url?.includes('before=')
+        ? json(res, 200, { incidents: [{ id: 1, rules: null }], more: false })
+        : json(res, 200, { incidents: [{ id: 3, rules: [] }, { id: 2, rules: [] }], more: true });
+    const got = await createClient({ url, token: 't' }).openIncidents();
+    expect(got.map((i) => i.id)).toEqual([3, 2, 1]);
+    expect(got[2]?.rules).toEqual([]);
+    expect(seen.map((s) => s.url)).toEqual(['/admin/v1/incidents?open=true&limit=500', '/admin/v1/incidents?open=true&limit=500&before=2']);
+  });
+
   it('asks for the newest audit entries and returns the list', async () => {
     respond = (_r, res) => json(res, 200, { entries: [{ id: 2 }, { id: 1 }], more: false });
     const entries = await createClient({ url, token: 't' }).latestAudit(50);

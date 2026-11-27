@@ -92,6 +92,27 @@ describe.skipIf(!url || !token)('against a real kman', () => {
     }
   });
 
+  it('reads open incidents, exposure findings and a key\'s places in the shapes the TUI expects', async () => {
+    const incidents = await client.openIncidents();
+    expect(incidents).toEqual(expect.any(Array));
+    for (const i of incidents) {
+      expect(i).toMatchObject({ id: expect.any(Number), key_id: expect.any(String), severity: expect.any(String), rules: expect.any(Array) });
+      expect(i.state).not.toBe('resolved');
+    }
+    const upstream = (await client.listUpstreams()).find((u) => u.credentials.length > 0);
+    // A key with no address lock, so there is a finding to read.
+    const { key } = await client.createKey({ upstream: upstream!.name, name: `tui-live-open-${Date.now()}`, ttl_seconds: 3600, policy: {} });
+    try {
+      const finding = (await client.exposure()).find((f) => f.key_id === key.id);
+      expect(finding).toMatchObject({ rule: 'open_to_every_address', fix: expect.stringContaining('kman key update') });
+      const places = await client.keyPlaces(key.id);
+      expect(places.key_id).toBe(key.id);
+      expect(places.places).toEqual([]);
+    } finally {
+      await client.revokeKey(key.id);
+    }
+  });
+
   it('refuses a wrong token as unauthorized', async () => {
     const bad = createClient({ url: url!, token: 'kma_not-a-real-token' });
     await expect(bad.whoami()).rejects.toMatchObject({ code: 'unauthorized' });

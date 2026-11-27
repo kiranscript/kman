@@ -28,6 +28,9 @@ export interface KeyPolicy {
   rpm_limit?: number;
   allowed_models?: string[];
   allowed_paths?: string[];
+  /** Where the key may be used from. With neither, it works from any address. */
+  allowed_cidrs?: string[];
+  allowed_countries?: string[];
 }
 
 export interface Key {
@@ -123,6 +126,62 @@ export interface KeyClients {
   total: number;
 }
 
+export type PlaceKind = 'country' | 'asn' | 'network' | 'client';
+
+/** One place a key was used from, or one client that used it (GET /keys/{id}/places). */
+export interface Place {
+  kind: PlaceKind;
+  /** A country code, an AS number, a /24 or /64, or a client such as openai-python/3. */
+  value: string;
+  /** Counts every place of its kind past the first 1,000. */
+  other?: boolean;
+  /** An AS's organisation, when kman has the ASN database. */
+  label?: string;
+  first_seen: string;
+  last_seen: string;
+  /** Forwarded. */
+  requests: number;
+  refused: number;
+}
+
+/** Where a key was used from, most recently seen first. */
+export interface KeyPlaces {
+  key_id: string;
+  places: Place[];
+  /** Networks were left out: expose_client_addresses is off. */
+  networks_withheld?: boolean;
+}
+
+export type IncidentSeverity = 'low' | 'medium' | 'high' | 'critical';
+
+/** The case kman opens for a key when a detection rule fires or a canary is used. */
+export interface Incident {
+  id: number;
+  key_id: string;
+  key_name?: string;
+  state: 'open' | 'acknowledged' | 'resolved';
+  /** Nothing has fired for an hour. */
+  quiet?: boolean;
+  severity: IncidentSeverity;
+  /** new_country, new_asn, new_network, new_client or canary, in the order they first fired. */
+  rules: string[];
+  detection_count: number;
+  opened_at: string;
+  last_fired_at: string;
+}
+
+/** One rule a working key breaks that would make a leak easy to abuse (GET /exposure). */
+export interface ExposureFinding {
+  key_id: string;
+  name?: string;
+  /** open_to_every_address, never_expires or unused. */
+  rule: string;
+  message: string;
+  last_used_at?: string;
+  /** The kman command that fixes it. */
+  fix: string;
+}
+
 export interface CreatedKey {
   proxy_url?: string;
   key: Key;
@@ -145,6 +204,20 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 }
+
+/** The server has no such route (an older kman), as against a request that failed. */
+export const isMissingRoute = (err: unknown) => err instanceof ApiError && (err.code === 'not_found' || err.status === 404);
+
+/**
+ * Control characters, and the marks that reorder text. Some strings come from outside kman
+ * (an AS's organisation is whatever the ASN database says), and none may move the cursor,
+ * restyle the screen or add a line.
+ */
+const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g;
+
+/** Parses an answer, with every string in it made safe to draw. */
+const parseJson = (text: string): unknown =>
+  JSON.parse(text, (_, v: unknown) => (typeof v === 'string' ? v.replace(UNSAFE, ' ') : v));
 
 export interface Connection {
   /** http://host:port, https://host:port or unix:/path/to/socket. */
@@ -169,6 +242,12 @@ export interface AdminClient {
    * on expose_client_addresses: an address is personal data.
    */
   keyClients(id: string): Promise<KeyClients>;
+  /** Where a key was used from, and by which clients. */
+  keyPlaces(id: string): Promise<KeyPlaces>;
+  /** The incidents not yet resolved, newest first. */
+  openIncidents(): Promise<Incident[]>;
+  /** The working keys that would be easy to abuse if they leaked. */
+  exposure(): Promise<ExposureFinding[]>;
 }
 
 const TIMEOUT_MS = 5000;
@@ -199,7 +278,7 @@ export function createClient(conn: Connection): AdminClient {
             const status = res.statusCode ?? 0;
             if (status >= 200 && status < 300) {
               try {
-                resolve(JSON.parse(text) as T);
+                resolve(parseJson(text) as T);
               } catch {
                 reject(new ApiError('internal', 'the admin API sent a reply that is not JSON', status));
               }
@@ -253,6 +332,27 @@ export function createClient(conn: Connection): AdminClient {
       const got = await request<KeyClients>('GET', `${keyPath(id)}/clients`);
       return { ...got, clients: got.clients ?? [] };
     },
+    async keyPlaces(id) {
+      const got = await request<KeyPlaces>('GET', `${keyPath(id)}/places`);
+      return { ...got, places: got.places ?? [] };
+    },
+    async openIncidents() {
+      const all: Incident[] = [];
+      let before: number | undefined;
+      // Newest first, a page at a time: an old canary incident must not fall off the end.
+      for (;;) {
+        const cursor = before === undefined ? '' : `&before=${before}`;
+        const page = await request<{ incidents: Incident[] | null; more?: boolean }>('GET', `/admin/v1/incidents?open=true&limit=500${cursor}`);
+        const list = page.incidents ?? [];
+        all.push(...list.map((i) => ({ ...i, rules: i.rules ?? [] })));
+        const last = list[list.length - 1]?.id;
+        if (!page.more || last === undefined || (before !== undefined && last >= before)) return all;
+        before = last;
+      }
+    },
+    async exposure() {
+      return (await request<{ findings: ExposureFinding[] | null }>('GET', '/admin/v1/exposure')).findings ?? [];
+    },
   };
 }
 
@@ -275,7 +375,7 @@ function parseTarget(url: string): Target {
 
 function parseError(text: string, status: number): ApiError {
   try {
-    const e = (JSON.parse(text) as { error?: { code?: ErrorCode; message?: string } }).error;
+    const e = (parseJson(text) as { error?: { code?: ErrorCode; message?: string } }).error;
     if (e?.message) return new ApiError(e.code ?? 'internal', e.message, status);
   } catch {
     /* not JSON: fall through */
