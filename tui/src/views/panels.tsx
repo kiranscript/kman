@@ -91,7 +91,9 @@ function withoutLeadingSeparator(segs: Seg[]): Seg[] {
 function fitParts(parts: Seg[][], max: number): Seg[] {
   const out: Seg[] = [];
   let used = 0;
-  for (const part of parts) {
+  for (const whole of parts) {
+    // What opens the line takes no room for a separator.
+    const part = out.length ? whole : withoutLeadingSeparator(whole);
     const need = segLen(part) + (out.length ? 1 : 0);
     if (used + need > max) continue;
     if (out.length) out.push({ t: ' ' });
@@ -270,8 +272,7 @@ export function StatusPanel({
         ...badgePart,
         ...priceStale,
         // The first thing to look at comes ahead of the counts: it cannot be seen from another panel.
-        // Nothing before it: no separator, nor the room one would take.
-        ...(strip && attentionPart ? [badgePart.length || priceStale.length ? attentionPart : withoutLeadingSeparator(attentionPart)] : []),
+        ...(strip && attentionPart ? [attentionPart] : []),
         // An incident, or not knowing of one, comes ahead of the count.
         ...(open || incidentsMissing ? [[SEPARATOR, { t: ' ' }, ...incidentSegs(true)]] : []),
         ...(noKeys
@@ -363,13 +364,19 @@ export function StatusPanel({
   // replace: a problem must not be hidden behind the price.
   // A stale price keeps its line, though: it too is something to act on.
   const staleLast = base.length > 0 && base[base.length - 1]!.some((x) => x.t.includes('price stale'));
+  const replaced = (): Seg[][] => {
+    if (summaryHeight > base.length) return [...base, attentionLine];
+    if (staleLast) return [...base.slice(0, summaryHeight - 2), attentionLine, base[base.length - 1]!];
+    const gone = base[summaryHeight - 1]!;
+    // The line saying how many incidents are open stays, as the title may not say it: the
+    // counts of keys, which the Keys panel gives too, make the room.
+    const incidents = (open > 0 || incidentsMissing) && gone.some((x) => x.t.includes('incident'));
+    const kept = incidents && base.includes(countsLine) ? [...base.filter((l) => l !== countsLine)] : base;
+    return [...kept.slice(0, summaryHeight - 1), attentionLine];
+  };
   const lines =
     !focused && !strip && items.length > 0 && summaryHeight >= 3
-      ? summaryHeight > base.length
-        ? [...base, attentionLine]
-        : staleLast
-          ? [...base.slice(0, summaryHeight - 2), attentionLine, base[base.length - 1]!]
-          : [...base.slice(0, summaryHeight - 1), attentionLine]
+      ? replaced()
       : !focused && summaryHeight > base.length && summaryHeight >= fullLines.length
         ? [...base, attentionLine]
         : base;
@@ -377,17 +384,27 @@ export function StatusPanel({
   const start = windowStart(sel, items.length, Math.max(1, list.rows));
   const shown = items.slice(start, start + list.rows);
   const nameW = Math.min(24, Math.max(4, ...shown.map((n) => textWidth(n.name))));
-  // Who is signed in rides on the bottom border when neither the top one nor a row says it.
-  const said = lines.slice(0, summaryHeight).some((l) => l.some((s) => s.t.includes(actor ? `${actor} @ ` : where) || s.t === `signed in as ${actor}`));
-  const unsaid = actor && !inBorder && !said ? actor : undefined;
   const standing = focused && items.length > 1 ? `${sel + 1} of ${items.length}` : items.length > 0 ? `${items.length} to review` : undefined;
+  // What neither the top border nor a row says of who and where rides on the bottom one.
+  const rowSays = (text: string) => lines.slice(0, summaryHeight).some((l) => l.some((s) => s.t.includes(text)));
+  const withStanding = (who: string | undefined) => [who, standing].filter(Boolean).join(' · ') || undefined;
+  const bottom = (): string | undefined => {
+    if (strip || inBorder) return standing;
+    if (borderText || rowSays(urlOnly)) {
+      const named = !actor || rowSays(`${actor} @ `) || rowSays(`signed in as ${actor}`);
+      return withStanding(named ? undefined : actor);
+    }
+    // The address is nowhere else: it comes before the position, and before who.
+    const room = width - 6;
+    return [withStanding(where), withStanding(urlOnly), where, urlOnly].find((t) => t !== undefined && textWidth(t) <= room) ?? fitMiddle(urlOnly, room);
+  };
 
   return (
     <Shell
       title={title}
       count={count}
       subtitle={borderText}
-      position={[unsaid, standing].filter(Boolean).join(' · ') || undefined}
+      position={bottom()}
       focused={focused}
       width={width}
       height={height}

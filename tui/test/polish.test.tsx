@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { App } from '../src/App.js';
 import { requestsText } from '../src/format.js';
-import { fakeClient, incident, place, tick, until } from './fakes.js';
+import { fakeClient, incident, key, place, tick, until } from './fakes.js';
 import type { Fake } from './fakes.js';
 import { render } from './render.js';
 
@@ -107,6 +107,47 @@ describe('who and where, beside the incidents', () => {
     }
     // Thirty screens, one after another.
   }, 30_000);
+
+  it('keeps the incident count in an unfocused Status as short as it gets', async () => {
+    for (const [url, n] of [
+      ['https://kman.prod.internal:8443', 2],
+      ['http://127.0.0.1:8081', 10],
+    ] as const) {
+      const client = many(n);
+      client.keys.push(...Array.from({ length: 12 }, (_, i) => key({ id: `k_${i}`, name: `more-${i}` })));
+      const app = render(<App client={client} url={url} size={{ columns: 140, rows: 30 }} intervalMs={60_000} />, 140);
+      await until(() => (app.lastFrame() ?? '').includes('live'), 'the first load');
+      app.stdin.write('2');
+      await tick(150);
+      const status = (app.lastFrame() ?? '').split('\n').slice(0, 5).map((l) => l.split('││')[0]);
+      expect(status[4], url).toContain('╰');
+      expect(status.join('\n'), url).toContain(`${n} open incidents`);
+      expect(status.join('\n'), url).toContain('checkout · incident');
+      expect(status.join('\n'), url).toContain(url.replace('http://', ''));
+      app.unmount();
+    }
+  });
+
+  it('puts an address too long for the top border on screen all the same', async () => {
+    for (const [size, url] of [
+      [{ columns: 100, rows: 30 }, 'https://kman.prod.internal:8443'],
+      [{ columns: 140, rows: 40 }, 'https://kman-admin.prod.example.com:8443'],
+      [{ columns: 100, rows: 40 }, 'https://kman-admin.production.eu-west.example.com:8443'],
+    ] as const) {
+      for (const keys of [[], ['2']]) {
+        const app = render(<App client={many(2)} url={url} size={size} intervalMs={60_000} />, size.columns);
+        await until(() => (app.lastFrame() ?? '').includes('live'), 'the first load');
+        for (const k of keys) app.stdin.write(k);
+        await tick(150);
+        const screen = app.lastFrame() ?? '';
+        // Whole where it can be, and else its two ends.
+        expect(screen, `${size.columns} ${keys} ${url}`).toMatch(url.length < 35 ? new RegExp(url) : /https:\/\/kman-[^│]*…[^│]*:8443/);
+        expect(screen).toMatch(/2 (open )?incidents/);
+        for (const l of screen.split('\n')) expect([...l].length).toBeLessThanOrEqual(size.columns);
+        app.unmount();
+      }
+    }
+  });
 
   it('names the owner once', async () => {
     for (const keys of [[], ['2']]) {
