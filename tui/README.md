@@ -100,7 +100,7 @@ A key's detail opens with its warnings and then **Where it is used**: each count
 
 | Key | Does |
 |---|---|
-| `↑` `↓`, `j` `k`, `PgUp` `PgDn` | move; past the end loads older requests |
+| `↑` `↓`, `j` `k`, `PgUp` `PgDn` | move; past the end loads older requests, up to 5,000 held (`kman events` lists older ones) |
 | `g`, `G` | the newest; the oldest loaded |
 | `f` | all, flagged (`!` or `▲`), refused |
 | `Enter` | open the request's incident, or else its key |

@@ -217,7 +217,7 @@ export function fakeClient(keys: Key[] = defaultKeys()): Fake {
     },
     async settings() {
       guard();
-      return { default_key_ttl_seconds: 90 * 86_400, max_key_lifetime_seconds: 365 * 86_400 };
+      return { default_key_ttl_seconds: 90 * 86_400, max_key_lifetime_seconds: 365 * 86_400, expose_client_addresses: fake.exposeClients };
     },
     async createKey(input) {
       guard();

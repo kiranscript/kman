@@ -30,9 +30,9 @@ export interface FlagSources {
 
 /** Whether an address is in a network such as 203.0.113.0/24. */
 function inNetwork(address: string, network: string): boolean {
-  const [base = '', bits = ''] = network.split('/');
+  const [base = '', bits = '', ...rest] = network.split('/');
   const family = (a: string) => (isIP(a) === 6 ? 'ipv6' : 'ipv4');
-  if (!isIP(base) || !isIP(address) || !/^\d+$/.test(bits)) return false;
+  if (rest.length || !isIP(base) || !isIP(address) || !/^\d+$/.test(bits) || Number(bits) > (isIP(base) === 6 ? 128 : 32)) return false;
   const list = new BlockList();
   list.addSubnet(base, Number(bits), family(base));
   return list.check(address, family(address));
@@ -93,31 +93,43 @@ export interface Feed {
   more: boolean;
 }
 
-/** The most rows held: past it the oldest are let go, and can be asked for again. */
+/**
+ * The most rows held: no older ones are asked for past it, and as new ones arrive the
+ * oldest are let go. The selected request is not, until twice as many are held.
+ */
 export const MAX_ROWS = 5000;
 
 /** An address given out earlier is not kept once the install stops giving them out. */
-const withhold = (rows: RequestEvent[], pages: EventPage[]) =>
-  pages.some((p) => p.client_addresses_withheld) ? rows.map(({ client_address: _, ...r }) => r) : rows;
+export const withoutAddresses = (rows: RequestEvent[]) => rows.map(({ client_address: _, ...r }) => r);
+
+const withhold = (rows: RequestEvent[], pages: EventPage[]) => (pages.some((p) => p.client_addresses_withheld) ? withoutAddresses(rows) : rows);
 
 const byNewest = (rows: RequestEvent[]) => [...new Map(rows.map((r) => [r.id, r])).values()].sort((a, b) => b.id - a.id);
 
+/** How many rows to hold: the most, or as many as it takes to keep the one with id `keep`. */
+function held(rows: RequestEvent[], keep: number | undefined): number {
+  const at = keep === undefined ? -1 : rows.findIndex((r) => r.id === keep);
+  return Math.min(2 * MAX_ROWS, Math.max(MAX_ROWS, at + 1));
+}
+
 /**
  * The rows held joined with the newest pages of a poll (newest page first). Pages that do
- * not reach what is held replace it, so a stretch is never missing from the middle.
+ * not reach what is held replace it, so a stretch is never missing from the middle. `keep`
+ * is the selected request.
  */
-export function mergeNewest(feed: Feed, pages: EventPage[]): Feed {
+export function mergeNewest(feed: Feed, pages: EventPage[], keep?: number): Feed {
   const fresh = pages.flatMap((p) => p.events);
   const last = pages[pages.length - 1]!;
   const newestHeld = feed.rows[0]?.id;
   const oldestFresh = fresh.at(-1)?.id;
   const joins = newestHeld !== undefined && oldestFresh !== undefined && oldestFresh <= newestHeld;
   // With nothing more to ask for, the pages are everything there is.
-  const keep = joins && last.more;
-  const rows = byNewest([...fresh, ...(keep ? feed.rows : [])]);
+  const older = joins && last.more;
+  const rows = byNewest([...fresh, ...(older ? feed.rows : [])]);
+  const most = held(rows, keep);
   return {
-    rows: withhold(rows.slice(0, MAX_ROWS), pages),
-    more: rows.length > MAX_ROWS || (keep ? feed.more : last.more),
+    rows: withhold(rows.slice(0, most), pages),
+    more: rows.length > most || (older ? feed.more : last.more),
   };
 }
 

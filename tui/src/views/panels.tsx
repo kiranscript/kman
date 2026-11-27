@@ -709,7 +709,8 @@ export function RequestsPanel({
       : [
           ...(danger ? [{ t: `${severityGlyph.danger} ${danger} `, color: severityColor.danger }] : []),
           ...(warn ? [{ t: `${severityGlyph.warn} ${warn} `, color: severityColor.warn }] : []),
-          { t: `of ${loaded} loaded`, dim: true },
+          // "of" only follows a count of the flagged.
+          { t: `${danger || warn ? 'of ' : ''}${loaded} loaded`, dim: true },
         ];
   return (
     <Shell title={title} focused={focused} width={width} height={height}>

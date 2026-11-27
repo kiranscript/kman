@@ -164,10 +164,13 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const shownKeyId = tab === 'status' ? attnItem?.key?.id : tab === 'keys' ? selectedKey?.id : undefined;
   // `now` is when the last poll answered.
   const places = usePlaces(client, shownKeyId, now);
-  const requests = useRequests(client, requestKeyId, requestFilter === 'refused' ? 'refused' : undefined, now);
+  // Not before the first poll has answered, which is when the token is known to be taken.
+  const answeredAt = link.state === 'connecting' || link.state === 'denied' ? 0 : now;
+  const exposed = data.settings?.expose_client_addresses;
+  const requests = useRequests(client, requestKeyId, requestFilter === 'refused' ? 'refused' : undefined, answeredAt, { selected: place.id, exposed });
   const hasRequests = !requests.unsupported;
   const tabs = useMemo(() => TABS.filter((t) => t.id !== 'requests' || hasRequests), [hasRequests]);
-  const incidentDetails = useIncidentDetails(client, hasRequests ? data.incidents : undefined, now);
+  const incidentDetails = useIncidentDetails(client, hasRequests ? data.incidents : undefined, now, exposed);
   const flagged = useMemo(() => {
     const sources = { canaries: data.canaries, incidents: data.incidents, details: incidentDetails.details };
     return requests.rows.map((e) => ({ e, flag: flagOf(e, sources) }));
@@ -313,7 +316,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
         const id = tableShown[step(indexOf(p.id), tableShown.length)]?.e.id;
         if (id === undefined) return p;
         // g goes to the newest, so everything has been seen; going up sees what is passed.
-        return { id, seen: Math.max(id, p.seen ?? id) };
+        // Before the selection was pinned, what was on screen from the top had been seen.
+        return { id, seen: Math.max(id, p.seen ?? tableShown[0]?.e.id ?? id) };
       });
     }
   }
@@ -816,7 +820,12 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const reading = detail || viewing !== undefined;
   const requestKey = data.keys.find((k) => k.id === requestKeyId);
   // A canary, or a key that has gone, is named by its requests or its id.
-  const requestKeyName = requestKeyId === undefined ? undefined : requestKey ? keyLabel(requestKey) : requests.rows[0]?.key_name || requestKeyId;
+  const requestKeyName =
+    requestKeyId === undefined
+      ? undefined
+      : requestKey
+        ? keyLabel(requestKey)
+        : requests.rows[0]?.key_name || data.incidents?.find((i) => i.key_id === requestKeyId)?.key_name || requestKeyId;
   const flagsMissing = data.canariesError
     ? 'Canaries did not load: their requests may not be flagged.'
     : data.incidentsError
@@ -1066,7 +1075,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   } else if (mode.kind === 'help') {
     body = (
       <Centered width={dw} height={bodyRows}>
-        <HelpDialog focus={tab} detail={detail} incident={viewing !== undefined} onClose={() => setMode({ kind: 'none' })} />
+        <HelpDialog focus={tab} detail={detail} incident={viewing !== undefined} requests={hasRequests} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'confirm') {
@@ -1208,6 +1217,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
                   tab,
                   mode: mode.kind,
                   key: tab === 'status' ? attnItem?.key : selectedKey,
+                  canary: Boolean(attnItem?.incident),
                   filtered: filter !== '',
                   selectable,
                   // A part that did not load has nothing to open.
@@ -1284,6 +1294,8 @@ interface HintState {
   requests: boolean;
   /** The requests table shows one key. */
   oneKey: boolean;
+  /** The selected Status row is a canary's incident, whose key is not listed. */
+  canary: boolean;
   offline: boolean;
   /** A change is being sent: another cannot start. */
   working: boolean;
@@ -1303,7 +1315,7 @@ interface HintState {
  * missed go first (`rank`): scrolling and the panel keys, then selecting, and last the
  * actions on the selected row, which stay unless nothing else can.
  */
-function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, offline, working, canCreate, hasKeys, scrollable, detail, openable, incident, marked, answered, panels, requests, oneKey }: HintState): HintItem[] {
+function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, offline, working, canCreate, hasKeys, scrollable, detail, openable, incident, marked, answered, panels, requests, oneKey, canary }: HintState): HintItem[] {
   const jump = `1-${panels}`;
   const canChange = !offline && !working;
   if (mode === 'confirm' || mode === 'reset') return [{ k: 'y', label: 'yes' }, { k: 'n', label: 'cancel' }];
@@ -1386,7 +1398,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, of
     return [
       ...select,
       ...(openable ? [{ k: 'Enter', label: marked ? 'incident' : 'open', rank: 5 }] : []),
-      ...(requests && key ? [{ k: 'v', label: 'requests', rank: 2.95 }] : []),
+      ...(requests && (key || canary) ? [{ k: 'v', label: 'requests', rank: 2.95 }] : []),
       ...create,
       ...common,
     ];
