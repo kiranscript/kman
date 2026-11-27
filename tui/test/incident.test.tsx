@@ -442,6 +442,42 @@ describe('safety', () => {
     m.unmount();
   });
 
+  it('shows the new boxes at once when what it saw changed as it was sent', async () => {
+    const client = leaked();
+    const m = mount(client);
+    await opened(m);
+    await m.press('m', ' ');
+    client.recorded[12]!.known_source_candidates!.push({ kind: 'country', value: 'RU' });
+    // No poll comes: what the check fetched is what is drawn.
+    client.listKeys = () => new Promise(() => {});
+    await m.press(ENTER);
+    expect(m.screen()).toContain('NL, RU');
+    expect(m.screen()).toContain('[ ] country');
+    expect(changes(client)).toEqual([]);
+    m.unmount();
+  });
+
+  it('does not take Alt+Enter for Enter on a typed name', async () => {
+    const m = mount();
+    await opened(m);
+    await m.press('x', 'prod-api', '\u001b\r');
+    expect(changes(m.client)).toEqual([]);
+    expect(m.screen()).toContain('Revoke prod-api?');
+    m.unmount();
+  });
+
+  it('says an incident expired, and puts "usually" before a client named like one', async () => {
+    const client = leaked();
+    client.recorded[12] = { detections: [detection(1, 'new_client', { client: 'curl/8', baseline: 'usual-app/1 (1 request)' })] };
+    const m = mount(client, WIDE, 0, 100);
+    await opened(m);
+    expect(m.screen()).toContain('usually usual-app/1');
+    Object.assign(client.incidents[0]!, { state: 'resolved', resolution: 'expired', resolved_by: 'system:detect' });
+    await until(() => m.screen().includes('Incident #12 expired'), 'the news');
+    expect(m.screen()).not.toContain('was expired');
+    m.unmount();
+  });
+
   it('closes the enable dialog when someone else resolves the incident', async () => {
     const client = leaked();
     client.keys.at(-1)!.status = 'disabled';
