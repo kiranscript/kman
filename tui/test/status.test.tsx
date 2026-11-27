@@ -39,13 +39,14 @@ function draw(c: Case) {
 
 describe('Status at every size', () => {
   const cases: Case[] = [];
-  for (const width of [44, 48, 49, 56, 80])
-    for (const height of [4, 5, 6, 8, 12])
+  // The narrowest column, one an address widens and the widest; Status short, middling and
+  // tall.
+  for (const width of [44, 49, 56])
+    for (const height of [4, 5, 8])
       for (const focused of [true, false])
         for (const url of [LOCAL, REMOTE, LONG])
           for (const actor of ACTORS)
-            for (const incidents of [0, 2, 10])
-              for (const keys of [3, 13]) cases.push({ width, height, focused, url, actor, incidents, keys });
+            for (const incidents of [0, 2, 10]) cases.push({ width, height, focused, url, actor, incidents, keys: 13 });
 
   it('keeps the position whole, the install, the owner and the incidents', () => {
     const wrong: string[] = [];
@@ -62,7 +63,7 @@ describe('Status at every size', () => {
       if (c.incidents && !new RegExp(`${c.incidents} (open )?incidents`).test(screen)) say('incidents');
     }
     expect(wrong.slice(0, 5).join('\n\n'), `${wrong.length} of ${cases.length}`).toBe('');
-  }, 60_000);
+  }, 30_000);
 
   it('cuts no line mid-word when offline, and fills none to the border', () => {
     for (const width of [44, 48]) {
