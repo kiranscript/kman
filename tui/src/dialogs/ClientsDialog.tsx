@@ -5,7 +5,7 @@ import { ApiError } from '../api.js';
 import { ago, fitMiddle, money, padEnd, padStart } from '../format.js';
 import { keyLabel } from '../keys.js';
 import { Panel, Wrapped, scrollHint } from '../ui/parts.js';
-import { color } from '../ui/theme.js';
+import { color, severityGlyph } from '../ui/theme.js';
 
 type State =
   | { kind: 'loading' }
@@ -82,12 +82,12 @@ export function ClientsDialog({ client, keyData, width, height, now, onClose }: 
   } else if (state.kind === 'error') {
     body = state.off ? (
       <>
-        <Text color={color.warn}>▲ Not shown: the admin API does not give out client addresses.</Text>
+        <Text color={color.warn}>{severityGlyph.warn} Not shown: the admin API does not give out client addresses.</Text>
         <Wrapped text={state.message} width={inner} maxLines={4} dim />
         <Text dimColor>Turn it on, then press c again.</Text>
       </>
     ) : (
-      <Wrapped text={state.message} marker="✖ Could not load them: " width={inner} maxLines={4} tone={color.danger} />
+      <Wrapped text={state.message} marker={`${severityGlyph.danger} Could not load them: `} width={inner} maxLines={4} tone={color.danger} />
     );
   } else if (state.got.clients.length === 0) {
     body = <Text dimColor>None in the events kman keeps for this key.</Text>;

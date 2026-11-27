@@ -43,11 +43,20 @@ The screen follows [lazygit](https://github.com/jesseduffield/lazygit): numbered
 
 A created key's secret is shown once, on a screen of its own. Only Enter closes it, `c` asks the terminal to copy it (OSC 52, which not every terminal allows), and it is gone from memory when it is closed. The screen also gives the SDK base URL on the kman host, including the bound proxy port. Older servers only supply the SDK path.
 
-Colour uses the terminal's own 16 colours. `NO_COLOR` turns it off and keeps bold and inverse. Every status has a glyph and a word as well as a colour.
+Colour uses the terminal's own 16 colours. `NO_COLOR` turns it off and keeps bold and inverse. The text on the selected line is drawn in the default foreground, so it stays readable on the bar. Every status has a mark and a word as well as a colour:
+
+| Mark | Means | Mark | Means |
+|---|---|---|---|
+| `!` | danger | `●` | active |
+| `▲` | warning | `○` | disabled |
+| `·` | note | `×` | revoked |
+| `✓` | ok | `◆` | new audit entry |
+
+`◌` in the footer means not connected. None of these marks is a character that a terminal may draw as a two-column emoji.
 
 ## What needs attention
 
-Status puts the leak first. Its summary counts the open incidents and the keys that are exposed (`✖ 2 open incidents · ▲ 2 exposed`), and Needs attention lists, worst first:
+Status puts the leak first. Its summary counts the open incidents and the keys that are exposed (`! 2 open incidents · ▲ 2 exposed`), and Needs attention lists, worst first:
 
 1. **Open incidents**, whatever their colour: a key used from a new country, ASN, network or client after its learning period, or a canary being used. High and critical ones are red until someone acknowledges them, and come before the others. A canary is not in the key list, so its incident has a row of its own, and its detail gives the commands that answer it.
 2. **Whatever else is red**: an expired key, a key at its cap, an upstream with no credential.

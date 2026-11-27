@@ -4,7 +4,7 @@ import type { CreateKeyInput, KeyPolicy, Upstream } from '../api.js';
 import { fitMiddle, padEnd, parseDays, parseDollars, wrapLines } from '../format.js';
 import { editField, TextField } from '../ui/TextField.js';
 import { Panel, UpstreamSetup, Wrapped } from '../ui/parts.js';
-import { color } from '../ui/theme.js';
+import { color, severityGlyph } from '../ui/theme.js';
 
 const NAME_RE = /^[a-z0-9][a-z0-9._-]{0,62}$/;
 type Field = 'name' | 'upstream' | 'credential' | 'days' | 'daily' | 'monthly';
@@ -193,12 +193,12 @@ export function CreateKeyDialog({ upstreams, defaultDays, busy, error, errorLine
       </Box>
       <Box marginTop={1} flexDirection="column">
         {noCredential ? (
-          <Wrapped text={warning} marker="▲ " width={64} maxLines={2} tone={color.warn} />
+          <Wrapped text={warning} marker={`${severityGlyph.warn} `} width={64} maxLines={2} tone={color.warn} />
         ) : !text.daily && !text.monthly ? (
-          <Text color={color.warn}>▲ With no cap, a leaked key can spend without limit.</Text>
+          <Text color={color.warn}>{severityGlyph.warn} With no cap, a leaked key can spend without limit.</Text>
         ) : null}
         {problem || error ? (
-          <Wrapped text={problem ?? error ?? ''} marker="✖ " width={64} maxLines={Math.max(3, errorLines - extraRows)} tone={color.danger} />
+          <Wrapped text={problem ?? error ?? ''} marker={`${severityGlyph.danger} `} width={64} maxLines={Math.max(3, errorLines - extraRows)} tone={color.danger} />
         ) : null}
         {busy || discardArmed ? (
           <Text color={discardArmed ? color.warn : undefined} dimColor={!discardArmed}>

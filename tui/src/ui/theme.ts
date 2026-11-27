@@ -3,6 +3,8 @@
 // NO_COLOR set (https://no-color.org) every colour here is undefined, but bold, dim
 // and inverse stay, so the active panel and the selected line are still visible.
 // Nothing relies on colour alone: a status always has a glyph and a word.
+// A mark is one column in every terminal, so none is a character that can be drawn
+// as an emoji (U+2716 and U+2714 are, over the next cell, in Windows Terminal).
 import type { Severity } from '../risk.js';
 import type { KeyStatus } from '../api.js';
 
@@ -27,15 +29,18 @@ export const severityColor: Record<Severity, string | undefined> = {
 };
 
 export const severityGlyph: Record<Severity, string> = {
-  danger: '✖',
+  danger: '!',
   warn: '▲',
-  info: '○',
+  info: '·',
 };
+
+/** All is well: said of a change that worked, and of there being nothing to look at. */
+export const okGlyph = '✓';
 
 export const statusStyle: Record<KeyStatus, { glyph: string; color: string | undefined; dim: boolean }> = {
   active: { glyph: '●', color: color.ok, dim: false },
-  disabled: { glyph: '◐', color: color.warn, dim: false },
-  revoked: { glyph: '✖', color: undefined, dim: true },
+  disabled: { glyph: '○', color: color.warn, dim: false },
+  revoked: { glyph: '×', color: undefined, dim: true },
 };
 
 /** The colour of a spend bar by how full it is. */

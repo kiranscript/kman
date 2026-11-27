@@ -13,7 +13,7 @@ import { Frame, Strip, stripLabelWidth, subtitleFits } from '../ui/frame.js';
 import type { ReactNode } from 'react';
 import { Row } from '../ui/row.js';
 import type { Seg } from '../ui/row.js';
-import { color, severityColor, severityGlyph, statusStyle } from '../ui/theme.js';
+import { color, okGlyph, severityColor, severityGlyph, statusStyle } from '../ui/theme.js';
 import type { Link } from '../useAdmin.js';
 import { actionColor, rowTarget } from './audit.js';
 import type { Names } from './audit.js';
@@ -72,9 +72,15 @@ const segLen = (segs: Seg[]) => segs.reduce((n, x) => n + textWidth(x.t), 0);
 /** The segments padded with spaces to `w` columns. */
 const pad = (segs: Seg[], w: number): Seg[] => [...segs, { t: ' '.repeat(Math.max(0, w - segLen(segs))) }];
 
-/** The segments without a dot at the start, and the space after it: a line has no separator to open it. */
-function withoutLeadingDot(segs: Seg[]): Seg[] {
-  if (segs[0]?.t !== '·') return segs;
+/** Between two parts of a summary line. */
+const SEPARATOR: Seg = { t: '·', dim: true };
+
+/**
+ * The segments without a separator at the start, and the space after it: a line has none
+ * to open it. It is told by identity, as the mark for a note is the same dot and stays.
+ */
+function withoutLeadingSeparator(segs: Seg[]): Seg[] {
+  if (segs[0] !== SEPARATOR) return segs;
   const rest = segs.slice(1);
   while (rest[0] && rest[0].t.trim() === '') rest.shift();
   if (rest[0]) rest[0] = { ...rest[0], t: rest[0].t.trimStart() };
@@ -181,7 +187,7 @@ export function StatusPanel({
   const incidentsMissing = missing.some((u) => u.what === 'incidents');
   const exposed = new Set((watch.findings ?? []).map((f) => f.key_id)).size;
   const title = '[1] Status';
-  // How many need a look, by how much: "✖1 ▲3 ○1". The border counts the same rows.
+  // How many need a look, by how much: "!1 ▲3 ·1". The border counts the same rows.
   const count =
     (['danger', 'warn', 'info'] as const)
       .map((sev) => ({ sev, n: items.filter((i) => i.top === sev).length }))
@@ -209,14 +215,13 @@ export function StatusPanel({
   const priceSeg = (compact: boolean): Seg[] =>
     price
       ? price.stale
-        ? [{ t: compact ? '▲ price stale' : `▲ price stale (${price.age_days}d) · upgrade kman`, color: color.warn }]
+        ? [{ t: compact ? `${severityGlyph.warn} price stale` : `${severityGlyph.warn} price stale (${price.age_days}d) · upgrade kman`, color: color.warn }]
         : [{ t: `price ${compact ? `${price.age_days}d` : `data ${price.age_days} days old`}`, dim: true }]
       : [{ t: 'price data unknown', dim: true }];
   const badgeSeg: Seg = { t: `${badge.glyph} ${badge.word}`, color: badge.color, dim: badge.color === undefined };
   // The connection is in the footer: here it is only said when it is not simply live.
   const badgePart: Seg[][] = link.state === 'ok' ? [] : [[badgeSeg]];
-  const dot: Seg = { t: '·', dim: true };
-  const whereSeg: Seg[] = [dot, { t: ' ' + where, dim: true }];
+  const whereSeg: Seg[] = [SEPARATOR, { t: ' ' + where, dim: true }];
   /** The incidents: how many are open, and never "none" while they did not load. */
   const incidentSegs = (compact: boolean): Seg[] => {
     if (open) {
@@ -226,7 +231,7 @@ export function StatusPanel({
     if (incidentsMissing) return [{ t: `${severityGlyph.warn} incidents unknown`, color: color.warn, bold: true }];
     // An install with no keys has nothing to watch yet: no line for it.
     if (watch.incidents === undefined || keys.length === 0) return [];
-    return [{ t: compact ? '✔ no incidents' : '✔ no open incidents', color: color.ok }];
+    return [{ t: `${okGlyph} ${compact ? 'no incidents' : 'no open incidents'}`, color: color.ok }];
   };
   const exposureSegs: Seg[] = missing.some((u) => u.what === 'exposure')
     ? [{ t: `${severityGlyph.warn} ${exposed ? `${exposed} exposed (old)` : 'exposure unknown'}`, color: color.warn }]
@@ -236,10 +241,10 @@ export function StatusPanel({
   const watchSegs = (compact: boolean): Seg[] => {
     const inc = incidentSegs(compact);
     if (!inc.length) return exposureSegs;
-    return exposureSegs.length ? [...inc, { t: ' ' }, dot, { t: ' ' }, ...exposureSegs] : inc;
+    return exposureSegs.length ? [...inc, { t: ' ' }, SEPARATOR, { t: ' ' }, ...exposureSegs] : inc;
   };
-  const priceOk = price && !price.stale ? [[dot, { t: ' ' }, ...priceSeg(true)]] : [];
-  const priceStale = price?.stale ? [[dot, { t: ' ' }, ...priceSeg(true)]] : [];
+  const priceOk = price && !price.stale ? [[SEPARATOR, { t: ' ' }, ...priceSeg(true)]] : [];
+  const priceStale = price?.stale ? [[SEPARATOR, { t: ' ' }, ...priceSeg(true)]] : [];
   // One line that carries the connection, the count, the incidents, who and where, and the
   // price: the summary when there is room for only one line. What does not fit is dropped
   // from the end.
@@ -247,8 +252,8 @@ export function StatusPanel({
   const topItem = items[0];
   const attentionPart: Seg[] | undefined = topItem
     ? [
-        dot,
-        { t: ' ' },
+        // A note's mark is a dot, which already parts it from what is before it: never two.
+        ...(topItem.top === 'info' ? [] : [SEPARATOR, { t: ' ' }]),
         { t: severityGlyph[topItem.top], color: severityColor[topItem.top], dim: topItem.top === 'info' },
         // The end of a long name is what tells keys apart.
         { t: ` ${tailCells(topItem.name, 14)} · ${topRisk(topItem.risks)!.short}${items.length > 1 ? ` · +${items.length - 1} more` : ''}`, dim: topItem.top === 'info' },
@@ -262,21 +267,21 @@ export function StatusPanel({
         // The first thing to look at comes ahead of the counts: it cannot be seen from another panel.
         ...(strip && attentionPart ? [attentionPart] : []),
         // An incident, or not knowing of one, comes ahead of the count.
-        ...(open || incidentsMissing ? [[dot, { t: ' ' }, ...incidentSegs(true)]] : []),
+        ...(open || incidentsMissing ? [[SEPARATOR, { t: ' ' }, ...incidentSegs(true)]] : []),
         ...(noKeys
           ? []
           : [
-              [dot, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
+              [SEPARATOR, { t: ` ${live} active`, color: live > 0 ? color.ok : undefined }],
             ]),
-        ...(!(open || incidentsMissing) && incidentSegs(true).length ? [[dot, { t: ' ' }, ...incidentSegs(true)]] : []),
-        ...(exposureSegs.length ? [[dot, { t: ' ' }, ...exposureSegs]] : []),
+        ...(!(open || incidentsMissing) && incidentSegs(true).length ? [[SEPARATOR, { t: ' ' }, ...incidentSegs(true)]] : []),
+        ...(exposureSegs.length ? [[SEPARATOR, { t: ' ' }, ...exposureSegs]] : []),
         ...(whereAs ? [whereAs] : []),
         ...priceOk,
       ],
       inner - 1,
     );
   // Who and where, in full if it fits, else just the address, so the line never loses where it is.
-  const whereShort: Seg[] = [dot, { t: ' ' + urlOnly, dim: true }];
+  const whereShort: Seg[] = [SEPARATOR, { t: ' ' + urlOnly, dim: true }];
   const withFullWhere = buildCompact(inBorder ? undefined : whereSeg);
   const compactLine: Seg[] =
     inBorder || withFullWhere.some((x) => x.t.includes(where)) ? withFullWhere : buildCompact(whereShort).some((x) => x.t.includes(urlOnly)) ? buildCompact(whereShort) : withFullWhere;
@@ -296,8 +301,8 @@ export function StatusPanel({
   const priceJoins = price !== undefined && !price.stale;
   const fullLines: Seg[][] = [
     link.state === 'ok'
-      ? [{ t: linkText, dim: true }, ...(priceJoins ? [{ t: ' ' }, dot, { t: ' ' }, ...priceSeg(true)] : [])]
-      : [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }, ...(priceJoins ? [{ t: ' ' }, dot, { t: ' ' }, ...priceSeg(true)] : [])],
+      ? [{ t: linkText, dim: true }, ...(priceJoins ? [{ t: ' ' }, SEPARATOR, { t: ' ' }, ...priceSeg(true)] : [])]
+      : [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }, ...(priceJoins ? [{ t: ' ' }, SEPARATOR, { t: ' ' }, ...priceSeg(true)] : [])],
     countsLine,
     watchFitted,
     // Who and where come after the numbers: the border carries the address when it fits.
@@ -307,7 +312,7 @@ export function StatusPanel({
   const activePart: Seg[] = noKeys
     ? []
     : [
-        dot,
+        SEPARATOR,
         { t: ` ${live} active`, color: live > 0 ? color.ok : undefined },
         { t: ` · ${disabled} disabled · ${revoked} revoked`, dim: true },
       ];
@@ -319,7 +324,7 @@ export function StatusPanel({
     fitParts(
       [
         ...(watchFitted.length ? [watchFitted] : []),
-        ...(above.some((x) => x.t.includes('price')) ? [] : price && !noKeys ? [[dot, { t: ' ' }, ...priceSeg(true)]] : []),
+        ...(above.some((x) => x.t.includes('price')) ? [] : price && !noKeys ? [[SEPARATOR, { t: ' ' }, ...priceSeg(true)]] : []),
       ],
       inner - 1,
     );
@@ -387,7 +392,7 @@ export function StatusPanel({
       height={height}
     >
       {lines.slice(0, summaryHeight).map((segs, i) => (
-        <Row key={i} left={[...lead, ...withoutLeadingDot(segs)]} width={inner} />
+        <Row key={i} left={[...lead, ...withoutLeadingSeparator(segs)]} width={inner} />
       ))}
       {list.rows > 0 ? (
         <>
@@ -398,7 +403,7 @@ export function StatusPanel({
           ) : null}
           {items.length === 0 ? (
             keys.some((k) => k.status === 'active') ? (
-              <Text color={color.ok} wrap="truncate-end"> ✔ nothing to review</Text>
+              <Text color={color.ok} wrap="truncate-end"> {okGlyph} nothing to review</Text>
             ) : (
               <Text dimColor wrap="truncate-end">
                 {keys.length > 0 ? ' No active keys. n creates one.' : upstreamCount === 0 ? ' No upstream yet: kman upstream add' : ' Nothing to review.'}
@@ -475,7 +480,7 @@ export function KeysPanel({
     const lapsed = k.expired && k.status === 'active';
     const st = statusStyle[k.status];
     const status: Seg[] = [
-      { t: lapsed ? '✖' : st.glyph, color: lapsed ? color.danger : st.color, dim: st.dim },
+      { t: lapsed ? severityGlyph.danger : st.glyph, color: lapsed ? color.danger : st.color, dim: st.dim },
       { t: ` ${lapsed ? 'expired' : k.status}`, color: lapsed ? color.danger : undefined, dim: !lapsed },
     ];
     const warn: Seg[] = risk ? [{ t: `${severityGlyph[risk.severity]} ${risk.short}`, color: severityColor[risk.severity], dim: risk.severity === 'info' }] : [];
@@ -602,7 +607,7 @@ export function UpstreamsPanel({
             // The warnings are glyphs when the name needs the room: ▲ no credential, ▲ http.
             ...fitParts(
               [
-                // The same marks as Status gives them: no credential is ✖, plain http ▲, an update ○.
+                // The same marks as Status gives them: no credential is !, plain http ▲, an update ·.
                 ...upstreamRisks(u).map((r) => [
                   { t: `${severityGlyph[r.severity]} ${r.short === 'plain http' ? 'http' : r.short}`, color: severityColor[r.severity], dim: r.severity === 'info' },
                 ]),

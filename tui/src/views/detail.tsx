@@ -497,7 +497,7 @@ export function UpstreamMain({
           </Text>
         )}
         <Field label="address">
-          {u.tls === false ? <Text color={color.warn}>▲ plain http </Text> : null}
+          {u.tls === false ? <Text color={color.warn}>{severityGlyph.warn} plain http </Text> : null}
           {`${u.host}:${u.port}`}
         </Field>
         <Field label="profile">{u.profile}</Field>

@@ -5,7 +5,7 @@ import { keyLabel } from '../keys.js';
 import { editField, TextField } from '../ui/TextField.js';
 import type { Edit } from '../ui/TextField.js';
 import { Panel, Wrapped } from '../ui/parts.js';
-import { color } from '../ui/theme.js';
+import { color, severityGlyph } from '../ui/theme.js';
 
 interface Props {
   keyData: Key;
@@ -62,10 +62,10 @@ export function RevokeDialog({ keyData, maxWidth, busy, error, errorLines = 3, o
       {tried || error || busy || matches || typed !== '' ? (
       <Box marginTop={1} flexDirection="column">
         {tried ? (
-          <Text color={color.danger}>✖ That is not the {keyData.name ? 'name' : 'id'}. Type it exactly.</Text>
+          <Text color={color.danger}>{severityGlyph.danger} That is not the {keyData.name ? 'name' : 'id'}. Type it exactly.</Text>
         ) : error ? (
           <>
-            <Wrapped text={error} marker="✖ " width={panelWidth - 4} maxLines={errorLines} tone={color.danger} />
+            <Wrapped text={error} marker={`${severityGlyph.danger} `} width={panelWidth - 4} maxLines={errorLines} tone={color.danger} />
             <Text dimColor>{busy ? 'Revoking…' : matches ? 'Enter tries again.' : `Type the ${keyData.name ? 'name' : 'id'} exactly.`}</Text>
           </>
         ) : busy ? (
