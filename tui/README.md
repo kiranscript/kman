@@ -96,7 +96,7 @@ A key's detail opens with its warnings and then **Where it is used**: each count
 
 ## Recent requests
 
-`5` shows the requests through kman, newest first, from the events it keeps: time, key, country and AS number, client and result, with the incident's number where the request is flagged for one. A wider screen adds the AS's organisation, the operation and the model; as it narrows the model goes first, then the operation, then the organisation. A client address column appears only while `expose_client_addresses` is on. A request that presented no key kman knows is `(no key)`, with no country or AS. Under the selected row are its whole operation and model, and why it is flagged. Below a table 110 columns wide the panels go above it, a line each, so it has the whole width.
+`5` shows the requests through kman, newest first, from the events it keeps: time, key, country and AS number, client and result, with the incident's number where the request is flagged for one. A wider screen adds the AS's organisation, the operation and the model; as it narrows the model goes first, then the operation, then the organisation. A client address column appears only while `expose_client_addresses` is on. A request that presented no key kman knows is `(no key)`, with no country or AS. Under the selected row are its whole operation and model, and why it is flagged. Where the table beside the panels would be under 110 columns wide, or under 180 while addresses are shown, the panels go above it, a line each, so it has the whole width.
 
 | Key | Does |
 |---|---|

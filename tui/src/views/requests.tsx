@@ -1,6 +1,7 @@
 // The requests table in the main panel, newest first, with the flagged ones marked, and the
 // short list of them under a key's detail.
 import { Box, Text } from 'ink';
+import { useMemo } from 'react';
 import type { RequestEvent } from '../api.js';
 import { clock, fit, fitMiddle, padEnd, since, textWidth, wrapLines } from '../format.js';
 import { MAX_ROWS, requestFrom, requestKey, resultText } from '../requests.js';
@@ -177,7 +178,10 @@ export function RequestsMain({
   onView(visible);
   const start = windowStart(selected, rows.length, visible);
   const shown = rows.slice(start, start + visible);
-  const cols = columns(shown, inner - 1, now, keyName !== undefined);
+  // By every row, not those on screen, so that scrolling moves no column.
+  const oneKey = keyName !== undefined;
+  const day = new Date(now).toDateString();
+  const cols = useMemo(() => columns(rows, inner - 1, now, oneKey), [rows, inner, oneKey, day]);
   const title = `Requests · ${keyName ?? 'all keys'}${filter === 'all' ? '' : ` · ${filter}`}${fresh > 0 ? ` · ${fresh} new` : ''}`;
   const freshness = state.at === undefined ? undefined : `${stale ? 'old' : 'live'} · ${since(state.at, Date.now())}`;
   const below = rows.length - start - shown.length;

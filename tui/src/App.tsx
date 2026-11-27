@@ -17,7 +17,7 @@ import type { Action } from './incidents.js';
 import { isChord, keyLabel, visibleKeys } from './keys.js';
 import { attention, otherIncidents, unknowns, upstreamAttention } from './risk.js';
 import { layout, hasFilterRow, listArea, summaryRows } from './layout.js';
-import { flagOf, MAX_ROWS, nextFilter } from './requests.js';
+import { MAX_ROWS, nextFilter } from './requests.js';
 import type { RequestFilter } from './requests.js';
 import type { ListPanel } from './layout.js';
 import { Footer, noticeRows, TABS } from './ui/chrome.js';
@@ -27,7 +27,7 @@ import { editText } from './ui/TextField.js';
 import { color } from './ui/theme.js';
 import { Command } from './ui/command.js';
 import { useArmed } from './ui/useArmed.js';
-import { AUDIT_LIMIT, useAdmin, useIncident, useIncidentDetails, useKeyRequests, usePlaces, useRequests } from './useAdmin.js';
+import { AUDIT_LIMIT, useAdmin, useIncident, useFlags, useIncidentDetails, useKeyRequests, usePlaces, useRequests } from './useAdmin.js';
 import { AuditMain, IncidentMain, KeyMain, StartMain, StatusMain, UnknownMain, UpstreamMain } from './views/detail.js';
 import type { Scroll } from './views/detail.js';
 import { IncidentView } from './views/incident.js';
@@ -79,6 +79,8 @@ const REQUESTS_STRIP = 28;
 
 /** Under this, the requests table takes the screen's width, with the panels above it. */
 const TABLE_WIDTH = 110;
+/** With an address column too, the operation and the model need this much. */
+const ADDRESS_TABLE_WIDTH = 180;
 
 /**
  * Whether a dialog is for answering this incident, so is moot once it is resolved. Enable
@@ -171,10 +173,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const hasRequests = !requests.unsupported;
   const tabs = useMemo(() => TABS.filter((t) => t.id !== 'requests' || hasRequests), [hasRequests]);
   const incidentDetails = useIncidentDetails(client, hasRequests ? data.incidents : undefined, now, exposed);
-  const flagged = useMemo(() => {
-    const sources = { canaries: data.canaries, incidents: data.incidents, details: incidentDetails.details };
-    return requests.rows.map((e) => ({ e, flag: flagOf(e, sources) }));
-  }, [requests.rows, data.canaries, data.incidents, incidentDetails.details]);
+  const flag = useFlags(data.canaries, data.incidents, incidentDetails);
+  const flagged = useMemo(() => requests.rows.map((e) => ({ e, flag: flag(e) })), [requests.rows, flag]);
   const tableShown = useMemo(() => (requestFilter === 'flagged' ? flagged.filter((r) => r.flag) : flagged), [flagged, requestFilter]);
   /** The selected row's place: its own, or, when it is gone, the next older one's. */
   const indexOf = (id: number | undefined) => {
@@ -199,10 +199,9 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const keyRequests = useKeyRequests(client, hasRequests ? shownKeyId : undefined, now);
   const lastRequests = useMemo(() => {
     if (!hasRequests || !shownKeyId) return undefined;
-    const sources = { canaries: data.canaries, incidents: data.incidents, details: incidentDetails.details };
     const held = keyRequests.id === shownKeyId ? keyRequests : undefined;
-    return { rows: held?.events?.map((e) => ({ e, flag: flagOf(e, sources) })), error: held?.error };
-  }, [hasRequests, shownKeyId, keyRequests, data.canaries, data.incidents, incidentDetails.details]);
+    return { rows: held?.events?.map((e) => ({ e, flag: flag(e) })), error: held?.error };
+  }, [hasRequests, shownKeyId, keyRequests, flag]);
   const incident = useIncident(client, viewing, now);
   const opened = incident.detail;
   // Before the detail arrives, the list says what it can.
@@ -277,7 +276,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   };
   const panels = tabs.map((t) => t.id);
   const beside = layout(columns, bodyRows, tab, wants, { panels });
-  const lay = tab === 'requests' && !(beside.wide && beside.mainW >= TABLE_WIDTH) ? layout(columns, bodyRows, tab, wants, { panels, stacked: true }) : beside;
+  const lay = tab === 'requests' && !(beside.wide && beside.mainW >= (exposed ? ADDRESS_TABLE_WIDTH : TABLE_WIDTH)) ? layout(columns, bodyRows, tab, wants, { panels, stacked: true }) : beside;
   const loaded = link.state === 'ok' || data.keys.length > 0 || data.upstreams.length > 0 || data.audit.length > 0;
   const usable = loaded && link.state !== 'denied';
 

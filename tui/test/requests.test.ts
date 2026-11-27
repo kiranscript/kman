@@ -125,6 +125,22 @@ describe('joining the pages to the rows held', () => {
     expect(ids(mergeNewest({ rows: rows(3), more: false }, [page([])]))).toEqual([]);
   });
 
+  it('takes what was just fetched over what is held, keeping the rows that say the same', () => {
+    const held = { rows: [request({ id: 2, key_name: 'old' }), request({ id: 1 })], more: true };
+    const fresh = page([2, 1], true);
+    fresh.events = [request({ id: 2, key_name: 'new', client_address: '203.0.113.7' }), structuredClone(held.rows[1]!)];
+    const got = mergeNewest(held, [fresh]);
+    expect(got.rows[0]).toMatchObject({ key_name: 'new', client_address: '203.0.113.7' });
+    expect(got.rows[1]).toBe(held.rows[1]);
+    // Nothing new: the very same rows, so nothing is worked out again.
+    const again = page([2, 1], true);
+    again.events = structuredClone(got.rows);
+    expect(mergeNewest(got, [again]).rows).toBe(got.rows);
+    again.client_addresses_withheld = true;
+    again.events = [structuredClone(held.rows[1]!)];
+    expect(mergeNewest({ rows: [held.rows[1]!], more: true }, [again]).rows[0]).toBe(held.rows[1]);
+  });
+
   it('forgets addresses once they are withheld', () => {
     const held = { rows: [request({ id: 1, client_address: '203.0.113.7' })], more: false };
     const got = mergeNewest(held, [page([2, 1], true, { client_addresses_withheld: true })]);
@@ -148,6 +164,37 @@ describe('joining the pages to the rows held', () => {
     expect(kept.rows).toHaveLength(MAX_ROWS + 2);
     const huge = { rows: rows(...Array.from({ length: newest }, (_, i) => newest - i)), more: true };
     expect(mergeNewest(huge, [page([newest], true)], 1).rows).toHaveLength(2 * MAX_ROWS);
+  });
+
+  it('reads an address and a network however they are written', () => {
+    const cases: [string, string, boolean][] = [
+      ['203.0.113.0/24', '203.0.113.255', true],
+      ['203.0.113.0/25', '203.0.113.127', true],
+      ['203.0.113.0/25', '203.0.113.128', false],
+      ['203.0.112.0/23', '203.0.113.9', true],
+      ['203.0.113.0/24', '::FFFF:CB00:7109', true],
+      ['203.0.113.0/24', '2001:db8::1', false],
+      ['2001:db8:1:2::/64', '2001:0DB8:0001:0002:0000:0000:0000:0001', true],
+      ['2001:db8::/64', '2001:db8::192.0.2.1', true],
+      ['2001:db8::/64', '2001:db9::1', false],
+      ['fe80::/64', 'fe80::1%eth0', true],
+      ['::/0', '2001:db8::1', true],
+      ['2001:db8:1:2::/64', '203.0.113.7', false],
+      ['203.0.113.0/24', 'unix', false],
+    ];
+    for (const [network, address, want] of cases) {
+      expect(matches(detection(1, 'new_network', { network }), alike({ id: 1, client_address: address })), `${address} in ${network}`).toBe(want);
+    }
+  });
+
+  it('flags every row held against a full incident in well under a poll', () => {
+    const many = Array.from({ length: 100 }, (_, n) => detection(n, 'new_network', { ...seen, network: `10.${n}.0.0/24` }));
+    const all = sources(many);
+    // Like in everything but the network, so nothing is ruled out before it is compared.
+    const rows = Array.from({ length: MAX_ROWS }, (_, n) => alike({ id: n, client_address: `203.0.${n % 250}.${n % 200}` }));
+    const start = performance.now();
+    expect(rows.filter((e) => flagOf(e, all)).length).toBe(0);
+    expect(performance.now() - start).toBeLessThan(1000);
   });
 
   it('does not take an address in a network that is not one', () => {

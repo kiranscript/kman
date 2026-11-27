@@ -18,7 +18,8 @@ import type {
   Upstream,
 } from './api.js';
 import { isCanary } from './incidents.js';
-import { MAX_ROWS, mergeNewest, mergeOlder, withoutAddresses } from './requests.js';
+import { flagOf, MAX_ROWS, mergeNewest, mergeOlder, withoutAddresses } from './requests.js';
+import type { Flag } from './requests.js';
 import type { Feed } from './requests.js';
 
 export interface AdminData {
@@ -108,7 +109,8 @@ export function useAdmin(client: AdminClient, intervalMs = 3000) {
         upstreams,
         audit: newest,
         price,
-        settings,
+        // The last good answer stays: one that failed says nothing of a setting having changed.
+        settings: settings ?? last.settings,
         actor: actor.current,
         incidents: incidents.error ? last.incidents : incidents.value,
         incidentsError: incidents.error,
@@ -244,6 +246,8 @@ export function useIncident(client: AdminClient, id: number | undefined, at: num
 
 /** The events asked for at a time. */
 export const EVENT_PAGE = 200;
+/** What a poll asks for once rows are held: it reads further back only if more than this arrived. */
+export const POLL_PAGE = 25;
 /** The most pages one poll reads to meet the rows already held before it starts over. */
 const CATCH_UP_PAGES = 5;
 
@@ -297,6 +301,9 @@ export function useRequests(
   // Without a key the route is always there on a kman that has it, so only that answer
   // says an older kman lacks it: an unknown key is not found too.
   const unsupported = useRef(false);
+  // The install began giving addresses out: the rows held lack them, so are read again.
+  const wasExposed = useRef(exposed);
+  const again = useRef(false);
 
   const update = useCallback((q: string, change: (s: Requests) => Partial<Requests>) => {
     setState((s) => {
@@ -305,22 +312,39 @@ export function useRequests(
     });
   }, []);
 
+  // Ahead of the poll: what it asks for from now on is what has the addresses.
+  useEffect(() => {
+    if (exposed === undefined) return;
+    if (wasExposed.current === false && exposed) {
+      again.current = true;
+      generation.current++;
+      polling.current = false;
+      older.current = false;
+    }
+    wasExposed.current = exposed;
+  }, [exposed]);
+
   useEffect(() => {
     if (!at || polling.current || unsupported.current) return;
     polling.current = true;
     const mine = generation.current;
     const stale = () => mine !== generation.current;
-    const base: EventQuery = { key, kind, limit: EVENT_PAGE };
+    const anew = again.current;
+    const rows = held.current.query === query ? held.current.rows : [];
+    // How far back to read: to what is held, or, reading it all again, to the selected request.
+    const reach = anew ? keep.current : rows[0]?.id;
+    const base: EventQuery = { key, kind };
     void (async () => {
       try {
-        const pages: EventPage[] = [await client.events(base)];
-        const newest = held.current.query === query ? held.current.rows[0]?.id : undefined;
-        // More may have arrived than a page holds: read back to what is held.
-        for (let last = pages[0]!; !stale() && newest !== undefined && last.more && last.next_before! > newest && pages.length < CATCH_UP_PAGES; ) {
-          last = await client.events({ ...base, before: last.next_before });
+        const pages: EventPage[] = [await client.events({ ...base, limit: anew || !rows.length ? EVENT_PAGE : POLL_PAGE })];
+        // More may have arrived than a page holds.
+        for (let last = pages[0]!; !stale() && reach !== undefined && last.more && last.next_before! > reach && pages.length < CATCH_UP_PAGES; ) {
+          last = await client.events({ ...base, limit: EVENT_PAGE, before: last.next_before });
           pages.push(last);
         }
-        if (!stale()) update(query, (s) => ({ ...mergeNewest(s, pages, keep.current), loaded: true, at: Date.now(), error: undefined }));
+        if (stale()) return;
+        if (anew) again.current = false;
+        update(query, (s) => ({ ...mergeNewest(anew ? { rows: [], more: false } : s, pages, keep.current), loaded: true, at: Date.now(), error: undefined }));
       } catch (err) {
         if (stale()) return;
         if (!key && isMissingRoute(err)) {
@@ -332,7 +356,7 @@ export function useRequests(
         if (!stale()) polling.current = false;
       }
     })();
-  }, [client, query, key, kind, at, update]);
+  }, [client, query, key, kind, at, exposed, update]);
 
   // The install stopped giving addresses out: those held go, whatever the next page holds.
   useEffect(() => {
@@ -364,6 +388,31 @@ export function useRequests(
   // A state left from another query shows nothing, and one being gone back to is not "loading older".
   const shown: Requests = state.query === query ? { ...state, loadingOlder: state.loadingOlder && older.current } : noRequests;
   return { ...shown, unsupported: unsupported.current, loadOlder };
+}
+
+/**
+ * What flags a request, remembered for each row until what flags are worked out from
+ * changes: most polls bring the same incidents and mostly the same rows.
+ */
+export function useFlags(
+  canaries: ReadonlySet<string> | undefined,
+  incidents: Incident[] | undefined,
+  { details, version }: { details: ReadonlyMap<number, IncidentDetail>; version: number },
+) {
+  const basis = JSON.stringify([
+    canaries && [...canaries],
+    incidents?.filter((i) => i.state !== 'resolved').map((i) => [i.id, i.key_id, i.opened_at, i.rules]),
+    version,
+  ]);
+  return useMemo(() => {
+    const sources = { canaries, incidents, details };
+    const known = new WeakMap<RequestEvent, { flag: Flag | undefined }>();
+    return (e: RequestEvent) => {
+      let held = known.get(e);
+      if (!held) known.set(e, (held = { flag: flagOf(e, sources) }));
+      return held.flag;
+    };
+  }, [basis]);
 }
 
 /** The requests a key's detail lists. */
@@ -445,6 +494,7 @@ export function useIncidentDetails(client: AdminClient, incidents: Incident[] | 
       if (held) details.set(i.id, held.detail);
       if (held?.mark !== detailMark(i, exposed)) incomplete = true;
     }
-    return { details, incomplete };
+    // `version` changes only when a detail does.
+    return { details, incomplete, version };
   }, [incidents, version, exposed]);
 }
