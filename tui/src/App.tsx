@@ -17,7 +17,7 @@ import type { Action } from './incidents.js';
 import { isChord, keyLabel, visibleKeys } from './keys.js';
 import { attention, otherIncidents, unknowns, upstreamAttention } from './risk.js';
 import { layout, hasFilterRow, listArea, summaryRows } from './layout.js';
-import { flagOf, nextFilter } from './requests.js';
+import { flagOf, MAX_ROWS, nextFilter } from './requests.js';
 import type { RequestFilter } from './requests.js';
 import type { ListPanel } from './layout.js';
 import { Footer, noticeRows, TABS } from './ui/chrome.js';
@@ -165,7 +165,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   // `now` is when the last poll answered.
   const places = usePlaces(client, shownKeyId, now);
   // Not before the first poll has answered, which is when the token is known to be taken.
-  const answeredAt = link.state === 'connecting' || link.state === 'denied' ? 0 : now;
+  const answeredAt = link.state === 'ok' ? link.at : link.state === 'down' ? (link.lastOk ?? 0) : 0;
   const exposed = data.settings?.expose_client_addresses;
   const requests = useRequests(client, requestKeyId, requestFilter === 'refused' ? 'refused' : undefined, answeredAt, { selected: place.id, exposed });
   const hasRequests = !requests.unsupported;
@@ -251,7 +251,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   };
   /** Whether the focused list has more than one row, so up and down have somewhere to go. */
   const rowCount = { status: items.length, keys: visible.length, upstreams: data.upstreams.length, audit: data.audit.length, requests: tableShown.length }[tab];
-  const movable = rowCount > 1 || (tab === 'requests' && requests.more);
+  const movable = rowCount > 1 || (tab === 'requests' && requests.more && requests.rows.length < MAX_ROWS);
   /** Whether the focused list has rows to move over. */
   const selectable = rowCount > 0;
   // A long failure takes more rows, which the body gives up.
