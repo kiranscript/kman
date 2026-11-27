@@ -363,6 +363,66 @@ describe('the requests table', () => {
     m.unmount();
   });
 
+  it('keeps the selected request across a burst of more than a thousand', async () => {
+    const client = traffic();
+    const m = mount(client, SMALL, 100);
+    await onRequests(m);
+    await m.press('j', 'j');
+    expect(selectedRow(m)).toContain('checkout');
+    client.requests.push(...Array.from({ length: 1500 }, (_, i) => request({ id: 5 + i, ...bad }, 1500 - i)));
+    await until(() => m.screen().includes('1500 new'), 'all of them', 6000);
+    await m.settle();
+    expect(selectedRow(m)).toContain('checkout');
+    m.unmount();
+  }, 30_000);
+
+  it('goes to the newest and says so when too many arrive to keep the place', async () => {
+    const client = traffic();
+    const m = mount(client, SMALL, 100);
+    await onRequests(m);
+    await m.press('j', 'j');
+    client.requests.push(...Array.from({ length: 11_500 }, (_, i) => request({ id: 5 + i, ...bad }, 11_500 - i)));
+    await until(() => m.screen().includes('Too many new requests to keep your place'), 'the notice', 15_000);
+    await m.settle();
+    expect(m.screen()).not.toMatch(/\d new ·/);
+    expect(selectedAt(m)).toBe(m.lines().findIndex((l) => l === m.table()[0]));
+    m.unmount();
+  }, 30_000);
+
+  it('takes a key’s last requests from an answer slower than a poll', async () => {
+    const client = traffic();
+    const events = client.events.bind(client);
+    let reads = 0;
+    client.events = async (query) => {
+      if (query?.key) {
+        reads++;
+        await tick(350);
+      }
+      return events(query);
+    };
+    const m = mount(client, { columns: 140, rows: 40 }, 100);
+    await until(() => m.screen().includes('live'), 'the first load');
+    await m.press('2');
+    await until(() => m.screen().includes('openai-node/4'), 'them', 3000);
+    // One read at a time.
+    expect(reads).toBeLessThan(8);
+    m.unmount();
+  });
+
+  it('shows the whole of a long model under the selected row', async () => {
+    const client = traffic();
+    client.requests = [request({ id: 1, model: `ft:gpt-5.4-2026-01-01:an-organisation-with-a-long-name:${'x'.repeat(30)}:custom-deployment` })];
+    const m = mount(client);
+    await until(() => m.screen().includes('live'), 'the first load');
+    await m.press('5');
+    await until(() => m.table().length === 1, 'the row');
+    await m.settle();
+    expect(m.screen().replace(/[│┃]\s*\n[│┃]\s*/g, '').replace(/\s+/g, '')).toContain('custom-deployment');
+    expect(m.screen()).toContain('Amazon.com');
+    expect(m.lines().length).toBeLessThanOrEqual(24);
+    m.unmount();
+  });
+
   it('says how many are loaded without an "of" when none is flagged', async () => {
     const client = traffic();
     client.incidents = [];

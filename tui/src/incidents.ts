@@ -92,7 +92,8 @@ export function whatFired(detections: Detection[]): Fired[] {
   const seen = new Map<string, Fired>();
   for (const d of detections) {
     const { observed, usual } = observedBy(d);
-    const why = refusedPattern.exec(d.evidence.detail ?? '');
+    // kman refuses every use of a canary: its detail says where it was planted instead.
+    const why = refusedPattern.exec(d.evidence.detail ?? '') ?? (d.rule === 'canary' ? [''] : null);
     const id = `${d.rule}\u0000${observed}`;
     const was = seen.get(id);
     const refused = why ? (why[1] ?? '') : was?.refused;

@@ -96,7 +96,7 @@ A key's detail opens with its unresolved incident, if it has one (`! incident #1
 
 ## Recent requests
 
-`5` shows the requests through kman, newest first, from the events it keeps: time, key, country and AS number, client and result, with the incident's number where the request is flagged for one. A wider screen adds the AS's organisation, the operation and the model; as it narrows the model goes first, then the operation, then the organisation. A client address column appears only while `expose_client_addresses` is on. A request that presented no key kman knows is `(no key)`, with no country or AS. Under the selected row are its whole operation and model, and why it is flagged. Where the table beside the panels would be under 110 columns wide, or under 180 while addresses are shown, the panels go above it, a line each, so it has the whole width.
+`5` shows the requests through kman, newest first, from the events it keeps: time, key, country and AS number, client and result, with the incident's number where the request is flagged for one. A wider screen adds the AS's organisation, the operation and the model; as it narrows the model goes first, then the operation, then the organisation. A client address column appears only while `expose_client_addresses` is on. A request that presented no key kman knows is `(no key)`, with no country or AS. Under the selected row are its whole operation and model, wrapped where long, and why it is flagged. Where the table beside the panels would be under 110 columns wide, or under 180 while addresses are shown, the panels go above it, a line each, so it has the whole width.
 
 | Key | Does |
 |---|---|
@@ -106,7 +106,7 @@ A key's detail opens with its unresolved incident, if it has one (`! incident #1
 | `Enter` | open the request's incident, or else its key |
 | `Esc` | from one key's requests (`v`), back to all keys |
 
-New requests arrive on the 3-second poll, about 5 seconds after they are made. A renamed key's older rows keep the old name until they are read again. The selection stays on the same request as they do, and the title says how many are new above it. A key's detail lists its last five. If the requests stop loading, the rows are kept and marked old. A kman without the events route has no panel.
+New requests arrive on the 3-second poll, about 5 seconds after they are made. A renamed key's older rows keep the old name until they are read again. The selection stays on the same request as they do, and the title says how many are new above it. Should more than about 10,000 arrive before they are read, the selection goes to the newest and says so. A key's detail lists its last five. If the requests stop loading, the rows are kept and marked old. A kman without the events route has no panel.
 
 ### What the flags mean
 
