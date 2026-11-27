@@ -106,7 +106,7 @@ A key's detail opens with its warnings and then **Where it is used**: each count
 | `Enter` | open the request's incident, or else its key |
 | `Esc` | from one key's requests (`v`), back to all keys |
 
-New requests arrive on the 3-second poll, about 5 seconds after they are made. A renamed key's older rows keep the old name until they are read again. The selection stays on the same request as they do, and the title says how many are new above it. Should more than about 10,000 arrive before they are read, the selection goes to the newest and says so. A key's detail lists its last five. If the requests stop loading, the rows are kept and marked old. A kman without the events route has no panel.
+New requests arrive on the 3-second poll, about 5 seconds after they are made. A renamed key's older rows keep the old name until they are read again. The selection stays on the same request as they do, and the title says how many are new above it. At most about 10,000 requests are held: should so many arrive that the selected one would be past that (fewer, the further down it is), the selection goes to the newest and says so. A key's detail lists its last five. If the requests stop loading, the rows are kept and marked old. A kman without the events route has no panel.
 
 ### What the flags mean
 

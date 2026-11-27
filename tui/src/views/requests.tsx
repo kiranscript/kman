@@ -131,12 +131,14 @@ const cells = (r: Flagged, cols: ReturnType<typeof columns>, now: number): Seg[]
  * The lines under the selected row, `width` wide: what its columns may have cut, wrapped so
  * that the whole of an operation and a model can be read, and why it is flagged.
  */
-function under({ e, flag }: Flagged, width: number): { text: string; why: boolean }[] {
+function under({ e, flag }: Flagged, width: number, room: number): { text: string; why: boolean }[] {
   const what = [e.operation || 'no operation', e.model, e.asn_label].filter(Boolean).join(' · ');
   const refusal = e.refusal_code && !flag?.why.includes(e.refusal_code) ? ` · refused: ${e.refusal_code}` : '';
   const why = flag ? `${severityGlyph[flag.severity]} ${flag.why}${refusal}` : 'not flagged';
   return [
-    ...wrapLines(what, width, 4).map((text) => ({ text, why: false })),
+    // As many as it takes, short of the selected row and why: a path can be long, and the
+    // model comes after it.
+    ...wrapLines(what, width, Math.max(2, room - 3)).map((text) => ({ text, why: false })),
     ...wrapLines(why, width, 2).map((text) => ({ text, why: true })),
   ];
 }
@@ -190,7 +192,7 @@ export function RequestsMain({
   // The header, the warnings, the legend and the border are not rows of the list.
   const area = Math.max(1, height - 2 - 1 - warnings.length - legend.length);
   // A cell less than what is left of the four that indent them.
-  const detail = rows[selected] ? under(rows[selected]!, inner - 5) : [];
+  const detail = rows[selected] ? under(rows[selected]!, inner - 5, area) : [];
   const visible = Math.max(1, area - detail.length);
   onView(visible);
   const start = windowStart(selected, rows.length, visible);
