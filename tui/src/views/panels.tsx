@@ -111,6 +111,36 @@ const STATUS_TITLE = '[1] Status';
 /** How wide Status must be for its top border to carry the address. */
 export const addressWidth = (url: string) => subtitleWidth(shortUrl(url), STATUS_TITLE);
 
+/**
+ * "owner @ address" in `room` cells. The scheme goes first, then the owner and the host
+ * are each cut in the middle, the host keeping the larger share: it says which install.
+ */
+function whoWhere(actor: string | undefined, address: string, room: number): string {
+  const whole = actor ? `${actor} @ ${address}` : address;
+  if (textWidth(whole) <= room) return whole;
+  const host = address.replace(/^https:\/\//, '');
+  if (!actor) return fitMiddle(host, room);
+  const both = room - 3;
+  const forHost = Math.min(textWidth(host), Math.max(Math.ceil(both * 0.65), both - textWidth(actor)));
+  return `${fitMiddle(actor, both - forHost)} @ ${fitMiddle(host, forHost)}`;
+}
+
+/**
+ * As many of `lines` as there are `rows`, in their order. Those in `spare` give up their
+ * row first, in that order, and then the last that `must` does not hold.
+ */
+function intoRows(lines: Seg[][], rows: number, spare: (Seg[] | undefined)[], must: (line: Seg[]) => boolean): Seg[][] {
+  let out = lines;
+  for (const line of spare) if (out.length > rows) out = out.filter((l) => l !== line);
+  while (out.length > Math.max(0, rows)) {
+    let at = out.length - 1;
+    while (at >= 0 && must(out[at]!)) at--;
+    const gone = out[at < 0 ? out.length - 1 : at];
+    out = out.filter((l) => l !== gone);
+  }
+  return out;
+}
+
 export interface Item {
   id: string;
   name: string;
@@ -293,8 +323,10 @@ export function StatusPanel({
   const compactLine: Seg[] =
     inBorder || withFullWhere.some((x) => x.t.includes(where)) ? withFullWhere : buildCompact(whereShort).some((x) => x.t.includes(urlOnly)) ? buildCompact(whereShort) : withFullWhere;
   // When the border carries the address the line says only who: not the address twice.
-  // Cut in the middle, so that both who it is and the end of the address stay.
-  const whereLine: Seg[] = [{ t: fitMiddle(borderText === urlOnly && actor ? `signed in as ${actor}` : where, inner - 1), dim: true }];
+  // It stops a cell short of the border, as the line starts one in.
+  const whereLine: Seg[] = [
+    { t: borderText === urlOnly && actor ? fitMiddle(`signed in as ${actor}`, inner - 2) : whoWhere(actor, urlOnly, inner - 2), dim: true },
+  ];
   // Zeros tell nothing, and Keys and the detail already say there are no keys: no counts then.
   const countsLine: Seg[] = noKeys
     ? []
@@ -308,9 +340,14 @@ export function StatusPanel({
   // A fresh price joins the first line; a stale or unknown one keeps a line to itself.
   const priceJoins = price !== undefined && !price.stale;
   const fullLines: Seg[][] = [
-    link.state === 'ok'
-      ? [{ t: linkText, dim: true }, ...(priceJoins ? [{ t: ' ' }, SEPARATOR, { t: ' ' }, ...priceSeg(true)] : [])]
-      : [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }, ...(priceJoins ? [{ t: ' ' }, SEPARATOR, { t: ' ' }, ...priceSeg(true)] : [])],
+    // Whole parts only: the price, and then how old the data is, give way to a narrow panel.
+    fitParts(
+      [
+        ...(link.state === 'ok' ? [[{ t: linkText, dim: true }]] : [[badgeSeg], ...(linkText ? [[SEPARATOR, { t: ` ${linkText}`, dim: true }]] : [])]),
+        ...(priceJoins ? [[SEPARATOR, { t: ' ' }, ...priceSeg(true)]] : []),
+      ],
+      inner - 1,
+    ),
     countsLine,
     watchFitted,
     // Who and where come after the numbers: the border carries the address when it fits.
@@ -350,10 +387,23 @@ export function StatusPanel({
   // as fits; otherwise it is the summary alone.
   const list = focused ? listArea(height, { tab: 'status', items: items.length, noKeys }) : { header: 0, rows: 0 };
   const summaryHeight = rows - list.header - list.rows;
-  const tier = (summaryHeight >= fullLines.length ? fullLines : tierFor(summaryHeight)).filter((l) => l.length > 0);
-  // An address the top border cannot carry takes the row of the counts of keys, which the
-  // Keys panel gives too, where there is not room for both.
-  const base = !borderText && tier.length > summaryHeight && tier.includes(whereLine) ? tier.filter((l) => l !== countsLine) : tier;
+  const chosen = (summaryHeight >= fullLines.length ? fullLines : tierFor(summaryHeight)).filter((l) => l.length > 0);
+  // The incidents' line says nothing the screen lacks when the title counts them, or there
+  // are none, and it carries no warning of exposed keys.
+  const isWatch = (l: Seg[]) => watchFitted.length > 0 && l.includes(watchFitted[0]!);
+  const watchSpare = exposureSegs.length === 0 && (open ? count !== undefined : !incidentsMissing);
+  const staleLine = (l: Seg[]) => l.some((x) => x.t.includes('price stale'));
+  // What must keep its row, as far as rows go: the first line, what only a line says, and an
+  // address the top border cannot carry.
+  const must = (l: Seg[]) => l === chosen[0] || (!borderText && l === whereLine) || (isWatch(l) && !watchSpare) || staleLine(l);
+  const spare = (lines: Seg[][]) => {
+    const watch = watchSpare ? lines.find(isWatch) : undefined;
+    // With incidents open their line is worth more than the counts of keys, which the Keys panel gives too.
+    return open ? [countsLine, watch] : [watch, countsLine];
+  };
+  // Such an address takes a row where one can be had, even one the shorter summaries leave it out of.
+  const wanted = !borderText && !strip && summaryHeight >= 2 && !chosen.includes(whereLine) ? [...chosen, whereLine] : chosen;
+  const base = borderText || strip ? chosen : intoRows(wanted, summaryHeight, spare(wanted), must);
   // A tall summary with a row to spare says what the list would: the first thing to look at.
   const first = items[0];
   const reason = ` · ${first ? topRisk(first.risks)!.short : ''}${items.length > 1 ? ` · +${items.length - 1} more` : ''}`;
@@ -367,16 +417,10 @@ export function StatusPanel({
   // Unfocused, the last line of the summary is the first thing to look at, whatever it has to
   // replace: a problem must not be hidden behind the price.
   // A stale price keeps its line, though: it too is something to act on.
-  const staleLast = base.length > 0 && base[base.length - 1]!.some((x) => x.t.includes('price stale'));
   const replaced = (): Seg[][] => {
-    if (summaryHeight > base.length) return [...base, attentionLine];
-    if (staleLast) return [...base.slice(0, summaryHeight - 2), attentionLine, base[base.length - 1]!];
-    const gone = base[summaryHeight - 1]!;
-    // The line saying how many incidents are open stays, as the title may not say it, and so
-    // does an address the top border lacks: the counts of keys make the room.
-    const needed = ((open > 0 || incidentsMissing) && gone.some((x) => x.t.includes('incident'))) || (gone === whereLine && !borderText);
-    const kept = needed ? base.filter((l) => l !== countsLine) : base;
-    return [...kept.slice(0, summaryHeight - 1), attentionLine];
+    const kept = intoRows(base, summaryHeight - 1, spare(base), must);
+    const last = kept[kept.length - 1];
+    return last && staleLine(last) ? [...kept.slice(0, -1), attentionLine, last] : [...kept, attentionLine];
   };
   const lines =
     !focused && !strip && items.length > 0 && summaryHeight >= 3
@@ -390,19 +434,19 @@ export function StatusPanel({
   const nameW = Math.min(24, Math.max(4, ...shown.map((n) => textWidth(n.name))));
   const standing = focused && items.length > 1 ? `${sel + 1} of ${items.length}` : items.length > 0 ? `${items.length} to review` : undefined;
   // What neither the top border nor a row says of who and where rides on the bottom one,
-  // beside the position, which always stays.
+  // beside the position, which always stays whole.
   const visible = lines.slice(0, summaryHeight);
   const rowSays = (text: string) => visible.some((l) => l.some((s) => s.t.includes(text)));
   const bottom = (): string | undefined => {
     if (strip || inBorder) return standing;
+    const room = width - 6 - (standing ? textWidth(standing) + 3 : 0);
     // With no address in the top border, the line of who and where holds it, cut or whole.
     const whereShown = visible.includes(whereLine);
     if (borderText || whereShown || rowSays(urlOnly)) {
       const named = !actor || whereShown || rowSays(`${actor} @ `);
-      return [named ? undefined : actor, standing].filter(Boolean).join(' · ') || undefined;
+      return [named ? undefined : fitMiddle(actor, room), standing].filter(Boolean).join(' · ') || undefined;
     }
-    const room = width - 6 - (standing ? textWidth(standing) + 3 : 0);
-    return [fitMiddle(where, room), standing].filter(Boolean).join(' · ');
+    return [whoWhere(actor, urlOnly, room), standing].filter(Boolean).join(' · ');
   };
 
   return (

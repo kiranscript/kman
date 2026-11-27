@@ -140,8 +140,8 @@ describe('who and where, beside the incidents', () => {
         for (const k of keys) app.stdin.write(k);
         await tick(150);
         const screen = app.lastFrame() ?? '';
-        // Whole where it can be, and else its two ends.
-        expect(screen, `${size.columns} ${keys} ${url}`).toMatch(url.length < 35 ? new RegExp(url) : /https:\/\/kman-[^│]*…[^│]*:8443/);
+        // The host whole where it can be, and else its two ends: the scheme goes first.
+        expect(screen, `${size.columns} ${keys} ${url}`).toMatch(url.length < 35 ? /kman\.prod\.internal:8443/ : /kman-admin[^│]*:8443/);
         expect(screen).toMatch(/2 (open )?incidents/);
         for (const l of screen.split('\n')) expect([...l].length).toBeLessThanOrEqual(size.columns);
         app.unmount();
@@ -164,8 +164,8 @@ describe('who and where, beside the incidents', () => {
         const at = `${size.columns}x${size.rows} ${keys}`;
         expect(status, at).toMatch(keys.length ? /\d+ to review/ : /1 of \d+/);
         expect(status, at).toContain('owner');
-        // Whole, or both its ends.
-        expect(status, at).toMatch(/https[^│\n]*8443/);
+        // Enough of the host to say which install it is.
+        expect(status, at).toMatch(/kman\.prod[^│\n]*8443/);
         expect(status, at).toMatch(/2 (open )?incidents/);
         app.unmount();
       }
@@ -183,7 +183,7 @@ describe('who and where, beside the incidents', () => {
       await until(() => (app.lastFrame() ?? '').includes('live'), 'the first load');
       for (const k of keys) app.stdin.write(k);
       await tick(150);
-      expect(app.lastFrame(), String(keys)).toMatch(/owner @ https[^│\n]*…[^│\n]*com:8443/);
+      expect(app.lastFrame(), String(keys)).toMatch(/owner @ kman-admin[^│\n]*…[^│\n]*com:8443/);
       app.unmount();
     }
   });
@@ -206,6 +206,20 @@ describe('who and where, beside the incidents', () => {
     const line = shows(narrowest);
     expect(line.trimEnd().endsWith('1 active')).toBe(true);
     expect(line.trimEnd().length).toBe(narrowest - 1);
+  });
+
+  it('keeps the position whole beside a long token name', async () => {
+    const actor = 'github-actions-deploy-production';
+    for (const size of [{ columns: 100, rows: 30 }, WIDE]) {
+      const client = many(2);
+      client.whoami = async () => actor;
+      const app = render(<App client={client} url="http://127.0.0.1:8081" size={size} intervalMs={60_000} />, size.columns);
+      await until(() => (app.lastFrame() ?? '').includes('live'), 'the first load');
+      await tick(150);
+      expect(app.lastFrame()).toMatch(/1 of 2 [─━][╯┛]/);
+      expect(app.lastFrame()).toMatch(/githu[^│\n]*ction/);
+      app.unmount();
+    }
   });
 
   it('names the owner once', async () => {
