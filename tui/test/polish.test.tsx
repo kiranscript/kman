@@ -65,7 +65,7 @@ describe('the Status title', () => {
     const one = leaked();
     one.incidents.pop();
     const n = await mount(one, WIDE);
-    expect(n.lines()[0]).toMatch(/\[1\] Status 1 incident ─/);
+    expect(n.lines()[0]).toMatch(/\[1\] Status 1 incident [─━]/);
     n.unmount();
   });
 
@@ -147,6 +147,65 @@ describe('who and where, beside the incidents', () => {
         app.unmount();
       }
     }
+  });
+
+  it('keeps the position, the owner and a long address together on a narrow column', async () => {
+    const url = 'https://kman.prod.internal:8443';
+    for (const size of [{ columns: 100, rows: 24 }, { columns: 100, rows: 30 }, { columns: 110, rows: 30 }]) {
+      for (const keys of [[], ['2']]) {
+        const client = many(2);
+        client.keys.push(...Array.from({ length: 10 }, (_, i) => key({ id: `k_${i}`, name: `uncapped-${i}`, spend: undefined })));
+        const app = render(<App client={client} url={url} size={size} intervalMs={60_000} />, size.columns);
+        await until(() => (app.lastFrame() ?? '').includes('live'), 'the first load');
+        for (const k of keys) app.stdin.write(k);
+        await tick(150);
+        const lines = (app.lastFrame() ?? '').split('\n').map((l) => l.split('││')[0]!);
+        const status = lines.slice(0, lines.findIndex((l) => /^[╰┗]/.test(l)) + 1).join('\n');
+        const at = `${size.columns}x${size.rows} ${keys}`;
+        expect(status, at).toMatch(keys.length ? /\d+ to review/ : /1 of \d+/);
+        expect(status, at).toContain('owner');
+        // Whole, or both its ends.
+        expect(status, at).toMatch(/https[^│\n]*8443/);
+        expect(status, at).toMatch(/2 (open )?incidents/);
+        app.unmount();
+      }
+    }
+  });
+
+  it('cuts a very long address in the middle, so its end stays, with nothing to review', async () => {
+    const client = fakeClient([key({ id: 'k_a', name: 'a', policy: { allowed_cidrs: ['10.0.0.0/8'] } })]);
+    client.upstreams = [];
+    const url = 'https://kman-admin.production.eu-west.example.com:8443';
+    for (const keys of [[], ['2']]) {
+      const m = await mount(client, WIDE, ...keys);
+      m.unmount();
+      const app = render(<App client={client} url={url} size={WIDE} intervalMs={60_000} />, WIDE.columns);
+      await until(() => (app.lastFrame() ?? '').includes('live'), 'the first load');
+      for (const k of keys) app.stdin.write(k);
+      await tick(150);
+      expect(app.lastFrame(), String(keys)).toMatch(/owner @ https[^│\n]*…[^│\n]*com:8443/);
+      app.unmount();
+    }
+  });
+
+  it('gives what opens a one-line summary no room for a separator', async () => {
+    const { StatusPanel } = await import('../src/views/panels.js');
+    const price = { age_days: 3, stale: false } as never;
+    const shows = (width: number) => {
+      const app = render(
+        <StatusPanel width={width} height={1} focused={false} link={{ state: 'ok', at: 0 }} url="http://127.0.0.1:8081" actor="owner" items={[]} keys={[key({ id: 'a', name: 'a' })]} upstreamCount={1} watch={{ incidents: [], findings: [] }} selected={0} price={price} />,
+        width,
+      );
+      const frame = app.lastFrame() ?? '';
+      app.unmount();
+      return frame;
+    };
+    // The narrowest strip that shows the count of active keys has the room it takes, and
+    // the one cell kept free at its end.
+    const narrowest = Array.from({ length: 40 }, (_, i) => i + 12).find((w) => shows(w).includes('1 active'))!;
+    const line = shows(narrowest);
+    expect(line.trimEnd().endsWith('1 active')).toBe(true);
+    expect(line.trimEnd().length).toBe(narrowest - 1);
   });
 
   it('names the owner once', async () => {

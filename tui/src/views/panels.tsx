@@ -293,7 +293,8 @@ export function StatusPanel({
   const compactLine: Seg[] =
     inBorder || withFullWhere.some((x) => x.t.includes(where)) ? withFullWhere : buildCompact(whereShort).some((x) => x.t.includes(urlOnly)) ? buildCompact(whereShort) : withFullWhere;
   // When the border carries the address the line says only who: not the address twice.
-  const whereLine: Seg[] = [{ t: borderText === urlOnly && actor ? `signed in as ${actor}` : where, dim: true }];
+  // Cut in the middle, so that both who it is and the end of the address stay.
+  const whereLine: Seg[] = [{ t: fitMiddle(borderText === urlOnly && actor ? `signed in as ${actor}` : where, inner - 1), dim: true }];
   // Zeros tell nothing, and Keys and the detail already say there are no keys: no counts then.
   const countsLine: Seg[] = noKeys
     ? []
@@ -349,7 +350,10 @@ export function StatusPanel({
   // as fits; otherwise it is the summary alone.
   const list = focused ? listArea(height, { tab: 'status', items: items.length, noKeys }) : { header: 0, rows: 0 };
   const summaryHeight = rows - list.header - list.rows;
-  const base = (summaryHeight >= fullLines.length ? fullLines : tierFor(summaryHeight)).filter((l) => l.length > 0);
+  const tier = (summaryHeight >= fullLines.length ? fullLines : tierFor(summaryHeight)).filter((l) => l.length > 0);
+  // An address the top border cannot carry takes the row of the counts of keys, which the
+  // Keys panel gives too, where there is not room for both.
+  const base = !borderText && tier.length > summaryHeight && tier.includes(whereLine) ? tier.filter((l) => l !== countsLine) : tier;
   // A tall summary with a row to spare says what the list would: the first thing to look at.
   const first = items[0];
   const reason = ` · ${first ? topRisk(first.risks)!.short : ''}${items.length > 1 ? ` · +${items.length - 1} more` : ''}`;
@@ -368,10 +372,10 @@ export function StatusPanel({
     if (summaryHeight > base.length) return [...base, attentionLine];
     if (staleLast) return [...base.slice(0, summaryHeight - 2), attentionLine, base[base.length - 1]!];
     const gone = base[summaryHeight - 1]!;
-    // The line saying how many incidents are open stays, as the title may not say it: the
-    // counts of keys, which the Keys panel gives too, make the room.
-    const incidents = (open > 0 || incidentsMissing) && gone.some((x) => x.t.includes('incident'));
-    const kept = incidents && base.includes(countsLine) ? [...base.filter((l) => l !== countsLine)] : base;
+    // The line saying how many incidents are open stays, as the title may not say it, and so
+    // does an address the top border lacks: the counts of keys make the room.
+    const needed = ((open > 0 || incidentsMissing) && gone.some((x) => x.t.includes('incident'))) || (gone === whereLine && !borderText);
+    const kept = needed ? base.filter((l) => l !== countsLine) : base;
     return [...kept.slice(0, summaryHeight - 1), attentionLine];
   };
   const lines =
@@ -385,18 +389,20 @@ export function StatusPanel({
   const shown = items.slice(start, start + list.rows);
   const nameW = Math.min(24, Math.max(4, ...shown.map((n) => textWidth(n.name))));
   const standing = focused && items.length > 1 ? `${sel + 1} of ${items.length}` : items.length > 0 ? `${items.length} to review` : undefined;
-  // What neither the top border nor a row says of who and where rides on the bottom one.
-  const rowSays = (text: string) => lines.slice(0, summaryHeight).some((l) => l.some((s) => s.t.includes(text)));
-  const withStanding = (who: string | undefined) => [who, standing].filter(Boolean).join(' · ') || undefined;
+  // What neither the top border nor a row says of who and where rides on the bottom one,
+  // beside the position, which always stays.
+  const visible = lines.slice(0, summaryHeight);
+  const rowSays = (text: string) => visible.some((l) => l.some((s) => s.t.includes(text)));
   const bottom = (): string | undefined => {
     if (strip || inBorder) return standing;
-    if (borderText || rowSays(urlOnly)) {
-      const named = !actor || rowSays(`${actor} @ `) || rowSays(`signed in as ${actor}`);
-      return withStanding(named ? undefined : actor);
+    // With no address in the top border, the line of who and where holds it, cut or whole.
+    const whereShown = visible.includes(whereLine);
+    if (borderText || whereShown || rowSays(urlOnly)) {
+      const named = !actor || whereShown || rowSays(`${actor} @ `);
+      return [named ? undefined : actor, standing].filter(Boolean).join(' · ') || undefined;
     }
-    // The address is nowhere else: it comes before the position, and before who.
-    const room = width - 6;
-    return [withStanding(where), withStanding(urlOnly), where, urlOnly].find((t) => t !== undefined && textWidth(t) <= room) ?? fitMiddle(urlOnly, room);
+    const room = width - 6 - (standing ? textWidth(standing) + 3 : 0);
+    return [fitMiddle(where, room), standing].filter(Boolean).join(' · ');
   };
 
   return (

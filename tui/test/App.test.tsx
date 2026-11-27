@@ -2353,7 +2353,7 @@ describe('review round 3', () => {
     client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
     const m = mount(client, { columns: 140, rows: 40 });
     await loaded(m);
-    expect(lines(m)[0]).toMatch(/\[1\] Status ─/);
+    expect(lines(m)[0]).toMatch(/\[1\] Status [─━]/);
     expect(m.screen()).toContain('1 of 2');
     expect(m.screen()).not.toContain('need attention');
     m.unmount();
