@@ -161,25 +161,33 @@ function ScrollFrame({
 
 // ---- Key ------------------------------------------------------------------
 
-/** "today  ████░░░░ $0.9 / $1" and, when there is room, its request count under it. */
-function SpendRow({ which, k, barW, roomy }: { which: 'today' | 'month'; k: Key; barW: number; roomy: boolean }) {
+/**
+ * "today  ████░░░░ $0.9 / $1", with its request count beside it on a narrow screen where
+ * there is room, and otherwise under it: nothing is cut for the count.
+ */
+function SpendRow({ which, k, barW, roomy, width }: { which: 'today' | 'month'; k: Key; barW: number; roomy: boolean; width: number }) {
   const s = k.spend?.[which];
   if (!s) return null;
   const amount = s.cap_micro ? `${money(s.cost_micro)} / ${capMoney(s.cap_micro)}` : `${money(s.cost_micro)}, no cap`;
   const remaining = s.cap_micro && k.status === 'active' ? Math.max(0, s.cap_micro - s.cost_micro - (s.reserved_micro ?? 0)) : undefined;
   const requests = `${requestsText(s.requests)}${s.unmetered_requests ? `, ${s.unmetered_requests} unmetered` : ''}`;
+  const spent = `${amount}${remaining === undefined ? '' : ` · ${money(remaining)} left`}`;
+  // The frame's two borders and two spaces, the label, the bar and the gaps around them.
+  const under = roomy || 6 + barW + 1 + textWidth(spent) + 2 + textWidth(requests) > width - 4;
   return (
     <Box flexDirection="column">
       <Box>
-        <Text dimColor>{padEnd(which, 6)}</Text>
-        <Meter period={s} width={barW} muted={k.status === 'revoked'} />
+        <Box flexShrink={0}>
+          <Text dimColor>{padEnd(which, 6)}</Text>
+          <Meter period={s} width={barW} muted={k.status === 'revoked'} />
+        </Box>
         <Text wrap="truncate-end">
           {' '}
-          {amount}{remaining === undefined ? '' : ` · ${money(remaining)} left`}
-          {roomy ? '' : <Text dimColor>{`  ${requests}`}</Text>}
+          {spent}
+          {under ? '' : <Text dimColor>{`  ${requests}`}</Text>}
         </Text>
       </Box>
-      {roomy ? (
+      {under ? (
         <Text dimColor>
           {'      '}
           {requests}
@@ -444,8 +452,8 @@ export function KeyMain({
         {k.spend ? (
           <Box flexDirection="column" marginTop={gap}>
             {compact ? null : <SectionTitle>SPEND</SectionTitle>}
-            <SpendRow which="today" k={k} barW={barW} roomy={!compact} />
-            <SpendRow which="month" k={k} barW={barW} roomy={!compact} />
+            <SpendRow which="today" k={k} barW={barW} roomy={!compact} width={width} />
+            <SpendRow which="month" k={k} barW={barW} roomy={!compact} width={width} />
           </Box>
         ) : null}
       </Body>

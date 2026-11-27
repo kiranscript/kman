@@ -62,6 +62,16 @@ describe('layout', () => {
     expect(layout(200, 40, 'keys').mainW).toBe(152);
   });
 
+  it('widens the panels for a long address, only where the screen can give enough', () => {
+    const left = (columns: number, address: number) => layout(columns, 40, 'keys', Infinity, { address }).leftW;
+    expect([30, 44, 49, 56].map((a) => left(140, a))).toEqual([44, 44, 49, 56]);
+    // Widening that would not fit it is no use.
+    expect(left(140, 57)).toBe(44);
+    expect(left(100, 49)).toBe(44);
+    expect(left(120, 49)).toBe(49);
+    expect(left(80, 49)).toBe(80);
+  });
+
   it('gives each wide panel what it can use, two lines at least, and the rest to the log so both columns end together', () => {
     const l = layout(140, 40, 'upstreams', { status: 5, keys: 3, upstreams: 1, audit: 1 });
     expect([l.heights.status, l.heights.keys, l.heights.upstreams, l.heights.requests, l.heights.audit]).toEqual([7, 5, 3, 3, 3 + (40 - 7 - 5 - 3 - 3 - 3)]);

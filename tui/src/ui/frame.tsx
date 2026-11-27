@@ -44,6 +44,11 @@ export function subtitleFits(subtitle: string, title: string, count: string | un
   return textWidth(subtitle) + 2 + Math.min(label, Math.max(0, width - 4)) + 4 <= width;
 }
 
+/** The narrowest panel whose top border carries this subtitle beside a title with no count. */
+export function subtitleWidth(subtitle: string, title: string): number {
+  return textWidth(subtitle) + 2 + textWidth(` ${title} `) + 4;
+}
+
 /** The width a strip's label takes: its title and count, and a space. */
 export function stripLabelWidth(title: string, count?: string): number {
   return textWidth(` ${title}${count ? ` ${count}` : ''} `);

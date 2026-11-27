@@ -9,7 +9,7 @@ import { compareTop, incidentRisk, keyRisks, topRisk, unknowns, upstreamRisks } 
 import { hasFilterRow, listArea } from '../layout.js';
 import type { Attention, Severity, Risk, Unknown, UpstreamAttention, Watch } from '../risk.js';
 import { linkBadge, useTick } from '../ui/chrome.js';
-import { Frame, Strip, stripLabelWidth, subtitleFits } from '../ui/frame.js';
+import { Frame, Strip, stripLabelWidth, subtitleFits, subtitleWidth } from '../ui/frame.js';
 import type { ReactNode } from 'react';
 import { Row } from '../ui/row.js';
 import type { Seg } from '../ui/row.js';
@@ -104,6 +104,11 @@ function fitParts(parts: Seg[][], max: number): Seg[] {
 /** The address without the scheme a local admin API always has: "127.0.0.1:8081". https stays, as it says something. */
 const shortUrl = (url: string) => url.replace(/^http:\/\//, '').replace(/\/$/, '');
 
+const STATUS_TITLE = '[1] Status';
+
+/** How wide Status must be for its top border to carry the address. */
+export const addressWidth = (url: string) => subtitleWidth(shortUrl(url), STATUS_TITLE);
+
 export interface Item {
   id: string;
   name: string;
@@ -186,17 +191,20 @@ export function StatusPanel({
   const missing = unknowns(watch);
   const incidentsMissing = missing.some((u) => u.what === 'incidents');
   const exposed = new Set((watch.findings ?? []).map((f) => f.key_id)).size;
-  const title = '[1] Status';
+  const title = STATUS_TITLE;
   const strip = height <= 1;
-  // The incidents, in words. A strip's own line says them, so its label does not too; and
-  // how many rows need a look is on the bottom border.
-  const count = !strip && open ? `${plural(open, 'incident')}${incidentsMissing ? ' (old)' : ''}` : undefined;
+  const urlOnly = shortUrl(url);
+  // The incidents, in words. A strip's own line says them, so its label does not too, and
+  // how many rows need a look is on the bottom border. Where the words would push the
+  // address off the border they give way: a line of the panel says the incidents too.
+  const words = !strip && open ? `${plural(open, 'incident')}${incidentsMissing ? ' (old)' : ''}` : undefined;
+  const count = words && subtitleFits(urlOnly, title, words, width) === subtitleFits(urlOnly, title, undefined, width) ? words : undefined;
   const inner = innerWidth(width, height, title, count);
   const lead: Seg[] = strip ? [] : [{ t: ' ' }];
   // Who this is and where: in the top border when it fits, else a line of the summary.
   const where = `${actor ? `${actor} @ ` : ''}${shortUrl(url)}`;
-  // The whole of it if the border has room, else just the address; a line of the summary then says the rest.
-  const urlOnly = shortUrl(url);
+  // The whole of it if the border has room, else just the address; the rest is then said
+  // by a line of the summary, or else by the bottom border.
   const inBorder = !strip && subtitleFits(where, title, count, width);
   const borderText = inBorder ? where : !strip && subtitleFits(urlOnly, title, count, width) ? urlOnly : undefined;
 
@@ -262,7 +270,8 @@ export function StatusPanel({
         ...badgePart,
         ...priceStale,
         // The first thing to look at comes ahead of the counts: it cannot be seen from another panel.
-        ...(strip && attentionPart ? [attentionPart] : []),
+        // Nothing before it: no separator, nor the room one would take.
+        ...(strip && attentionPart ? [badgePart.length || priceStale.length ? attentionPart : withoutLeadingSeparator(attentionPart)] : []),
         // An incident, or not knowing of one, comes ahead of the count.
         ...(open || incidentsMissing ? [[SEPARATOR, { t: ' ' }, ...incidentSegs(true)]] : []),
         ...(noKeys
@@ -368,22 +377,17 @@ export function StatusPanel({
   const start = windowStart(sel, items.length, Math.max(1, list.rows));
   const shown = items.slice(start, start + list.rows);
   const nameW = Math.min(24, Math.max(4, ...shown.map((n) => textWidth(n.name))));
+  // Who is signed in rides on the bottom border when neither the top one nor a row says it.
+  const said = lines.slice(0, summaryHeight).some((l) => l.some((s) => s.t.includes(actor ? `${actor} @ ` : where) || s.t === `signed in as ${actor}`));
+  const unsaid = actor && !inBorder && !said ? actor : undefined;
+  const standing = focused && items.length > 1 ? `${sel + 1} of ${items.length}` : items.length > 0 ? `${items.length} to review` : undefined;
 
   return (
     <Shell
       title={title}
       count={count}
       subtitle={borderText}
-      position={
-        focused && items.length > 1
-          ? `${sel + 1} of ${items.length}`
-          : // Who is signed in rides on the bottom border when no row has room for it.
-            items.length > 0
-            ? `${actor && !inBorder ? `${actor} · ` : ''}${items.length} to review`
-            : inBorder
-              ? undefined
-              : actor
-      }
+      position={[unsaid, standing].filter(Boolean).join(' · ') || undefined}
       focused={focused}
       width={width}
       height={height}

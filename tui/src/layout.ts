@@ -78,13 +78,17 @@ export function layout(
   rows: number,
   focus: Tab,
   want: number | Partial<Record<Tab, number>> = Infinity,
-  { panels = PANELS, stacked = false }: { panels?: Tab[]; stacked?: boolean } = {},
+  { panels = PANELS, stacked = false, address = 0 }: { panels?: Tab[]; stacked?: boolean; address?: number } = {},
 ): Layout {
   // Stacked, whatever the width, when the main panel needs all of it, as a table does.
   const wide = columns >= WIDE && !stacked;
   // As wide as a list's names, marks and targets need (44 cells, a few more on a wide
-  // screen), and no more: the width goes to the main panel.
-  const leftW = wide ? Math.min(48, Math.max(44, Math.floor(columns * 0.3))) : columns;
+  // screen), and no more: the width goes to the main panel. A long address of the install,
+  // `address` cells with its border, widens it up to two fifths of the screen and 56, as
+  // which install this is must be on screen; one that would not fit even then does not.
+  const usual = Math.min(48, Math.max(44, Math.floor(columns * 0.3)));
+  const most = Math.min(56, Math.max(44, Math.floor(columns * 0.42)));
+  const leftW = !wide ? columns : address > usual && address <= most ? address : usual;
   const strips = !wide && (stacked || rows < STRIP_ROWS);
   const small = strips ? 1 : COLLAPSED;
   const of = (t: Tab) => (panels.includes(t) ? small : 0);
