@@ -97,8 +97,9 @@ const maybeRotated = (label: string) => `If ${label} was rotated, run ${cli.rota
 /**
  * What to say when the incident that ended records a rotation of the key, whose new secret
  * is not on this screen; `how` says what ended the incident. Another rotation is advised
- * only when this screen's own answer was lost and the rotation is this operator's (`me`):
- * after anyone else's, one more would end the secret they were given. kman records the
+ * only when this screen's own answer was lost and the rotation is known to be this
+ * operator's (`me`): after anyone else's, one more would end the secret they were given. So
+ * while `me` is unknown, whoever is recorded is to be asked first. kman records the
  * rotation in the same step as it resolves the incident, so none recorded is none made.
  */
 function rotationSaid(
@@ -109,9 +110,9 @@ function rotationSaid(
 ): string | undefined {
   const done = ended.actions?.find((x) => x.action === 'key.rotate' && x.target_id === key.id);
   if (!done) return undefined;
-  if (lost && (!me || done.actor === me)) {
-    return `${key.label} was rotated by ${done.actor}, but no new secret arrived here: run ${cli.rotate(key.label)} for one you can see. ${how}`;
-  }
+  const gone = `${key.label} was rotated by ${done.actor}, but no new secret arrived here`;
+  if (lost && !me) return `${gone}: check with ${done.actor} before rotating it again. ${how}`;
+  if (lost && done.actor === me) return `${gone}: run ${cli.rotate(key.label)} for one you can see. ${how}`;
   return `${how} ${key.label} was rotated by ${done.actor}, and the new secret did not come here: another rotation would end it.`;
 }
 
@@ -150,7 +151,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const [viewing, setViewing] = useState<number | undefined>();
   const [ticked, setTicked] = useState<ReadonlySet<PickKind>>(new Set());
   // The requests table: whose, which of them, the selected one (by id, so it stays put as
-  // others arrive) and the newest one seen, past which a row is new.
+  // others arrive) and the newest request seen, past which a row is new.
   const [requestKeyId, setRequestKeyId] = useState<string | undefined>();
   const [requestFilter, setRequestFilter] = useState<RequestFilter>('all');
   const [place, setPlace] = useState<{ id?: number; seen?: number }>({});
@@ -207,14 +208,15 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   };
   const requestAt = indexOf(place.id);
   const freshRows = place.seen === undefined ? 0 : tableShown.filter((r) => r.e.id > place.seen!).length;
-  // The selection starts at the newest row, and from then on stays with that request.
-  // The flagged rows are not all known until the incidents' detail is in: pinned before,
-  // the selection would sit under rows that were there all along, counted as new.
-  const settled = requestFilter !== 'flagged' || !incidentDetails.incomplete;
+  // The newest request kman has answered with, whether or not the filter lets it through.
+  const newest = requests.rows[0]?.id;
+  // The selection starts at the newest row, and from then on stays with that request. All
+  // that was fetched by then counts as seen: a row flagged only later, when an incident's
+  // detail comes in, was there all along.
   useEffect(() => {
     const first = tableShown[0]?.e.id;
-    if (tab === 'requests' && settled && place.id === undefined && first !== undefined) setPlace({ id: first, seen: first });
-  }, [tab, settled, place.id, tableShown]);
+    if (tab === 'requests' && place.id === undefined && first !== undefined) setPlace({ id: first, seen: newest });
+  }, [tab, place.id, tableShown]);
   // A selected request that had to be let go is not passed off as another: the selection
   // starts again at the newest, and says why.
   const [untold, setUntold] = useState(false);
@@ -228,8 +230,11 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   useEffect(() => {
     if (!untold || tab !== 'requests' || viewing !== undefined || mode.kind !== 'none' || working !== undefined || notice?.tone === 'error') return;
     setUntold(false);
-    setNotice({ tone: 'info', text: 'Too many new requests to keep your place: showing the newest.' });
+    setNotice({ tone: 'info', ofTable: true, text: 'Too many new requests to keep your place: showing the newest.' });
   }, [untold, tab, viewing, mode.kind, working, notice]);
+  useEffect(() => {
+    if (tab !== 'requests' || viewing !== undefined) dropTableNotice();
+  }, [tab, viewing]);
   // A kman found to have no events, after the panel was asked for, has no panel to be on.
   useEffect(() => {
     if (tab === 'requests' && !hasRequests) setTab('keys');
@@ -358,9 +363,10 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       setPlace((p) => {
         const id = tableShown[step(indexOf(p.id), tableShown.length)]?.e.id;
         if (id === undefined) return p;
-        // g goes to the newest, so everything has been seen; going up sees what is passed.
-        // Before the selection was pinned, what was on screen from the top had been seen.
-        return { id, seen: Math.max(id, p.seen ?? tableShown[0]?.e.id ?? id) };
+        // At the top, as after g, everything has been seen; going up sees what is passed.
+        // Before the selection was pinned, all that was fetched had been seen.
+        const top = id === tableShown[0]?.e.id;
+        return { id, seen: Math.max(id, (top ? newest : (p.seen ?? newest)) ?? id) };
       });
     }
   }
@@ -369,6 +375,11 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   function startTable() {
     setPlace({});
     setUntold(false);
+    dropTableNotice();
+  }
+
+  function dropTableNotice() {
+    setNotice((n) => (n?.ofTable ? undefined : n));
   }
 
   /** Shows the requests of one key, or of all of them, from the newest. */
@@ -401,8 +412,9 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   }
 
   function goTab(t: Tab) {
-    // Back at the table from the newest row, it starts at the newest again.
-    if (t === 'requests' && tab !== t && place.id === place.seen) setPlace({});
+    // Back at the table with no row seen above the selection, it starts at the newest again.
+    const newestSeen = !tableShown.some((r) => r.e.id > (place.id ?? Infinity) && r.e.id <= (place.seen ?? 0));
+    if (t === 'requests' && tab !== t && newestSeen) setPlace({});
     setTab(t);
     setDetail(false);
     setViewing(undefined);
@@ -427,6 +439,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       return err instanceof Error ? err.message : String(err);
     } finally {
       acting.current = false;
+      incident.outdate();
       setWorking(undefined);
     }
   }
@@ -447,6 +460,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
         throw err;
       }
     });
+    // What was read after a failure is the newest there is: drawn whether or not a poll follows.
+    if (after) incident.show(after);
     void refresh();
     if (!error) return {};
     resolving.current.delete(id);
@@ -488,7 +503,11 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     setNotice(
       by && data.actor && by !== data.actor
         ? { tone: 'error', text: `Incident #${id} was already resolved by ${by} as ${resolutionWord(as)}.` }
-        : { tone: 'ok', text: `Resolved incident #${id} as ${resolutionWord(as)}.` },
+        : {
+            tone: 'ok',
+            // Not knowing who this is, whoever kman records is named.
+            text: by && !data.actor ? `Incident #${id} is resolved as ${resolutionWord(as)}, by ${by}.` : `Resolved incident #${id} as ${resolutionWord(as)}.`,
+          },
     );
   }
 
@@ -528,7 +547,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     setNotice(
       by && data.actor && by !== data.actor
         ? { tone: 'error', text: `Incident #${id} was already resolved by ${by} as false positive.${said}` }
-        : { tone: 'ok', text: `#${id} resolved: false positive.${said}` },
+        : { tone: 'ok', text: `#${id} resolved: false positive${by && !data.actor ? `, by ${by}` : ''}.${said}` },
     );
   }
 

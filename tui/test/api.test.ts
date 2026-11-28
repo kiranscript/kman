@@ -156,7 +156,7 @@ describe('the admin client', () => {
   }, 10_000);
 
   it('does not take a rotation without a new secret for a success', async () => {
-    for (const body of [{ key: { id: 'k' }, sdk_env: 'OPENAI_API_KEY' }, { key: { id: 'k' }, secret: '' }, { secret: 'kmn_x' }, null]) {
+    for (const body of [{ key: { id: 'k' }, sdk_env: 'OPENAI_API_KEY' }, { key: { id: 'k' }, secret: '' }, { key: { id: 'k' }, secret: '  ' }, { key: { id: 'k' }, secret: true }, { secret: 'kmn_x' }, null]) {
       respond = (_r, res) => json(res, 200, body);
       const err = await createClient({ url, token: 't' }).rotateKey('k', 1).catch((e: unknown) => e);
       expect(err, JSON.stringify(body)).toMatchObject({ message: 'the admin API sent no new secret', status: 200 });

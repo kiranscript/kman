@@ -377,6 +377,67 @@ describe('the requests table', () => {
     m.unmount();
   }, 30_000);
 
+  it('stays on its request in the flagged table while an incident cannot be read', async () => {
+    const client = traffic();
+    client.incident = async () => {
+      throw new ApiError('internal', 'database is locked', 500);
+    };
+    const m = mount(client, SMALL, 100);
+    await until(() => m.screen().includes('live'), 'the first load');
+    await m.press('5', 'f');
+    await until(() => m.table().length > 0, 'the flagged rows');
+    await m.settle();
+    expect(m.screen()).toContain('all keys · flagged');
+    const was = selectedRow(m);
+    client.requests.push(request({ id: 5, ...bad, operation: 'POST /v1/embeddings' }, 100));
+    await until(() => m.screen().includes('1 new'), 'the arrival counted');
+    await m.settle();
+    expect(selectedRow(m)).toBe(was);
+    m.unmount();
+  });
+
+  it('counts a row flagged only once the incident is read as already there', async () => {
+    const client = traffic();
+    // Forwarded, so only the incident's detail can flag it.
+    client.requests.push(request({ id: 5, ...bad, kind: 'forwarded', status: 200, refusal_code: undefined, operation: 'POST /v1/embeddings' }, 10_000));
+    const incident = client.incident.bind(client);
+    let readable = false;
+    client.incident = async (id) => {
+      if (!readable) throw new ApiError('internal', 'database is locked', 500);
+      return incident(id);
+    };
+    const m = mount(client, SMALL, 100);
+    await until(() => m.screen().includes('live'), 'the first load');
+    await m.press('5', 'f');
+    await until(() => m.table().length > 0, 'the flagged rows');
+    await m.settle();
+    const before = m.table().length;
+    // The line under the selected row names its operation.
+    const operation = () => m.lines()[selectedAt(m) + 1];
+    const was = operation();
+    expect(was).toContain('/v1/chat/completions');
+    readable = true;
+    await until(() => m.table().length > before, 'the late flags', 4000);
+    await m.settle();
+    expect(m.screen()).not.toMatch(/\d new ·|· \d+ new/);
+    expect(operation()).toBe(was);
+    m.unmount();
+  });
+
+  it('takes the lost place notice away with the table it was about', async () => {
+    for (const leave of ['f', '2']) {
+      const client = traffic();
+      const m = mount(client, SMALL, 100, 60_000);
+      await onRequests(m);
+      await m.press('j', 'j');
+      client.requests.push(...Array.from({ length: 11_500 }, (_, i) => request({ id: 5 + i, ...bad }, 11_500 - i)));
+      await until(() => m.screen().includes('Too many new requests'), 'the notice', 15_000);
+      await m.press(leave);
+      expect(m.screen()).not.toContain('Too many new requests');
+      m.unmount();
+    }
+  }, 60_000);
+
   it('goes to the newest and says so when too many arrive to keep the place', async () => {
     const client = traffic();
     const m = mount(client, SMALL, 100);
@@ -447,6 +508,19 @@ describe('the requests table', () => {
     expect(m.screen()).not.toContain('Too many new requests');
     m.unmount();
   }, 30_000);
+
+  it('wraps an operation of wide characters by the cells it takes', async () => {
+    const client = traffic();
+    client.requests = [request({ id: 1, operation: `GET /v1/${'界'.repeat(60)}tail`, model: 'gpt-5.4' })];
+    const m = mount(client);
+    await until(() => m.screen().includes('live'), 'the first load');
+    await m.press('5');
+    await until(() => m.table().length === 1, 'the row');
+    await m.settle();
+    const joined = m.screen().replace(/[│┃]/g, '').replace(/\s+/g, '');
+    expect(joined).toContain(`${'界'.repeat(60)}tail·gpt-5.4`);
+    m.unmount();
+  });
 
   it('shows the model after a path too long for a few lines', async () => {
     const client = traffic();

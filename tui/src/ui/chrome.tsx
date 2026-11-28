@@ -48,6 +48,8 @@ export function useTick(ms: number): number {
 
 export interface Notice {
   untilReconnect?: boolean;
+  /** About the requests table on screen: it goes when that table does. */
+  ofTable?: boolean;
   text: string;
   tone: 'ok' | 'error' | 'info';
 }
