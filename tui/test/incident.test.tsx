@@ -805,6 +805,20 @@ describe('safety', () => {
     m.unmount();
   });
 
+  it('names it in the resolve notice too while who this is is unknown', async () => {
+    const client = leaked();
+    client.whoami = async () => {
+      throw new ApiError('internal', 'database is locked', 500);
+    };
+    const resolve = client.resolveIncident.bind(client);
+    client.resolveIncident = async (id, as) => ({ ...(await resolve(id, as)), resolved_by: 'alice' });
+    const m = mount(client, WIDE);
+    await opened(m);
+    await m.press('R', 'c', 'y');
+    expect(m.screen().replace(/\s+/g, ' ')).toContain('Incident #12 is resolved as confirmed, by alice.');
+    m.unmount();
+  });
+
   it('shows an incident whose read takes longer than the polls', async () => {
     const client = leaked();
     const read = client.incident.bind(client);
@@ -844,6 +858,24 @@ describe('safety', () => {
     await m.settle();
     expect(m.screen()).toContain('Resolved by alice as confirmed');
     expect(m.screen()).not.toContain('HIGH · OPEN');
+    m.unmount();
+  });
+
+  it('drops a read begun before a change, and reads again at the next poll', async () => {
+    const client = leaked();
+    const read = client.incident.bind(client);
+    const m = mount(client, WIDE, 0, 100);
+    await opened(m);
+    const before = await read(12);
+    let release: (() => void) | undefined;
+    client.incident = async () => new Promise((r) => (release = () => r(before)));
+    await until(() => release !== undefined, 'the slow read');
+    client.incident = read;
+    await m.press('a');
+    await until(() => m.screen().includes('HIGH · ACKNOWLEDGED'), 'the change drawn');
+    release!();
+    await m.settle();
+    expect(m.screen()).toContain('HIGH · ACKNOWLEDGED');
     m.unmount();
   });
 
