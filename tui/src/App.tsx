@@ -1,13 +1,20 @@
 import { Box, Text, useApp, useInput, useWindowSize } from 'ink';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AdminClient, CreatedKey, CreateKeyInput, Key } from './api.js';
+import { ApiError } from './api.js';
+import type { AdminClient, CreatedKey, CreateKeyInput, IncidentDetail, Key, PickKind, Resolution, RotatedKey } from './api.js';
 import { ClientsDialog } from './dialogs/ClientsDialog.js';
 import { CreateKeyDialog } from './dialogs/CreateKeyDialog.js';
 import { HelpDialog } from './dialogs/HelpDialog.js';
-import { RevokeDialog } from './dialogs/RevokeDialog.js';
+import { ResolveDialog } from './dialogs/ResolveDialog.js';
 import { SecretDialog } from './dialogs/SecretDialog.js';
-import { fit } from './format.js';
-import { keyLabel, visibleKeys } from './keys.js';
+import type { ShownSecret } from './dialogs/SecretDialog.js';
+import { ThisWasMeDialog } from './dialogs/ThisWasMeDialog.js';
+import { TypeNameDialog } from './dialogs/TypeNameDialog.js';
+import { cli, resolutionWord } from './commands.js';
+import { fit, plural } from './format.js';
+import { actionFor, actions, endedText, incidentFor, isCanary, picks } from './incidents.js';
+import type { Action } from './incidents.js';
+import { isChord, keyLabel, visibleKeys } from './keys.js';
 import { attention, otherIncidents, unknowns, upstreamAttention } from './risk.js';
 import { layout, hasFilterRow, listArea, summaryRows } from './layout.js';
 import type { ListPanel } from './layout.js';
@@ -16,9 +23,12 @@ import type { HintItem, Notice, Tab } from './ui/chrome.js';
 import { Hint, Panel } from './ui/parts.js';
 import { editText } from './ui/TextField.js';
 import { color } from './ui/theme.js';
-import { AUDIT_LIMIT, useAdmin, usePlaces } from './useAdmin.js';
+import { Command } from './ui/command.js';
+import { useArmed } from './ui/useArmed.js';
+import { AUDIT_LIMIT, useAdmin, useIncident, usePlaces } from './useAdmin.js';
 import { AuditMain, IncidentMain, KeyMain, StartMain, StatusMain, UnknownMain, UpstreamMain } from './views/detail.js';
 import type { Scroll } from './views/detail.js';
+import { IncidentView } from './views/incident.js';
 import { attentionItems, AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
 
 export interface AppProps {
@@ -32,6 +42,8 @@ export interface AppProps {
   noticeMs?: number;
   /** How long Enter is ignored on the one-time secret screen, in milliseconds. */
   secretGuardMs?: number;
+  /** How long action keys are ignored after an incident, or a dialog from one, appears. */
+  actionGuardMs?: number;
   /** Puts text on the clipboard; defaults to asking the terminal (OSC 52). */
   copy?: (text: string) => void;
   /** Fixes the size, instead of reading the terminal's. */
@@ -41,10 +53,16 @@ export interface AppProps {
 type Mode =
   | { kind: 'none' }
   | { kind: 'filter' }
-  | { kind: 'confirm'; action: 'disable' | 'enable'; key: Key }
+  /** `incident` is set when it was asked for from that incident. */
+  | { kind: 'confirm'; action: 'disable' | 'enable'; key: Key; incident?: number }
   | { kind: 'create' }
-  | { kind: 'revoke'; key: Key }
-  | { kind: 'secret'; created: CreatedKey }
+  | { kind: 'revoke'; key: Key; incident?: number }
+  | { kind: 'rotate'; key: Key; incident: number }
+  | { kind: 'resolve'; incident: number }
+  | { kind: 'thisWasMe'; incident: number }
+  /** Arming a fired canary again. */
+  | { kind: 'reset'; incident: number; canary: string; name: string }
+  | { kind: 'secret'; shown: ShownSecret }
   /** The addresses a key was used from; the admin API gives them out only if the install allows it. */
   | { kind: 'clients'; key: Key }
   | { kind: 'help' };
@@ -53,7 +71,41 @@ type Mode =
 export const MIN_COLUMNS = 80;
 export const MIN_ROWS = 24;
 
-export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, copy, noticeMs = 6000, secretGuardMs }: AppProps) {
+/**
+ * Whether a dialog is for answering this incident, so is moot once it is resolved. Enable
+ * is one: whoever resolved it may have found the leak real, so the key stays as it is.
+ * Arming a canary again is not, as resolving does not arm it.
+ */
+const endsWith = (m: Mode, id: number) =>
+  (m.kind === 'rotate' || m.kind === 'resolve' || m.kind === 'thisWasMe' || m.kind === 'revoke' || m.kind === 'confirm') && m.incident === id;
+
+const CHANGED = 'What it saw has changed: check the boxes again.';
+
+const maybeRotated = (label: string) => `If ${label} was rotated, run ${cli.rotate(label)} for a secret you can see.`;
+
+/**
+ * What to say when the incident that ended records a rotation of the key, whose new secret
+ * is not on this screen; `how` says what ended the incident. Another rotation is advised
+ * only when this screen's own answer was lost and the rotation is known to be this
+ * operator's (`me`): after anyone else's, one more would end the secret they were given. So
+ * while `me` is unknown, whoever is recorded is to be asked first. kman records the
+ * rotation in the same step as it resolves the incident, so none recorded is none made.
+ */
+function rotationSaid(
+  ended: IncidentDetail,
+  key: { id: string; label: string },
+  how: string,
+  { me, lost }: { me: string | undefined; lost: boolean },
+): string | undefined {
+  const done = ended.actions?.find((x) => x.action === 'key.rotate' && x.target_id === key.id);
+  if (!done) return undefined;
+  const gone = `${key.label} was rotated by ${done.actor}, but no new secret arrived here`;
+  if (lost && !me) return `${gone}: check with ${done.actor} before rotating it again. ${how}`;
+  if (lost && done.actor === me) return `${gone}: run ${cli.rotate(key.label)} for one you can see. ${how}`;
+  return `${how} ${key.label} was rotated by ${done.actor}, and the new secret did not come here: another rotation would end it.`;
+}
+
+export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, copy, noticeMs = 6000, secretGuardMs, actionGuardMs = 400 }: AppProps) {
   const { exit } = useApp();
   const win = useWindowSize();
   const { columns, rows } = size ?? win;
@@ -67,7 +119,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const [upstreamSel, setUpstreamSel] = useState(0);
   const [auditSel, setAuditSel] = useState(0);
   // What is being sent right now, so only the dialog that sent it shows "working".
-  const [working, setWorking] = useState<'toggle' | 'revoke' | 'create' | undefined>();
+  const [working, setWorking] = useState<Work | undefined>();
   const doing = useRef('');
   // State is only read on the next render, so two quick key presses would both see
   // "not busy". This is read at once.
@@ -82,8 +134,11 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   // view: the arrow keys scroll it, and Esc gives the keyboard back to the list.
   const [detail, setDetail] = useState(false);
   const [viewRows, setViewRows] = useState(8);
-  // Whether the name typed in the revoke dialog matches, so the footer offers Enter only then.
-  const [revokeReady, setRevokeReady] = useState(false);
+  // Whether the name typed to revoke or rotate matches, so the footer offers Enter only then.
+  const [nameReady, setNameReady] = useState(false);
+  // The incident open in the main panel, and the kinds ticked in "this was me".
+  const [viewing, setViewing] = useState<number | undefined>();
+  const [ticked, setTicked] = useState<ReadonlySet<PickKind>>(new Set());
 
   // A success fades. A failure stays until the next key press: someone who looks away
   // must not come back believing a key was disabled when it was not.
@@ -118,7 +173,47 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const shownKeyId = tab === 'status' ? attnItem?.key?.id : tab === 'keys' ? selectedKey?.id : undefined;
   // `now` is when the last poll answered.
   const places = usePlaces(client, shownKeyId, now);
-  const watching = `${tab}:${tab === 'keys' ? selectedId : tab === 'status' ? attnItem?.id : tab === 'upstreams' ? upstreamSel : auditSel}`;
+  const incident = useIncident(client, viewing, now);
+  const opened = incident.detail;
+  // Before the detail arrives, the list says what it can.
+  const listed = data.incidents?.find((i) => i.id === viewing);
+  const incidentKey = data.keys.find((k) => k.id === (opened ?? listed)?.key_id);
+  const boxes = useMemo(() => (opened ? picks(opened) : undefined), [opened]);
+  const boxesAre = JSON.stringify(boxes);
+  const armed = useArmed(actionGuardMs, `${viewing}:${mode.kind}:${opened ? 'loaded' : 'loading'}`);
+  // The incident last seen unresolved, and those this screen is itself resolving: another
+  // one turning up resolved was someone else's doing.
+  const seenOpen = useRef<number | undefined>(undefined);
+  const resolving = useRef(new Set<number>());
+  // A rotation that brought no new secret and may have happened: if its incident turns up
+  // resolved, what it records of that is said.
+  const lost = useRef<{ id: number; key: { id: string; label: string } } | undefined>(undefined);
+
+  useEffect(() => {
+    if (!opened) return;
+    if (opened.state !== 'resolved') {
+      seenOpen.current = opened.id;
+      return;
+    }
+    if (seenOpen.current !== opened.id || resolving.current.has(opened.id)) return;
+    seenOpen.current = undefined;
+    setMode((m) => (endsWith(m, opened.id) ? { kind: 'none' } : m));
+    const how = `Incident #${opened.id} ${endedText(opened)}.`;
+    const of = lost.current?.id === opened.id ? lost.current.key : undefined;
+    setNotice({ tone: 'error', text: (of && rotationSaid(opened, of, how, { me: data.actor, lost: true })) || how });
+  }, [opened]);
+
+  // A box ticks every value of its kind, so what was ticked is ticked again if they change.
+  useEffect(() => {
+    if (mode.kind !== 'thisWasMe' || ticked.size === 0) return;
+    setTicked(new Set());
+    setDialogError(CHANGED);
+  }, [boxesAre]);
+
+  const watching =
+    viewing !== undefined
+      ? `incident:${viewing}`
+      : `${tab}:${tab === 'keys' ? selectedId : tab === 'status' ? attnItem?.id : tab === 'upstreams' ? upstreamSel : auditSel}`;
   useEffect(() => setScrollTop(0), [watching]);
   const scroll: Scroll = {
     offset: scrollTop,
@@ -188,10 +283,18 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   function goTab(t: Tab) {
     setTab(t);
     setDetail(false);
+    setViewing(undefined);
+  }
+
+  /** Opens an incident in the main panel. It only reads: nothing is acknowledged by looking. */
+  function open(id: number) {
+    setDetail(false);
+    setScrollTop(0);
+    setViewing(id);
   }
 
   /** Runs one admin API call; resolves to the error message, or undefined on success. */
-  async function call(kind: 'toggle' | 'revoke' | 'create', what: string, fn: () => Promise<unknown>): Promise<string | undefined> {
+  async function call(kind: Work, what: string, fn: () => Promise<unknown>): Promise<string | undefined> {
     acting.current = true;
     doing.current = what;
     setWorking(kind);
@@ -202,37 +305,204 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       return err instanceof Error ? err.message : String(err);
     } finally {
       acting.current = false;
+      incident.outdate();
       setWorking(undefined);
     }
   }
 
-  async function confirmToggle(action: 'disable' | 'enable', key: Key) {
+  /**
+   * One change made for an incident. When it fails because the incident has meanwhile been
+   * resolved, that is said, with who did it, and the dialog that asked is closed; any other
+   * failure is returned for the caller to show.
+   */
+  async function onIncident(id: number, doing: string, resolves: boolean, change: () => Promise<unknown>): Promise<{ error?: string; ended?: IncidentDetail }> {
+    if (resolves) resolving.current.add(id);
+    let after: IncidentDetail | undefined;
+    const error = await call('incident', doing, async () => {
+      try {
+        await change();
+      } catch (err) {
+        after = await client.incident(id).catch(() => undefined);
+        throw err;
+      }
+    });
+    // What was read after a failure is the newest there is: drawn whether or not a poll follows.
+    if (after) incident.show(after);
+    void refresh();
+    if (!error) return {};
+    resolving.current.delete(id);
+    if (after?.state !== 'resolved') return { error };
+    seenOpen.current = undefined;
+    setMode((m) => (endsWith(m, id) ? { kind: 'none' } : m));
+    setNotice({ tone: 'error', text: `Incident #${id} ${endedText(after)}. While ${doing}: ${error}` });
+    return { error, ended: after };
+  }
+
+  async function acknowledge(id: number) {
+    setNotice({ tone: 'info', text: `Acknowledging incident #${id}…` });
+    const { error, ended } = await onIncident(id, `acknowledging incident #${id}`, false, () => client.acknowledgeIncident(id));
+    if (ended) return;
+    if (error) return setNotice({ tone: 'error', text: `Could not acknowledge incident #${id}: ${error}` });
+    setNotice({ tone: 'ok', text: `Acknowledged incident #${id}: it stays open. (kman incident ack ${id})` });
+  }
+
+  /** Whether a dialog's change cannot be sent now, saying why in the dialog. */
+  function held(): boolean {
+    if (link.state === 'down') {
+      setDialogError('kman is not answering, so nothing was sent. Try again when it does.');
+      return true;
+    }
+    return busyNow();
+  }
+
+  async function resolve(id: number, as: Resolution) {
+    if (held()) return;
+    setDialogError(undefined);
+    let by: string | undefined;
+    const { error, ended } = await onIncident(id, `resolving incident #${id}`, true, async () => {
+      by = (await client.resolveIncident(id, as)).resolved_by;
+    });
+    if (ended) return;
+    if (error) return setDialogError(error);
+    setMode({ kind: 'none' });
+    // Resolving it the same way again changes nothing, so it may be someone else's.
+    setNotice(
+      by && data.actor && by !== data.actor
+        ? { tone: 'error', text: `Incident #${id} was already resolved by ${by} as ${resolutionWord(as)}.` }
+        : {
+            tone: 'ok',
+            // Not knowing who this is, whoever kman records is named.
+            text: by && !data.actor ? `Incident #${id} is resolved as ${resolutionWord(as)}, by ${by}.` : `Resolved incident #${id} as ${resolutionWord(as)}.`,
+          },
+    );
+  }
+
+  async function thisWasMe(id: number, kinds: PickKind[], everyKey: boolean) {
+    if (held()) return;
+    setDialogError(undefined);
+    let said = '';
+    let by: string | undefined;
+    const { error, ended } = await onIncident(id, `resolving incident #${id}`, true, async () => {
+      // Looked at again first: it may have been resolved, or have seen more, since it was drawn.
+      const latest = await client.incident(id);
+      if (latest.state === 'resolved') throw new Error(`incident ${id} is already resolved`);
+      if (kinds.length && JSON.stringify(picks(latest)) !== boxesAre) {
+        // Drawn at once: the next key must find the new boxes, not the old ones beside a warning.
+        incident.show(latest);
+        throw new Error(CHANGED);
+      }
+      const got = await client.thisWasMe(
+        id,
+        kinds.length ? { add_known_sources: true, kinds, ...(everyKey ? { install_wide: true } : {}) } : { add_known_sources: false },
+      );
+      by = got.incident.resolved_by;
+      said = [
+        kinds.length ? ` Added ${plural(got.added.length, 'known source')}${everyKey ? ' for every key' : ''}.` : '',
+        got.already_known ? ` ${plural(got.already_known, 'place was', 'places were')} already known.` : '',
+        got.withheld_networks ? ` ${plural(got.withheld_networks, 'network was', 'networks were')} not added: addresses are off.` : '',
+      ].join('');
+    });
+    if (ended) return;
+    if (error) {
+      if (error === CHANGED) setTicked(new Set());
+      return setDialogError(error);
+    }
+    setMode({ kind: 'none' });
+    // Marked a false positive since it was looked at: kman takes it again, and still adds
+    // what was ticked.
+    setNotice(
+      by && data.actor && by !== data.actor
+        ? { tone: 'error', text: `Incident #${id} was already resolved by ${by} as false positive.${said}` }
+        : { tone: 'ok', text: `#${id} resolved: false positive${by && !data.actor ? `, by ${by}` : ''}.${said}` },
+    );
+  }
+
+  async function resetCanary(id: number, canary: string, name: string) {
+    setMode({ kind: 'none' });
+    if (offline() || busyNow()) return;
+    setNotice({ tone: 'info', text: `Arming ${name} again…` });
+    const error = await call('incident', `arming ${name} again`, () => client.resetCanary(canary));
+    setNotice(
+      error
+        ? { tone: 'error', text: `Could not reset ${name}: ${error}` }
+        : { tone: 'ok', text: `${name} is armed: its next use alerts. Incident #${id} is as it was.` },
+    );
+    void refresh();
+  }
+
+  async function confirmToggle(action: 'disable' | 'enable', key: Key, id?: number) {
     if (acting.current) return;
     setMode({ kind: 'none' });
+    if (id !== undefined && offline()) return;
     setNotice({ tone: 'info', text: `${action === 'disable' ? 'Disabling' : 'Enabling'} ${keyLabel(key)}…` });
-    const err = await call('toggle', `${action === 'disable' ? 'disabling' : 'enabling'} ${keyLabel(key)}`, () =>
-      action === 'disable' ? client.disableKey(key.id) : client.enableKey(key.id),
-    );
+    const doing = `${action === 'disable' ? 'disabling' : 'enabling'} ${keyLabel(key)}`;
+    const change = async () => {
+      if (action === 'disable') return client.disableKey(key.id, id);
+      // kman records no incident on an enable, so it would not refuse one for an incident
+      // resolved since it was asked: look first.
+      if (id !== undefined && (await client.incident(id)).state === 'resolved') throw new Error(`incident ${id} is already resolved`);
+      return client.enableKey(key.id);
+    };
+    const { error: err, ended } =
+      id === undefined ? { error: await call('toggle', doing, change), ended: undefined } : await onIncident(id, doing, false, change);
+    if (ended) return;
     if (err) setNotice({ tone: 'error', text: `Could not ${action} ${keyLabel(key)}: ${err}` });
     else
       setNotice({
         tone: 'ok',
         text:
           action === 'disable'
-            ? `Disabled ${keyLabel(key)}. It is refused from its next request.`
+            ? // One row: from an incident, what becomes of it matters more.
+              `Disabled ${keyLabel(key)}. ${id === undefined ? 'It is refused from its next request.' : `Incident #${id} stays open.`}`
             : `Enabled ${keyLabel(key)}.`,
       });
-    void refresh();
+    // A change made for an incident has already asked for fresh data.
+    if (id === undefined) void refresh();
   }
 
-  async function revoke(key: Key) {
-    if (acting.current) return;
+  async function revoke(key: Key, id?: number) {
+    if (id === undefined ? acting.current : held()) return;
     setDialogError(undefined);
-    const err = await call('revoke', `revoking ${keyLabel(key)}`, () => client.revokeKey(key.id));
-    if (err) return setDialogError(err);
+    const { error, ended } =
+      id === undefined
+        ? { error: await call('revoke', `revoking ${keyLabel(key)}`, () => client.revokeKey(key.id)), ended: undefined }
+        : await onIncident(id, `revoking ${keyLabel(key)}`, true, () => client.revokeKey(key.id, id));
+    if (ended) return;
+    if (error) return setDialogError(error);
     setMode({ kind: 'none' });
-    setNotice({ tone: 'ok', text: `Revoked ${keyLabel(key)}. It cannot be used again.` });
-    void refresh();
+    setNotice({ tone: 'ok', text: `Revoked ${keyLabel(key)}. ${id === undefined ? 'It cannot be used again.' : `Incident #${id} resolved as confirmed.`}` });
+    if (id === undefined) void refresh();
+  }
+
+  async function rotate(key: Key, id: number) {
+    if (held()) return;
+    setDialogError(undefined);
+    let rotated: RotatedKey | undefined;
+    let unanswered = false;
+    const { error, ended } = await onIncident(id, `rotating ${keyLabel(key)}`, true, async () => {
+      try {
+        rotated = await client.rotateKey(key.id, id);
+      } catch (err) {
+        // Only a refusal says that nothing changed. No answer, a success that could not be
+        // read, and a failure such as a proxy's 502 may all follow a rotation.
+        unanswered = !(err instanceof ApiError && err.status !== undefined && err.status >= 400 && err.status < 500);
+        throw err;
+      }
+    });
+    const of = { id: key.id, label: keyLabel(key) };
+    // An answer that was lost may have been of a rotation that happened: its secret is gone with it.
+    if (unanswered) lost.current = { id, key: of };
+    // This try, or an earlier one for this incident that brought no secret.
+    const warning = lost.current?.id === id ? maybeRotated(of.label) : undefined;
+    if (ended) {
+      const how = `Incident #${id} ${endedText(ended)}.`;
+      const done = rotationSaid(ended, of, how, { me: data.actor, lost: warning !== undefined });
+      const text = done ? `${done} (${error})` : `${how} Could not rotate: ${error}.`;
+      return setNotice({ tone: 'error', text });
+    }
+    if (error || !rotated) return setDialogError(`${error ?? 'kman did not return the new secret'}${warning ? `. ${warning}` : ''}`);
+    setNotice(undefined);
+    setMode({ kind: 'secret', shown: { was: 'rotated', note: `Incident #${id} is resolved as confirmed.`, ...rotated } });
   }
 
   async function create(input: CreateKeyInput) {
@@ -245,7 +515,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     if (err || !created) return setDialogError(err ?? 'kman did not return the key');
     setKeySel(created.key.id);
     setFilter('');
-    setMode({ kind: 'secret', created });
+    setMode({ kind: 'secret', shown: { was: 'created', ...created } });
     void refresh();
   }
 
@@ -274,6 +544,36 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     setMode(action === 'revoke' ? { kind: 'revoke', key: k } : { kind: 'confirm', action, key: k });
   }
 
+  /** Why an incident does not offer an action. */
+  function whyNot(action: Action, d: IncidentDetail): string {
+    if (d.state === 'resolved') return `Incident #${d.id} is resolved: ${isCanary(d) ? 'only reset is left' : 'there is nothing left to answer'}.`;
+    if (action === 'acknowledge') return `Incident #${d.id} is already acknowledged.`;
+    if (isCanary(d)) return 'A canary offers only acknowledge, resolve and reset.';
+    if (action === 'reset') return 'Only a canary is reset.';
+    if (!incidentKey) return 'Its key is not in the list.';
+    if (incidentKey.status === 'revoked') return `${keyLabel(incidentKey)} is revoked for good.`;
+    return `${keyLabel(incidentKey)} is ${action === 'enable' ? 'not disabled' : 'already disabled: e enables it'}.`;
+  }
+
+  /** An action key pressed on the incident. */
+  function ask(action: Action) {
+    if (!opened || !armed() || offline() || busyNow()) return;
+    if (!actions(opened, incidentKey).includes(action)) return setNotice({ tone: 'info', text: whyNot(action, opened) });
+    const id = opened.id;
+    setDialogError(undefined);
+    setNotice(undefined);
+    if (action === 'acknowledge') return void acknowledge(id);
+    if (action === 'resolve') return setMode({ kind: 'resolve', incident: id });
+    if (action === 'thisWasMe') {
+      setTicked(new Set());
+      return setMode({ kind: 'thisWasMe', incident: id });
+    }
+    if (action === 'reset') return setMode({ kind: 'reset', incident: id, canary: opened.key_id, name: opened.key_name || opened.key_id });
+    const k = incidentKey!;
+    if (action === 'disable' || action === 'enable') return setMode({ kind: 'confirm', action, key: k, incident: id });
+    setMode(action === 'rotate' ? { kind: 'rotate', key: k, incident: id } : { kind: 'revoke', key: k, incident: id });
+  }
+
   useInput(
     (input, key) => {
       if (notice?.tone === 'error') setNotice(undefined);
@@ -288,7 +588,17 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       }
       if ((mode.kind === 'help' || mode.kind === 'clients') && input === 'q') return exit();
       // The dialogs read their own keys.
-      if (mode.kind === 'create' || mode.kind === 'revoke' || mode.kind === 'secret' || mode.kind === 'help' || mode.kind === 'clients') return;
+      if (
+        mode.kind === 'create' ||
+        mode.kind === 'revoke' ||
+        mode.kind === 'rotate' ||
+        mode.kind === 'resolve' ||
+        mode.kind === 'thisWasMe' ||
+        mode.kind === 'secret' ||
+        mode.kind === 'help' ||
+        mode.kind === 'clients'
+      )
+        return;
       if (mode.kind === 'filter') {
         // Leaving the filter keeps whichever key it left selected.
         if (key.escape) {
@@ -304,18 +614,27 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
         if (key.downArrow) return move(1);
         return setFilter((f) => editText(f, input, key, 40));
       }
-      if (mode.kind === 'confirm') {
-        if (input === 'y' || input === 'Y') void confirmToggle(mode.action, mode.key);
-        else if (input === 'n' || input === 'N' || key.escape) setMode({ kind: 'none' });
+      if (mode.kind === 'confirm' || mode.kind === 'reset') {
+        if (isChord(key)) return;
+        // From an incident it is y/N: Enter says no, and neither answers a dialog just shown.
+        const guarded = mode.kind === 'reset' || mode.incident !== undefined;
+        if (input === 'n' || input === 'N' || key.escape || (guarded && key.return && armed())) setMode({ kind: 'none' });
+        else if ((input === 'y' || input === 'Y') && (!guarded || armed())) {
+          if (mode.kind === 'reset') void resetCanary(mode.incident, mode.canary, mode.name);
+          else void confirmToggle(mode.action, mode.key, mode.incident);
+        }
         return;
       }
+
+      // An incident, like a focused detail, has the keyboard: the movement keys scroll it.
+      const reading = detail || viewing !== undefined;
 
       // Ink can deliver repeated printable keys in one chunk and arrows in one React batch.
       const up = key.upArrow || /^k+$/.test(input);
       if (up || key.downArrow || /^j+$/.test(input)) {
         const count = key.upArrow || key.downArrow ? 1 : input.length;
         const delta = up ? -count : count;
-        if (detail) return setScrollTop((t) => Math.max(0, Math.min(scrollMax, t + delta)));
+        if (reading) return setScrollTop((t) => Math.max(0, Math.min(scrollMax, t + delta)));
         return move(delta);
       }
       if (input === 'q') return exit();
@@ -325,9 +644,11 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       }
       // With the detail panel focused the movement keys scroll it, a line or a page at a
       // time; panels, help, refresh and quit keep working.
-      if (detail) {
+      if (reading) {
         const by = (n: number) => setScrollTop((t) => Math.max(0, Math.min(scrollMax, t + n)));
-        if (key.escape || key.return) return setDetail(false);
+        if (viewing !== undefined) {
+          if (key.escape) return setViewing(undefined);
+        } else if (key.escape || key.return) return setDetail(false);
         if (key.pageUp) return by(-Math.max(1, viewRows - 1));
         if (key.pageDown) return by(Math.max(1, viewRows - 1));
         if (key.home || input === 'g') return setScrollTop(0);
@@ -363,9 +684,17 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       if (input === 'J') return setScrollTop((t) => Math.min(scrollMax, t + 3));
       if (input === 'K') return setScrollTop((t) => Math.max(0, t - 3));
 
+      if (viewing !== undefined) {
+        const action = isChord(key) ? undefined : actionFor(input);
+        if (action) ask(action);
+        return;
+      }
       // The detail panel has no actions of its own: what the list does waits for Esc.
       if (detail) return;
       if (input === 'n') return offline() || busyNow() ? undefined : setMode({ kind: 'create' });
+      // Enter on a row marked as an incident opens it.
+      const marked = tab === 'status' ? (attnItem?.incident ?? incidentFor(data.incidents, attnItem?.key?.id)) : tab === 'keys' ? incidentFor(data.incidents, selectedId) : undefined;
+      if (key.return && marked) return open(marked.id);
       if (tab === 'status' && key.return) {
         if (attnItem?.noUpstream) return goTab('upstreams');
         if (attnItem?.upstream) {
@@ -417,12 +746,13 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const names = { keys: data.keys, upstreams: data.upstreams };
   const upSel = Math.min(upstreamSel, Math.max(0, data.upstreams.length - 1));
   const auSel = Math.min(auditSel, Math.max(0, data.audit.length - 1));
+  const reading = detail || viewing !== undefined;
   const left = (
     <Box flexDirection="column" width={lay.leftW} height={lay.wide ? bodyRows : undefined} flexShrink={0}>
       <StatusPanel
         width={lay.leftW}
         height={h.status}
-        focused={tab === 'status' && !detail && !popup}
+        focused={tab === 'status' && !reading && !popup}
         link={link}
         url={url}
         actor={data.actor}
@@ -436,7 +766,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       <KeysPanel
         width={lay.leftW}
         height={h.keys}
-        focused={tab === 'keys' && !detail && !popup}
+        focused={tab === 'keys' && !reading && !popup}
         keys={visible}
         all={data.keys}
         total={data.keys.length}
@@ -450,7 +780,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       <UpstreamsPanel
         width={lay.leftW}
         height={h.upstreams}
-        focused={tab === 'upstreams' && !detail && !popup}
+        focused={tab === 'upstreams' && !reading && !popup}
         upstreams={data.upstreams}
         keys={data.keys}
         selected={upstreamSel}
@@ -458,7 +788,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       <AuditPanel
         width={lay.leftW}
         height={h.audit}
-        focused={tab === 'audit' && !detail && !popup}
+        focused={tab === 'audit' && !reading && !popup}
         audit={data.audit}
         names={names}
         fresh={fresh}
@@ -525,15 +855,20 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   } else if (mode.kind === 'revoke') {
     body = (
       <Centered width={dw} height={bodyRows}>
-        <RevokeDialog
+        <TypeNameDialog
+          action="revoke"
           keyData={mode.key}
+          command={cli.revoke(keyLabel(mode.key), mode.incident)}
+          incidentNote={mode.incident === undefined ? undefined : `Incident #${mode.incident} is resolved as confirmed.`}
           maxWidth={dw}
-          busy={working === 'revoke'}
-          // The dialog is at most 14 rows without its error (its hint line included).
-          errorLines={Math.max(3, bodyRows - 14)}
+          busy={working !== undefined}
+          // The dialog is at most 14 rows without its error (its hint line included), and
+          // two more when it is done for an incident.
+          errorLines={Math.max(3, bodyRows - (mode.incident === undefined ? 14 : 16))}
           error={dialogError}
-          onConfirm={() => void revoke(mode.key)}
-          onReady={setRevokeReady}
+          guardMs={mode.incident === undefined ? 0 : actionGuardMs}
+          onConfirm={() => void revoke(mode.key, mode.incident)}
+          onReady={setNameReady}
           onCancel={() => {
             setMode({ kind: 'none' });
             setNotice({ tone: 'info', text: `Revoke cancelled for ${keyLabel(mode.key)}.` });
@@ -541,10 +876,89 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
         />
       </Centered>
     );
+  } else if (mode.kind === 'rotate') {
+    body = (
+      <Centered width={dw} height={bodyRows}>
+        <TypeNameDialog
+          action="rotate"
+          keyData={mode.key}
+          command={cli.rotate(keyLabel(mode.key), mode.incident)}
+          incidentNote={`Incident #${mode.incident} is resolved as confirmed.`}
+          maxWidth={dw}
+          busy={working !== undefined}
+          // Its words take a row more than revoke's.
+          errorLines={Math.max(3, bodyRows - 17)}
+          error={dialogError}
+          guardMs={actionGuardMs}
+          onConfirm={() => void rotate(mode.key, mode.incident)}
+          onReady={setNameReady}
+          onCancel={() => {
+            setMode({ kind: 'none' });
+            setNotice({ tone: 'info', text: `Rotation cancelled for ${keyLabel(mode.key)}.` });
+          }}
+        />
+      </Centered>
+    );
+  } else if (mode.kind === 'resolve') {
+    body = (
+      <Centered width={dw} height={bodyRows}>
+        <ResolveDialog
+          id={mode.incident}
+          width={dw}
+          busy={working !== undefined}
+          error={dialogError}
+          guardMs={actionGuardMs}
+          onConfirm={(as) => void resolve(mode.incident, as)}
+          onCancel={() => setMode({ kind: 'none' })}
+        />
+      </Centered>
+    );
+  } else if (mode.kind === 'thisWasMe') {
+    body = (
+      <Centered width={dw} height={bodyRows}>
+        <ThisWasMeDialog
+          id={mode.incident}
+          picks={boxes}
+          ticked={ticked}
+          width={dw}
+          busy={working !== undefined}
+          error={dialogError}
+          guardMs={actionGuardMs}
+          onTick={(kind) => {
+            setDialogError(undefined);
+            setTicked((was) => {
+              const next = new Set(was);
+              if (!next.delete(kind)) next.add(kind);
+              return next;
+            });
+          }}
+          onConfirm={(kinds, everyKey) => void thisWasMe(mode.incident, kinds, everyKey)}
+          onCancel={() => setMode({ kind: 'none' })}
+        />
+      </Centered>
+    );
+  } else if (mode.kind === 'reset') {
+    body = (
+      <Centered width={dw} height={bodyRows}>
+        <Panel title="Arm this canary again?" width={Math.min(70, dw)} tone={color.warn}>
+          <Text bold wrap="wrap">
+            {mode.name}
+          </Text>
+          <Text dimColor wrap="wrap">
+            id {mode.canary}
+          </Text>
+          <Box marginTop={1}>
+            <Text wrap="wrap">Its next use alerts again. What it has recorded stays, and incident #{mode.incident} is left as it is.</Text>
+          </Box>
+          <Command>{cli.resetCanary(mode.canary)}</Command>
+          <YesNo />
+        </Panel>
+      </Centered>
+    );
   } else if (mode.kind === 'secret') {
     body = (
       <Centered width={dw} height={bodyRows}>
-        <SecretDialog created={mode.created} width={dw} onCopy={copy} armMs={secretGuardMs} onClose={() => setMode({ kind: 'none' })} />
+        <SecretDialog shown={mode.shown} width={dw} onCopy={copy} armMs={secretGuardMs} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'clients') {
@@ -556,7 +970,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   } else if (mode.kind === 'help') {
     body = (
       <Centered width={dw} height={bodyRows}>
-        <HelpDialog focus={tab} detail={detail} onClose={() => setMode({ kind: 'none' })} />
+        <HelpDialog focus={tab} detail={detail} incident={viewing !== undefined} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'confirm') {
@@ -575,12 +989,36 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
           <Box marginTop={1}>
             <Text wrap="wrap">
               {mode.action === 'disable'
-                ? 'It is refused from its next request, and you can enable it again.'
+                ? `It is refused from its next request, and you can enable it again.${mode.incident === undefined ? '' : ` Incident #${mode.incident} stays open.`}`
                 : 'It works again from its next request.'}
             </Text>
           </Box>
+          <Command>{mode.action === 'disable' ? cli.disable(keyLabel(mode.key), mode.incident) : cli.enable(keyLabel(mode.key))}</Command>
+          {mode.incident === undefined ? null : <YesNo />}
         </Panel>
       </Centered>
+    );
+  } else if (viewing !== undefined) {
+    // Narrow, it takes the body: under the panels there would be no room to read it.
+    const view = (
+      <IncidentView
+        key={viewing}
+        id={viewing}
+        state={incident}
+        listed={listed}
+        keyData={incidentKey}
+        width={lay.wide ? lay.mainW : width}
+        height={lay.wide ? lay.mainH : bodyRows}
+        now={now}
+        scroll={scroll}
+        offline={link.state === 'down'}
+      />
+    );
+    body = (
+      <Box width={width} height={bodyRows}>
+        {lay.wide ? left : null}
+        {view}
+      </Box>
     );
   } else {
     const attn = attnItem?.key;
@@ -660,10 +1098,13 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
                   key: selectedKey,
                   filtered: filter !== '',
                   selectable,
-                  // An incident about a canary, or a part that did not load, has no list to open.
-                  openable: Boolean(attnItem?.key || attnItem?.upstream || attnItem?.noUpstream),
+                  // A part that did not load has nothing to open.
+                  openable: Boolean(attnItem?.key || attnItem?.upstream || attnItem?.noUpstream || attnItem?.incident),
+                  marked: Boolean(tab === 'status' ? (attnItem?.incident ?? incidentFor(data.incidents, attnItem?.key?.id)) : incidentFor(data.incidents, selectedId)),
                   movable,
-                  revokeReady,
+                  nameReady,
+                  incident: viewing !== undefined,
+                  answered: link.state === 'down' && Boolean(link.answered),
                   offline: link.state === 'down',
                   working: working !== undefined,
                   canCreate: data.upstreams.length > 0,
@@ -689,6 +1130,23 @@ function Centered({ width, height, children }: { width: number; height: number; 
   );
 }
 
+/** What is being sent. */
+type Work = 'toggle' | 'revoke' | 'create' | 'incident';
+
+/** The answer a y/N dialog waits for: no is what Enter says. */
+function YesNo() {
+  return (
+    <Box marginTop={1}>
+      <Text>
+        <Text bold color={color.key}>y</Text>
+        <Text dimColor> yes   </Text>
+        <Text bold color={color.key}>N</Text>
+        <Text dimColor> no (also Enter, Esc)</Text>
+      </Text>
+    </Box>
+  );
+}
+
 interface HintState {
   tab: Tab;
   mode: Mode['kind'];
@@ -698,8 +1156,14 @@ interface HintState {
   selectable: boolean;
   /** Whether it has more than one, so the arrows have somewhere to go. */
   movable: boolean;
-  /** The name typed in the revoke dialog matches. */
-  revokeReady: boolean;
+  /** The name typed to revoke or rotate matches. */
+  nameReady: boolean;
+  /** An incident is open in the main panel. */
+  incident: boolean;
+  /** The selected row is marked as an incident, which Enter opens. */
+  marked: boolean;
+  /** kman is answering, with an error. */
+  answered: boolean;
   offline: boolean;
   /** A change is being sent: another cannot start. */
   working: boolean;
@@ -719,9 +1183,10 @@ interface HintState {
  * missed go first (`rank`): scrolling and the panel keys, then selecting, and last the
  * actions on the selected row, which stay unless nothing else can.
  */
-function hintsFor({ tab, mode, key, filtered, selectable, movable, revokeReady, offline, working, canCreate, hasKeys, scrollable, detail, openable }: HintState): HintItem[] {
+function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, offline, working, canCreate, hasKeys, scrollable, detail, openable, incident, marked, answered }: HintState): HintItem[] {
   const canChange = !offline && !working;
-  if (mode === 'confirm') return [{ k: 'y', label: 'yes' }, { k: 'n', label: 'cancel' }];
+  if (mode === 'confirm' || mode === 'reset') return [{ k: 'y', label: 'yes' }, { k: 'n', label: 'cancel' }];
+  if (mode === 'resolve' || mode === 'thisWasMe') return [{ k: 'Esc', label: 'cancel', always: true }];
   if (mode === 'filter') {
     return [
       { k: 'Enter', label: 'keep filter', always: true },
@@ -738,10 +1203,22 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, revokeReady, 
       { k: 'Esc', label: 'cancel', always: true },
     ];
   }
-  if (mode === 'revoke') return [...(revokeReady ? [{ k: 'Enter', label: 'revoke', always: true }] : []), { k: 'Esc', label: 'cancel', always: true }];
+  if (mode === 'revoke' || mode === 'rotate') return [...(nameReady ? [{ k: 'Enter', label: mode, always: true }] : []), { k: 'Esc', label: 'cancel', always: true }];
   if (mode === 'secret') return [{ k: 'c', label: 'copy' }, { k: 'Enter', label: 'done', always: true }];
   if (mode === 'clients') return [{ k: 'Esc', label: 'close', always: true }];
   if (mode !== 'none') return [{ k: 'Esc', label: 'close' }];
+  if (incident) {
+    return [
+      // Said first: it is why the keys in the view do nothing.
+      ...(offline ? [{ k: 'Actions off:', label: answered ? 'kman answers with an error' : 'kman is unreachable', always: true }] : []),
+      ...(scrollable ? [{ k: '↑↓', label: 'scroll', rank: 3.3 }] : []),
+      { k: 'Esc', label: 'back', always: true },
+      { k: 'r', label: offline ? 'retry' : 'refresh', always: offline, rank: 2 },
+      { k: '1-4', label: 'panels', rank: 1 },
+      { k: '?', label: 'help', always: true },
+      { k: 'q', label: 'quit', always: true },
+    ];
+  }
   if (detail) {
     return [
       { k: '↑↓', label: 'scroll', always: true },
@@ -763,7 +1240,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, revokeReady, 
   ];
   const create = canChange && canCreate ? [{ k: 'n', label: 'new key', rank: tab === 'keys' && key ? 3 : 4 }] : [];
   // Only offered when the detail has more than it shows: otherwise there is nothing to go to.
-  const open = selectable && scrollable ? [{ k: 'Enter', label: 'details', rank: 3.6 }] : [];
+  const open = marked && tab === 'keys' ? [{ k: 'Enter', label: 'incident', rank: 5.5 }] : selectable && scrollable ? [{ k: 'Enter', label: 'details', rank: 3.6 }] : [];
   // Moving over the rows and reaching the other panels outrank a secondary action like c IPs.
   const select = movable ? [{ k: '↑↓', label: 'select', rank: 3.3 }] : [];
   if (tab === 'keys') {
@@ -784,7 +1261,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, revokeReady, 
     ];
   }
   if (tab === 'status') {
-    return [...select, ...(openable ? [{ k: 'Enter', label: 'open', rank: 5 }] : []), ...create, ...common];
+    return [...select, ...(openable ? [{ k: 'Enter', label: marked ? 'incident' : 'open', rank: 5 }] : []), ...create, ...common];
   }
   return [...select, ...open, ...create, ...common];
 }

@@ -43,6 +43,40 @@ client.incidents = [
   incident({ id: 12, key_id: 'k_prod', key_name: 'prod-api', severity: 'high', rules: ['new_country', 'new_asn', 'new_client'], detection_count: 3, opened_at: at(40 * min), last_fired_at: at(4 * min) }),
   incident({ id: 13, key_id: 'k_wiki', key_name: 'wiki-canary', severity: 'critical', rules: ['canary'], detection_count: 1, opened_at: at(2 * 3600_000), last_fired_at: at(2 * 3600_000) }),
 ];
+// What each incident recorded, for its view.
+const detection = (id: number, rule: string, ago: number, evidence: object) => ({ id, time: at(ago), rule, severity: 'high' as const, evidence });
+const from = {
+  country: 'NL',
+  asn: 60729,
+  as_org: 'Stiftung Erneuerbare Freiheit',
+  client: 'curl/8',
+  address_withheld: true,
+  detail: 'the request was refused (address_not_allowed)',
+};
+client.recorded = {
+  12: {
+    detections: [
+      detection(1, 'new_country', 40 * min, { ...from, baseline: 'US (9100 requests)' }),
+      detection(2, 'new_asn', 40 * min, { ...from, baseline: 'AS16509 Amazon.com, Inc. (9100 requests)' }),
+      detection(3, 'new_client', 4 * min, { ...from, baseline: 'openai-python/1 (9100 requests)' }),
+    ],
+    actions: [{ id: 41, time: at(40 * min), actor: 'system:detect', action: 'incident.open', target_kind: 'incident', target_id: '12' }],
+    known_source_candidates: [
+      { kind: 'country', value: 'NL' },
+      { kind: 'asn', value: '60729', label: 'Stiftung Erneuerbare Freiheit' },
+      { kind: 'client', value: 'curl/8' },
+      { kind: 'cidr', withheld: true },
+    ],
+    addresses_withheld: true,
+  },
+  13: {
+    detections: [
+      detection(4, 'canary', 2 * 3600_000, { country: 'RO', asn: 9009, as_org: 'M247 Europe SRL', client: 'python-requests/2', address_withheld: true, detail: 'planted: the deploy notes in the team wiki' }),
+    ],
+    actions: [{ id: 40, time: at(2 * 3600_000), actor: 'system:detect', action: 'incident.open', target_kind: 'incident', target_id: '13' }],
+    addresses_withheld: true,
+  },
+};
 client.findings = [
   {
     key_id: 'k_soon',

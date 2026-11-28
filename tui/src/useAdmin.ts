@@ -2,7 +2,7 @@
 // shows stale data marked as stale rather than an empty screen.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, isMissingRoute } from './api.js';
-import type { AdminClient, AuditEntry, ExposureFinding, Incident, Key, KeyPlaces, PriceDataStatus, Settings, Upstream } from './api.js';
+import type { AdminClient, AuditEntry, ExposureFinding, Incident, IncidentDetail, Key, KeyPlaces, PriceDataStatus, Settings, Upstream } from './api.js';
 
 export interface AdminData {
   keys: Key[];
@@ -94,7 +94,9 @@ export function useAdmin(client: AdminClient, intervalMs = 3000) {
         findings: findings.error ? last.findings : findings.value,
         findingsError: findings.error,
       }));
-      lastOk.current = Date.now();
+      // Always later than the last, even within a millisecond: what is fetched beside each
+      // poll goes by this changing.
+      lastOk.current = Math.max((lastOk.current ?? 0) + 1, Date.now());
       setNow(lastOk.current);
       setLink({ state: 'ok', at: lastOk.current });
       if (incidents.error) return { message: `incidents did not load: ${incidents.error}`, partial: true };
@@ -181,4 +183,65 @@ export function usePlaces(client: AdminClient, id: string | undefined, at: numbe
     };
   }, [client, id, at]);
   return state.id === id ? state : { id };
+}
+
+export interface IncidentState {
+  /** The incident this is about. */
+  id?: number;
+  detail?: IncidentDetail;
+  /** Why the last fetch failed: `detail` is then old, or undefined. */
+  error?: string;
+}
+
+/**
+ * One incident in full, fetched when it is opened and again on every poll (`at` is when the
+ * last one answered). Fetching it changes nothing: opening an incident never acknowledges it.
+ */
+export function useIncident(
+  client: AdminClient,
+  id: number | undefined,
+  at: number,
+): IncidentState & { show: (detail: IncidentDetail) => void; outdate: () => void } {
+  const [state, setState] = useState<IncidentState>({});
+  // The read under way whose answer is still wanted. One at a time, so that a read slower
+  // than the polls is not dropped by the next of them.
+  const reading = useRef<{ client: AdminClient; id: number } | undefined>(undefined);
+  const wanted = useRef(id);
+  wanted.current = id;
+  useEffect(() => {
+    if (id === undefined) {
+      reading.current = undefined;
+      return setState({});
+    }
+    if (reading.current?.id === id && reading.current.client === client) return;
+    const read = (reading.current = { client, id });
+    /** Whether this read is still the one wanted; either way it is over. */
+    const done = () => {
+      if (reading.current !== read) return false;
+      reading.current = undefined;
+      return true;
+    };
+    client.incident(id).then(
+      (detail) => done() && setState({ id, detail }),
+      (err: unknown) => {
+        if (!done()) return;
+        const error = err instanceof Error ? err.message : String(err);
+        setState((s) => ({ id, detail: s.id === id ? s.detail : undefined, error }));
+      },
+    );
+  }, [client, id, at]);
+  /** Drops the read under way: what it asked about may have changed since. */
+  const outdate = useCallback(() => {
+    reading.current = undefined;
+  }, []);
+  /**
+   * Takes a detail fetched elsewhere, so what it holds is on screen without waiting for a
+   * poll, and no read begun before it replaces it.
+   */
+  const show = useCallback((detail: IncidentDetail) => {
+    if (detail.id !== wanted.current) return;
+    reading.current = undefined;
+    setState({ id: detail.id, detail });
+  }, []);
+  return { ...(state.id === id ? state : { id }), show, outdate };
 }

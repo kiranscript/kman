@@ -3109,10 +3109,11 @@ describe('who and where come first', () => {
     // By id: a revoked canary may have passed its name on.
     expect(m.screen()).toContain('kman canary show k_canary');
     expect(m.screen()).toContain('kman canary reset k_canary');
-    // Enter has no key to open, so it is not offered, and does nothing.
-    expect(m.screen()).not.toContain('Enter open');
+    // There is no key to open: Enter opens the incident itself.
+    expect(m.screen()).toContain('Enter incident');
     await m.press(ENTER);
-    expect(m.screen()).toContain('Incident #9');
+    expect(m.screen()).toContain('Incident #9 · wiki-canary');
+    expect(m.screen()).toContain('z reset canary');
     m.unmount();
   });
 

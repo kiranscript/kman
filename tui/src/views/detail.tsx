@@ -418,6 +418,7 @@ export function IncidentMain({ incident: i, width, height, scroll, now }: Size &
     <ScrollFrame title={`Incident #${i.id}`} width={width} height={height} scroll={scroll}>
       <Body>
         <RiskLine risk={r} />
+        <Text wrap="wrap">Enter opens it, to answer it here.</Text>
         {/* First, so they show without scrolling at the smallest size. */}
         <Box flexDirection="column" marginTop={1}>
           <SectionTitle>ANSWER IT</SectionTitle>

@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from 'ink';
 import { useEffect, useState } from 'react';
-import type { CreatedKey } from '../api.js';
+import type { CreatedKey, RotatedKey } from '../api.js';
 import { keyLabel } from '../keys.js';
 import { color } from '../ui/theme.js';
 
@@ -9,8 +9,11 @@ export function osc52(text: string, write: (s: string) => void = (s) => void pro
   write(`\u001b]52;c;${Buffer.from(text, 'utf8').toString('base64')}\u0007`);
 }
 
+/** A secret that is shown once: of a key just created, or just rotated. */
+export type ShownSecret = ({ was: 'created' } & CreatedKey) | ({ was: 'rotated'; note?: string } & RotatedKey);
+
 interface Props {
-  created: CreatedKey;
+  shown: ShownSecret;
   width: number;
   onClose: () => void;
   onCopy?: (text: string) => void;
@@ -27,7 +30,7 @@ interface Props {
  * the secret or the export line with a mouse takes nothing but the text.
  * Only Enter closes it: Esc is a reflex, and the secret cannot be shown again.
  */
-export function SecretDialog({ created, width, onClose, onCopy = osc52, armMs = 750 }: Props) {
+export function SecretDialog({ shown, width, onClose, onCopy = osc52, armMs = 750 }: Props) {
   const [note, setNote] = useState<{ text: string; warn: boolean } | undefined>();
   const [armed, setArmed] = useState(armMs <= 0);
   useEffect(() => {
@@ -35,7 +38,7 @@ export function SecretDialog({ created, width, onClose, onCopy = osc52, armMs = 
     const t = setTimeout(() => setArmed(true), armMs);
     return () => clearTimeout(t);
   }, [armMs]);
-  const exportLine = created.sdk_env ? `export ${created.sdk_env}=${created.secret}` : undefined;
+  const exportLine = shown.sdk_env ? `export ${shown.sdk_env}=${shown.secret}` : undefined;
   // Ink breaks a long line with a hard newline, which would corrupt a copied secret. So the
   // export line is shown only when it fits; otherwise the secret above is the thing to copy.
   const exportFits = exportLine !== undefined && [...exportLine].length <= width - 4;
@@ -44,7 +47,7 @@ export function SecretDialog({ created, width, onClose, onCopy = osc52, armMs = 
     if (key.return) return armed ? onClose() : undefined;
     if (key.escape) return setNote({ text: 'Esc does not close this: the secret cannot be shown again. Press Enter once you have copied it.', warn: true });
     if (input === 'c') {
-      onCopy(created.secret);
+      onCopy(shown.secret);
       setNote({ text: "Sent to your terminal's clipboard. If nothing pastes, select the line above instead.", warn: false });
     }
   });
@@ -61,12 +64,13 @@ export function SecretDialog({ created, width, onClose, onCopy = osc52, armMs = 
       paddingY={1}
     >
       <Text bold color={color.ok}>
-        Key created: {keyLabel(created.key)}
+        Key {shown.was}: {keyLabel(shown.key)}
       </Text>
       <Text>Copy it now. kman keeps only its hash, so it cannot show it again.</Text>
+      {shown.was === 'rotated' ? <Text wrap="wrap">{`The old secret is refused from now on.${shown.note ? ` ${shown.note}` : ''}`}</Text> : null}
       <Box marginTop={1}>
         <Text bold color={color.ok}>
-          {created.secret}
+          {shown.secret}
         </Text>
       </Box>
       <Box marginTop={1} flexDirection="column">
@@ -75,16 +79,18 @@ export function SecretDialog({ created, width, onClose, onCopy = osc52, armMs = 
             <Text dimColor>For an app, in its shell:</Text>
             <Text>{exportLine}</Text>
           </>
-        ) : created.sdk_env ? (
-          <Text dimColor>Set {created.sdk_env} to the secret above.</Text>
+        ) : shown.sdk_env ? (
+          <Text dimColor>Set {shown.sdk_env} to the secret above.</Text>
         ) : (
           <Text dimColor>Use the secret above as this upstream's key.</Text>
         )}
-        {/* Older servers omit the bound address. */}
+        {/* A rotation changes only the secret. Older servers omit the bound address. */}
         <Text dimColor>
-          {created.proxy_url
-            ? `Base URL on the kman host: ${created.proxy_url}${created.sdk_base_path ?? ''}`
-            : `Base URL: kman's proxy address${created.sdk_base_path ? ` + ${created.sdk_base_path}` : ''} (http://127.0.0.1:8080 by default)`}
+          {shown.was === 'rotated'
+            ? 'The base URL apps use does not change.'
+            : shown.proxy_url
+              ? `Base URL on the kman host: ${shown.proxy_url}${shown.sdk_base_path ?? ''}`
+              : `Base URL: kman's proxy address${shown.sdk_base_path ? ` + ${shown.sdk_base_path}` : ''} (http://127.0.0.1:8080 by default)`}
         </Text>
       </Box>
       <Box marginTop={1} flexDirection="column">
