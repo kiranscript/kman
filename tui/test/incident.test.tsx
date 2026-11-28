@@ -873,6 +873,8 @@ describe('safety', () => {
     client.incident = read;
     await m.press('a');
     await until(() => m.screen().includes('HIGH · ACKNOWLEDGED'), 'the change drawn');
+    // No later read answers, so only the old one could redraw it.
+    client.incident = () => new Promise(() => {});
     release!();
     await m.settle();
     expect(m.screen()).toContain('HIGH · ACKNOWLEDGED');
