@@ -167,6 +167,21 @@ describe('the requests table', () => {
     m.unmount();
   });
 
+  it('starts at the newest flagged row on returning, whatever arrived unflagged', async () => {
+    const client = traffic();
+    // The newest fetched, and not in the flagged table.
+    client.requests.push(request({ id: 5 }, 10_000));
+    const m = mount(client, SMALL, 100);
+    await onRequests(m);
+    await m.press('f', '2');
+    client.requests.push(request({ id: 6, ...bad, operation: 'POST /v1/embeddings' }, 100));
+    await tick(250);
+    await m.press('5');
+    expect(m.lines()[selectedAt(m) + 1]).toContain('/v1/embeddings');
+    expect(m.screen()).not.toMatch(/\d new ·|· \d+ new/);
+    m.unmount();
+  });
+
   it('cycles all, flagged and refused with f, asking kman for the refused', async () => {
     const client = traffic();
     const asked = vi.spyOn(client, 'events');
@@ -421,6 +436,34 @@ describe('the requests table', () => {
     await m.settle();
     expect(m.screen()).not.toMatch(/\d new ·|· \d+ new/);
     expect(operation()).toBe(was);
+    m.unmount();
+  });
+
+  it('counts all that was fetched as seen after g, shown or not', async () => {
+    const client = traffic();
+    const incident = client.incident.bind(client);
+    let readable = false;
+    client.incident = async (id) => {
+      if (!readable) throw new ApiError('internal', 'database is locked', 500);
+      return incident(id);
+    };
+    const m = mount(client, SMALL, 100);
+    await until(() => m.screen().includes('live'), 'the first load');
+    await m.press('5', 'f');
+    await until(() => m.table().length > 0, 'the flagged rows');
+    await m.settle();
+    const before = m.table().length;
+    // Forwarded, so not in the flagged table until the incident's detail flags it.
+    client.requests.push(request({ id: 5, ...bad, kind: 'forwarded', status: 200, refusal_code: undefined }, 100));
+    const asked = vi.spyOn(client, 'events');
+    // The poll that brings it, and one after.
+    await until(() => asked.mock.calls.filter(([q]) => !q?.key && !q?.before).length >= 2, 'the polls', 4000);
+    await m.settle();
+    await m.press('g');
+    readable = true;
+    await until(() => m.table().length > before, 'the late flag', 4000);
+    await m.settle();
+    expect(m.screen()).not.toMatch(/\d new ·|· \d+ new/);
     m.unmount();
   });
 
