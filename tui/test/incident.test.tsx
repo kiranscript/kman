@@ -1,6 +1,6 @@
 // The incident view: opening it, what it shows, each answer it can send and the safeguard
 // each one has.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api.js';
 import { App } from '../src/App.js';
 import { detection, fakeClient, incident, key, leak, NOW, tick, until } from './fakes.js';
@@ -74,7 +74,8 @@ describe('opening an incident', () => {
     const m = mount(leaked(), WIDE);
     await opened(m);
     const s = m.screen();
-    expect(s).toContain('! HIGH · OPEN · opened 10d ago · last fired 10d ago · 3 detections');
+    // The app reads the real clock, so how long ago the fixtures were grows.
+    expect(s).toMatch(/! HIGH · OPEN · opened \d+d ago · last fired \d+d ago · 3 detections/);
     expect(s).toMatch(/new country +NL +usually US \(9100 requests\)/);
     expect(s).toMatch(/new ASN +AS60729 Stiftung/);
     expect(s).toMatch(/new client +curl\/8 +usually openai-python\/1/);
@@ -597,6 +598,19 @@ describe('safety', () => {
     expect(m.screen()).toContain('Disable this key?');
     await tick(650);
     await m.press('y');
+    expect(changes(m.client)).toEqual(['disable k_prod 12']);
+    m.unmount();
+  });
+
+  it('takes keys though the wall clock is stepped back', async () => {
+    const m = mount();
+    await opened(m);
+    // As a time sync does, to before the view appeared.
+    const wall = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 60_000);
+    await m.press('d');
+    expect(m.screen()).toContain('Disable this key?');
+    await m.press('y');
+    wall.mockRestore();
     expect(changes(m.client)).toEqual(['disable k_prod 12']);
     m.unmount();
   });
