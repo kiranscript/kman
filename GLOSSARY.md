@@ -67,7 +67,7 @@ The web interface, served by kman itself, for watching keys and responding to le
 _Avoid_: Web UI, console, TUI (the TUI is a separate client; see below)
 
 **TUI**:
-A terminal client of the admin API that watches a running kman. `kman tui` is read-only and part of the binary; the one in `tui/` can also disable, enable, revoke and create virtual keys and answer an incident (acknowledge it, say it was you, resolve it, rotate its key or arm its canary again), and is a separate package. Neither runs the server.
+A terminal client of the admin API that watches a running kman. `kman tui` is read-only and part of the binary; the one in `tui/` also shows recent requests, flagging those that used a canary, look like an open incident or were refused, and can disable, enable, revoke and create virtual keys and answer an incident (acknowledge it, say it was you, resolve it, rotate its key or arm its canary again), and is a separate package. Neither runs the server.
 _Avoid_: Dashboard (the dashboard is the web interface served by kman)
 
 **Exposure**:

@@ -123,6 +123,8 @@ export function graphemeWidth(g: string): number {
 
 /** The terminal cells a string takes: a CJK or emoji character is two. */
 export function textWidth(text: string): number {
+  // Most text is plain ASCII, a cell a character, and needs no segmenting.
+  if (/^[ -~]*$/.test(text)) return text.length;
   let n = 0;
   for (const g of graphemes(text)) n += graphemeWidth(g);
   return n;
@@ -142,25 +144,24 @@ function takeCells(parts: string[], cells: number): string {
 }
 
 /**
- * Text wrapped on words into lines of at most `width`, with no leading spaces, in at most
- * `maxLines`. When more would be needed, the last line ends in "…".
+ * Text wrapped on words into lines of at most `width` cells, with no leading spaces, in at
+ * most `maxLines`. When more would be needed, the last line ends in "…".
  */
 export function wrapLines(text: string, width: number, maxLines: number): string[] {
   if (width <= 0 || maxLines <= 0) return [];
   const lines: string[] = [];
   let cur = '';
   for (const word of text.split(/\s+/).filter(Boolean)) {
-    let rest = [...word];
-    while (rest.length > width) {
+    let w = word;
+    if (textWidth(w) > width) {
       if (cur) lines.push(cur);
       cur = '';
-      lines.push(rest.slice(0, width).join(''));
-      rest = rest.slice(width);
+      const pieces = cutCells(graphemes(w), width);
+      w = pieces.pop()!;
+      lines.push(...pieces);
     }
-    const w = rest.join('');
-    if (!w) continue;
     if (!cur) cur = w;
-    else if ([...cur].length + 1 + rest.length <= width) cur += ` ${w}`;
+    else if (textWidth(cur) + 1 + textWidth(w) <= width) cur += ` ${w}`;
     else {
       lines.push(cur);
       cur = w;
@@ -169,9 +170,31 @@ export function wrapLines(text: string, width: number, maxLines: number): string
   if (cur) lines.push(cur);
   if (lines.length <= maxLines) return lines;
   const kept = lines.slice(0, maxLines);
-  const chars = [...kept[maxLines - 1]!];
-  kept[maxLines - 1] = (chars.length >= width ? chars.slice(0, width - 1).join('') : chars.join('')) + '…';
+  const last = kept[maxLines - 1]!;
+  kept[maxLines - 1] = (textWidth(last) >= width ? takeCells(graphemes(last), width - 1) : last) + '…';
   return kept;
+}
+
+/**
+ * Graphemes cut into pieces of at most `width` cells. One wider than that has a piece to
+ * itself.
+ */
+function cutCells(parts: string[], width: number): string[] {
+  const pieces: string[] = [];
+  let piece = '';
+  let used = 0;
+  for (const g of parts) {
+    const w = graphemeWidth(g);
+    if (piece && used + w > width) {
+      pieces.push(piece);
+      piece = '';
+      used = 0;
+    }
+    piece += g;
+    used += w;
+  }
+  if (piece) pieces.push(piece);
+  return pieces;
 }
 
 /**

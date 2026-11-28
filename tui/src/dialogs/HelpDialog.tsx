@@ -9,7 +9,7 @@ const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
   {
     title: 'GLOBAL',
     rows: [
-      ['1-4  h l  ← →', 'jump to a panel; step to the next or previous'],
+      ['1-5  h l  ← →', 'jump to a panel; step to the next or previous'],
       ['Tab  ⇧Tab', 'next panel, previous panel'],
       ['↑ ↓  j k  PgUp PgDn', 'move in the focused panel'],
       ['g  G  Home  End', 'first, last'],
@@ -19,7 +19,14 @@ const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
       ['q  Ctrl+C', 'quit (this help: Esc or ? closes)'],
     ],
   },
-  { title: 'STATUS', panel: 'status', rows: [['Enter', 'open an incident, else the key or upstream']] },
+  {
+    title: 'STATUS',
+    panel: 'status',
+    rows: [
+      ['Enter', 'open an incident, else the key or upstream'],
+      ['v', "the key's requests"],
+    ],
+  },
   {
     title: 'KEYS',
     panel: 'keys',
@@ -27,10 +34,29 @@ const groups: { title: string; panel?: Tab; rows: [string, string][] }[] = [
       ['/   Esc', 'filter by name, id, tag or upstream; clear it'],
       ['Enter', 'open its incident, else focus a longer detail'],
       ['d  e', 'disable, enable the key (y confirms, n cancels)'],
+      ['v', "the key's requests"],
       ['c', 'the IP addresses a key was used from'],
       ['x', 'revoke the key (type its name to confirm)'],
     ],
   },
+  {
+    title: 'REQUESTS',
+    panel: 'requests',
+    rows: [
+      ['↑ ↓  j k  PgUp PgDn', 'move; past the end loads older ones'],
+      ['g  G  Home  End', 'newest; oldest loaded'],
+      ['f', 'all, flagged, refused'],
+      ['Enter', "open the request's incident, else its key"],
+      ['Esc', 'back to all keys'],
+    ],
+  },
+];
+
+/** What the flags of the requests table claim, and what they cannot. */
+const FLAG_NOTES = [
+  '! a canary key, or like what an open incident saw (maybe your own use).',
+  '▲ refused, or unknown key. Never !: what no rule raised (learning, a known',
+  'source), resolved incidents, and detections past the 100 listed.',
 ];
 
 const DETAIL = {
@@ -61,14 +87,27 @@ const INCIDENT = {
 const DETAIL_GLOBAL = {
   title: 'GLOBAL',
   rows: [
-    ['1-4  h l  ← →  Tab', 'go to another panel (the list gets the keyboard)'],
+    ['1-5  h l  ← →  Tab', 'go to another panel (the list gets the keyboard)'],
     ['r', 'refresh now'],
     ['q  Ctrl+C', 'quit (this help: Esc or ? closes)'],
   ] as [string, string][],
 };
 
 /** `focus` is the focused panel: its keys come first, as in lazygit's menu. */
-export function HelpDialog({ onClose, focus, detail, incident }: { onClose: () => void; focus?: Tab; detail?: boolean; incident?: boolean }) {
+export function HelpDialog({
+  onClose,
+  focus,
+  detail,
+  incident,
+  requests = true,
+}: {
+  onClose: () => void;
+  focus?: Tab;
+  detail?: boolean;
+  incident?: boolean;
+  /** Whether kman has events: without them there is no fifth panel and no `v`. */
+  requests?: boolean;
+}) {
   // The focused panel's keys first, then what works everywhere: other panels' keys
   // are on their own screens, which this dialog has no room for.
   // With the detail panel focused only its own keys work, so those come first.
@@ -76,8 +115,13 @@ export function HelpDialog({ onClose, focus, detail, incident }: { onClose: () =
   const alone = incident ? INCIDENT : detail ? DETAIL : undefined;
   const mine = alone ? undefined : groups.find((g) => g.panel === focus);
   // On Status Enter opens the selected item, so the list-with-a-detail line does not apply there.
-  const global = focus === 'status' || focus === 'keys' ? { ...groups[0]!, rows: groups[0]!.rows.filter(([k]) => k !== 'Enter') } : groups[0]!;
-  const ordered = alone ? [alone, DETAIL_GLOBAL] : [...(mine ? [mine] : []), global];
+  // The requests table moves and opens its own way, which its group says: only the rest is repeated.
+  const unsaid = focus === 'requests' ? ['↑ ↓  j k  PgUp PgDn', 'g  G  Home  End', 'Enter', 'J  K'] : focus === 'status' || focus === 'keys' ? ['Enter'] : [];
+  const global = { ...groups[0]!, rows: groups[0]!.rows.filter(([k]) => !unsaid.includes(k)) };
+  const shown = alone ? [alone, DETAIL_GLOBAL] : [...(mine ? [mine] : []), global];
+  const ordered = requests
+    ? shown
+    : shown.map((g) => ({ ...g, rows: g.rows.filter(([k]) => k !== 'v').map(([k, what]): [string, string] => [k.replace(/^1-5/, '1-4'), what]) }));
   useInput((_i, key) => {
     if (key.escape || key.return || _i === '?') onClose();
   });
@@ -85,7 +129,7 @@ export function HelpDialog({ onClose, focus, detail, incident }: { onClose: () =
     <Panel title="Keybindings" width={78} tone={color.accent}>
       {ordered.map((g, i) => (
         <Box key={g.title} flexDirection="column" marginTop={i === 0 ? 0 : 1}>
-          <SectionTitle>{g === mine ? `${g.title} (this panel)` : g.title}</SectionTitle>
+          <SectionTitle>{g.title === mine?.title ? `${g.title} (this panel)` : g.title}</SectionTitle>
           {g.rows.map(([k, what]) => (
             // The meaning wraps under itself, not under the key.
             <Box key={k + what}>
@@ -101,6 +145,15 @@ export function HelpDialog({ onClose, focus, detail, incident }: { onClose: () =
           ))}
         </Box>
       ))}
+      {mine?.panel === 'requests' ? (
+        <Box marginTop={1} flexDirection="column">
+          {FLAG_NOTES.map((l) => (
+            <Text key={l} dimColor>
+              {l}
+            </Text>
+          ))}
+        </Box>
+      ) : null}
       <Box marginTop={1} flexDirection="column">
         <SectionTitle>MARKS</SectionTitle>
         <Text dimColor>

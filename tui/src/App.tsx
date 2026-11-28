@@ -17,6 +17,8 @@ import type { Action } from './incidents.js';
 import { isChord, keyLabel, visibleKeys } from './keys.js';
 import { attention, otherIncidents, unknowns, upstreamAttention } from './risk.js';
 import { layout, hasFilterRow, listArea, summaryRows } from './layout.js';
+import { MAX_ROWS, nextFilter } from './requests.js';
+import type { RequestFilter } from './requests.js';
 import type { ListPanel } from './layout.js';
 import { Footer, noticeRows, TABS } from './ui/chrome.js';
 import type { HintItem, Notice, Tab } from './ui/chrome.js';
@@ -25,11 +27,12 @@ import { editText } from './ui/TextField.js';
 import { color } from './ui/theme.js';
 import { Command } from './ui/command.js';
 import { useArmed } from './ui/useArmed.js';
-import { AUDIT_LIMIT, useAdmin, useIncident, usePlaces } from './useAdmin.js';
+import { AUDIT_LIMIT, useAdmin, useIncident, useFlags, useIncidentDetails, useKeyRequests, usePlaces, useRequests } from './useAdmin.js';
 import { AuditMain, IncidentMain, KeyMain, StartMain, StatusMain, UnknownMain, UpstreamMain } from './views/detail.js';
 import type { Scroll } from './views/detail.js';
 import { IncidentView } from './views/incident.js';
-import { attentionItems, AuditPanel, KeysPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
+import { attentionItems, AuditPanel, KeysPanel, RequestsPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
+import { RequestsMain } from './views/requests.js';
 
 export interface AppProps {
   client: AdminClient;
@@ -70,6 +73,14 @@ type Mode =
 // The classic terminal size. Every view and dialog fits it.
 export const MIN_COLUMNS = 80;
 export const MIN_ROWS = 24;
+
+/** The columns the Requests strip takes of the row it shares with Audit. */
+const REQUESTS_STRIP = 28;
+
+/** Under this, the requests table takes the screen's width, with the panels above it. */
+const TABLE_WIDTH = 110;
+/** With an address column too, the operation and the model need this much. */
+const ADDRESS_TABLE_WIDTH = 180;
 
 /**
  * Whether a dialog is for answering this incident, so is moot once it is resolved. Enable
@@ -139,6 +150,12 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   // The incident open in the main panel, and the kinds ticked in "this was me".
   const [viewing, setViewing] = useState<number | undefined>();
   const [ticked, setTicked] = useState<ReadonlySet<PickKind>>(new Set());
+  // The requests table: whose, which of them, the selected one (by id, so it stays put as
+  // others arrive) and the newest request seen, past which a row is new.
+  const [requestKeyId, setRequestKeyId] = useState<string | undefined>();
+  const [requestFilter, setRequestFilter] = useState<RequestFilter>('all');
+  const [place, setPlace] = useState<{ id?: number; seen?: number }>({});
+  const tableRows = useRef(8);
 
   // A success fades. A failure stays until the next key press: someone who looks away
   // must not come back believing a key was disabled when it was not.
@@ -173,6 +190,61 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const shownKeyId = tab === 'status' ? attnItem?.key?.id : tab === 'keys' ? selectedKey?.id : undefined;
   // `now` is when the last poll answered.
   const places = usePlaces(client, shownKeyId, now);
+  // Not before the first poll has answered, which is when the token is known to be taken.
+  const answeredAt = link.state === 'ok' ? link.at : link.state === 'down' ? (link.lastOk ?? 0) : 0;
+  const exposed = data.settings?.expose_client_addresses;
+  const requests = useRequests(client, requestKeyId, requestFilter === 'refused' ? 'refused' : undefined, answeredAt, { selected: place.id, exposed });
+  const hasRequests = !requests.unsupported;
+  const tabs = useMemo(() => TABS.filter((t) => t.id !== 'requests' || hasRequests), [hasRequests]);
+  const incidentDetails = useIncidentDetails(client, hasRequests ? data.incidents : undefined, now, exposed);
+  const flag = useFlags(data.canaries, data.incidents, incidentDetails);
+  const flagged = useMemo(() => requests.rows.map((e) => ({ e, flag: flag(e) })), [requests.rows, flag]);
+  const tableShown = useMemo(() => (requestFilter === 'flagged' ? flagged.filter((r) => r.flag) : flagged), [flagged, requestFilter]);
+  /** The selected row's place: its own, or, when it is gone, the next older one's. */
+  const indexOf = (id: number | undefined) => {
+    if (id === undefined) return 0;
+    const at = tableShown.findIndex((r) => r.e.id <= id);
+    return at < 0 ? Math.max(0, tableShown.length - 1) : at;
+  };
+  const requestAt = indexOf(place.id);
+  const freshRows = place.seen === undefined ? 0 : tableShown.filter((r) => r.e.id > place.seen!).length;
+  // The newest request kman has answered with, whether or not the filter lets it through.
+  const newest = requests.rows[0]?.id;
+  // The selection starts at the newest row, and from then on stays with that request. All
+  // that was fetched by then counts as seen: a row flagged only later, when an incident's
+  // detail comes in, was there all along.
+  useEffect(() => {
+    const first = tableShown[0]?.e.id;
+    if (tab === 'requests' && place.id === undefined && first !== undefined) setPlace({ id: first, seen: newest });
+  }, [tab, place.id, tableShown]);
+  // A selected request that had to be let go is not passed off as another: the selection
+  // starts again at the newest, and says why.
+  const [untold, setUntold] = useState(false);
+  useEffect(() => {
+    if (!requests.lost) return;
+    setPlace({});
+    setUntold(true);
+  }, [requests.lost]);
+  // It is said once the table is what is on screen, and never over a failure still to be
+  // read or a change under way.
+  useEffect(() => {
+    if (!untold || tab !== 'requests' || viewing !== undefined || mode.kind !== 'none' || working !== undefined || notice?.tone === 'error') return;
+    setUntold(false);
+    setNotice({ tone: 'info', ofTable: true, text: 'Too many new requests to keep your place: showing the newest.' });
+  }, [untold, tab, viewing, mode.kind, working, notice]);
+  useEffect(() => {
+    if (tab !== 'requests' || viewing !== undefined) dropTableNotice();
+  }, [tab, viewing]);
+  // A kman found to have no events, after the panel was asked for, has no panel to be on.
+  useEffect(() => {
+    if (tab === 'requests' && !hasRequests) setTab('keys');
+  }, [tab, hasRequests]);
+  const keyRequests = useKeyRequests(client, hasRequests ? shownKeyId : undefined, now);
+  const lastRequests = useMemo(() => {
+    if (!hasRequests || !shownKeyId) return undefined;
+    const held = keyRequests.id === shownKeyId ? keyRequests : undefined;
+    return { rows: held?.events?.map((e) => ({ e, flag: flag(e) })), error: held?.error };
+  }, [hasRequests, shownKeyId, keyRequests, flag]);
   const incident = useIncident(client, viewing, now);
   const opened = incident.detail;
   // Before the detail arrives, the list says what it can.
@@ -222,11 +294,10 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     onView: (r) => setViewRows((c) => (c === r ? c : r)),
   };
   /** Whether the focused list has more than one row, so up and down have somewhere to go. */
-  const movable =
-    tab === 'status' ? items.length > 1 : tab === 'keys' ? visible.length > 1 : tab === 'upstreams' ? data.upstreams.length > 1 : data.audit.length > 1;
+  const rowCount = { status: items.length, keys: visible.length, upstreams: data.upstreams.length, audit: data.audit.length, requests: tableShown.length }[tab];
+  const movable = rowCount > 1 || (tab === 'requests' && requests.more && requests.rows.length < MAX_ROWS);
   /** Whether the focused list has rows to move over. */
-  const selectable =
-    tab === 'status' ? items.length > 0 : tab === 'keys' ? visible.length > 0 : tab === 'upstreams' ? data.upstreams.length > 0 : data.audit.length > 0;
+  const selectable = rowCount > 0;
   // A long failure takes more rows, which the body gives up.
   const shownNotice = link.state === 'denied' ? undefined : notice;
   const bodyRows = rows - 1 - noticeRows(shownNotice, columns);
@@ -245,8 +316,12 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     keys: Math.max(1, filterRow ? data.keys.length : visible.length) + (filterRow ? 1 : 0),
     upstreams: Math.max(1, data.upstreams.length),
     audit: Math.max(1, data.audit.length),
+    // Whose and how many are flagged: the rows themselves are the main panel's.
+    requests: 2,
   };
-  const lay = layout(columns, bodyRows, tab, wants);
+  const panels = tabs.map((t) => t.id);
+  const beside = layout(columns, bodyRows, tab, wants, { panels });
+  const lay = tab === 'requests' && !(beside.wide && beside.mainW >= (exposed ? ADDRESS_TABLE_WIDTH : TABLE_WIDTH)) ? layout(columns, bodyRows, tab, wants, { panels, stacked: true }) : beside;
   const loaded = link.state === 'ok' || data.keys.length > 0 || data.upstreams.length > 0 || data.audit.length > 0;
   const usable = loaded && link.state !== 'denied';
 
@@ -260,7 +335,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
 
   /** Rows of the focused list on screen at once, in the layout that is drawn, so a page moves by what was shown. */
   function pageRows(): number {
-    return Math.max(1, listArea(lay.heights[tab], listPanel).rows);
+    return tab === 'requests' ? tableRows.current : Math.max(1, listArea(lay.heights[tab], listPanel).rows);
   }
 
   function move(to: number | 'first' | 'last') {
@@ -277,10 +352,65 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       setUpstreamSel((c) => step(c, data.upstreams.length));
     } else if (tab === 'audit') {
       setAuditSel((c) => step(c, data.audit.length));
+    } else if (tab === 'requests') {
+      // Moving past the oldest row asks for the ones before it.
+      const end = tableShown.length - 1;
+      if (to === 'last' ? requestAt >= end : typeof to === 'number' && requestAt + to > end) requests.loadOlder();
+      setPlace((p) => {
+        const id = tableShown[step(indexOf(p.id), tableShown.length)]?.e.id;
+        if (id === undefined) return p;
+        // At the top, as after g, everything has been seen; going up sees what is passed.
+        // Before the selection was pinned, all that was fetched had been seen.
+        const top = id === tableShown[0]?.e.id;
+        return { id, seen: Math.max(id, (top ? newest : (p.seen ?? newest)) ?? id) };
+      });
     }
   }
 
+  /** Another table, or this one afresh: nothing in it has been lost. */
+  function startTable() {
+    setPlace({});
+    setUntold(false);
+    dropTableNotice();
+  }
+
+  function dropTableNotice() {
+    setNotice((n) => (n?.ofTable ? undefined : n));
+  }
+
+  /** Shows the requests of one key, or of all of them, from the newest. */
+  function showRequests(keyId: string | undefined, filter: RequestFilter = requestFilter) {
+    setRequestKeyId(keyId);
+    setRequestFilter(filter);
+    startTable();
+    goTab('requests');
+  }
+
+  /** Enter on a request: its incident, else its key. */
+  function openRequest() {
+    const row = tableShown[requestAt];
+    if (!row) return;
+    if (row.flag?.incident !== undefined) return open(row.flag.incident);
+    const k = data.keys.find((x) => x.id === row.e.key_id);
+    if (k) {
+      setFilter('');
+      setKeySel(k.id);
+      return goTab('keys');
+    }
+    setNotice({
+      tone: 'info',
+      text: row.flag?.canary
+        ? `A canary with no open incident: kman canary show ${row.e.key_id}`
+        : row.e.key_id
+          ? 'Its key is not in the list.'
+          : 'It presented no key kman knows: there is nothing to open.',
+    });
+  }
+
   function goTab(t: Tab) {
+    // Back at the table with no row seen above the selection, it starts at the newest again.
+    const newestSeen = !tableShown.some((r) => r.e.id > (place.id ?? Infinity) && r.e.id <= (place.seen ?? 0));
+    if (t === 'requests' && tab !== t && newestSeen) setPlace({});
     setTab(t);
     setDetail(false);
     setViewing(undefined);
@@ -669,11 +799,11 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
         return;
       }
       const n = Number(input);
-      if (n >= 1 && n <= TABS.length) return goTab(TABS[n - 1]!.id);
-      const at = TABS.findIndex((t) => t.id === tab);
-      if (key.tab) return goTab(TABS[(at + (key.shift ? TABS.length - 1 : 1)) % TABS.length]!.id);
-      if (key.rightArrow || input === 'l') return goTab(TABS[(at + 1) % TABS.length]!.id);
-      if (key.leftArrow || input === 'h') return goTab(TABS[(at + TABS.length - 1) % TABS.length]!.id);
+      if (n >= 1 && n <= tabs.length) return goTab(tabs[n - 1]!.id);
+      const at = tabs.findIndex((t) => t.id === tab);
+      if (key.tab) return goTab(tabs[(at + (key.shift ? tabs.length - 1 : 1)) % tabs.length]!.id);
+      if (key.rightArrow || input === 'l') return goTab(tabs[(at + 1) % tabs.length]!.id);
+      if (key.leftArrow || input === 'h') return goTab(tabs[(at + tabs.length - 1) % tabs.length]!.id);
 
       // A page is what the list shows, less one row, so one row of the old page is still in view.
       if (key.pageUp) return move(-Math.max(1, pageRows() - 1));
@@ -692,6 +822,23 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       // The detail panel has no actions of its own: what the list does waits for Esc.
       if (detail) return;
       if (input === 'n') return offline() || busyNow() ? undefined : setMode({ kind: 'create' });
+      if (tab === 'requests') {
+        if (key.return) return openRequest();
+        if (input === 'f') {
+          startTable();
+          return setRequestFilter(nextFilter);
+        }
+        if (key.escape && requestKeyId !== undefined) {
+          startTable();
+          return setRequestKeyId(undefined);
+        }
+        return;
+      }
+      if (input === 'v' && hasRequests && (tab === 'keys' || tab === 'status')) {
+        const id = tab === 'keys' ? selectedId : (attnItem?.key?.id ?? attnItem?.incident?.key_id);
+        // All of the key's requests, whatever the table was last narrowed to.
+        if (id !== undefined) return showRequests(id, 'all');
+      }
       // Enter on a row marked as an incident opens it.
       const marked = tab === 'status' ? (attnItem?.incident ?? incidentFor(data.incidents, attnItem?.key?.id)) : tab === 'keys' ? incidentFor(data.incidents, selectedId) : undefined;
       if (key.return && marked) return open(marked.id);
@@ -747,6 +894,49 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   const upSel = Math.min(upstreamSel, Math.max(0, data.upstreams.length - 1));
   const auSel = Math.min(auditSel, Math.max(0, data.audit.length - 1));
   const reading = detail || viewing !== undefined;
+  const requestKey = data.keys.find((k) => k.id === requestKeyId);
+  // A canary, or a key that has gone, is named by its requests or its id.
+  const requestKeyName =
+    requestKeyId === undefined
+      ? undefined
+      : requestKey
+        ? keyLabel(requestKey)
+        : requests.rows[0]?.key_name || data.incidents?.find((i) => i.key_id === requestKeyId)?.key_name || requestKeyId;
+  const flagsMissing = data.canariesError
+    ? 'Canaries did not load: their requests may not be flagged.'
+    : data.incidentsError
+      ? 'Incidents did not load: flags may be old or missing.'
+      : incidentDetails.incomplete
+        ? 'An incident is still loading or did not load: flags may be missing.'
+        : undefined;
+  // On a short screen one row holds both of the last two strips.
+  const requestsW = lay.shared ? REQUESTS_STRIP : lay.leftW;
+  const lastPanels = (
+    <Box flexDirection={lay.shared ? 'row' : 'column'} flexShrink={0}>
+      <AuditPanel
+        width={lay.leftW - (lay.shared ? REQUESTS_STRIP : 0)}
+        height={h.audit}
+        focused={tab === 'audit' && !reading && !popup}
+        audit={data.audit}
+        names={names}
+        fresh={fresh}
+        selected={auditSel}
+        now={now}
+      />
+      {hasRequests ? (
+        <RequestsPanel
+          width={requestsW}
+          height={h.requests}
+          focused={tab === 'requests' && !reading && !popup}
+          keyName={lay.shared ? undefined : requestKeyName}
+          brief={lay.shared}
+          danger={flagged.filter((r) => r.flag?.severity === 'danger').length}
+          warn={flagged.filter((r) => r.flag?.severity === 'warn').length}
+          loaded={requests.loaded ? flagged.length : undefined}
+        />
+      ) : null}
+    </Box>
+  );
   const left = (
     <Box flexDirection="column" width={lay.leftW} height={lay.wide ? bodyRows : undefined} flexShrink={0}>
       <StatusPanel
@@ -785,16 +975,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
         keys={data.keys}
         selected={upstreamSel}
       />
-      <AuditPanel
-        width={lay.leftW}
-        height={h.audit}
-        focused={tab === 'audit' && !reading && !popup}
-        audit={data.audit}
-        names={names}
-        fresh={fresh}
-        selected={auditSel}
-        now={now}
-      />
+      {lastPanels}
     </Box>
   );
 
@@ -970,7 +1151,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
   } else if (mode.kind === 'help') {
     body = (
       <Centered width={dw} height={bodyRows}>
-        <HelpDialog focus={tab} detail={detail} incident={viewing !== undefined} onClose={() => setMode({ kind: 'none' })} />
+        <HelpDialog focus={tab} detail={detail} incident={viewing !== undefined} requests={hasRequests} onClose={() => setMode({ kind: 'none' })} />
       </Centered>
     );
   } else if (mode.kind === 'confirm') {
@@ -1024,9 +1205,24 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     const attn = attnItem?.key;
     const attnUp = attnItem?.upstream;
     const main =
-      tab === 'status' ? (
+      tab === 'requests' ? (
+        <RequestsMain
+          width={lay.mainW}
+          height={lay.mainH}
+          rows={tableShown}
+          selected={requestAt}
+          filter={requestFilter}
+          keyName={requestKeyName}
+          state={requests}
+          stale={link.state !== 'ok' || requests.error !== undefined}
+          incomplete={flagsMissing}
+          fresh={freshRows}
+          now={now}
+          onView={(r) => (tableRows.current = r)}
+        />
+      ) : tab === 'status' ? (
         attn ? (
-          <KeyMain key={attn.id} keyData={attn} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} watch={watch} places={places} />
+          <KeyMain key={attn.id} keyData={attn} width={lay.mainW} height={lay.mainH} now={now} compact={!lay.wide} scroll={scroll} watch={watch} places={places} requests={lastRequests} />
         ) : attnItem?.incident ? (
           <IncidentMain key={attnItem.id} incident={attnItem.incident} width={lay.mainW} height={lay.mainH} scroll={scroll} now={now} />
         ) : attnItem?.unknown ? (
@@ -1052,6 +1248,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
           scroll={scroll}
           watch={watch}
           places={places}
+          requests={lastRequests}
           none={data.keys.length === 0 ? 'No keys yet.' : `No key matches "${filter}".`}
         />
       ) : tab === 'upstreams' ? (
@@ -1095,7 +1292,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
               ? hintsFor({
                   tab,
                   mode: mode.kind,
-                  key: selectedKey,
+                  key: tab === 'status' ? attnItem?.key : selectedKey,
+                  canary: Boolean(attnItem?.incident),
                   filtered: filter !== '',
                   selectable,
                   // A part that did not load has nothing to open.
@@ -1111,6 +1309,9 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
                   hasKeys: data.keys.length > 0,
                   scrollable: scrollMax > 0,
                   detail,
+                  panels: tabs.length,
+                  requests: hasRequests,
+                  oneKey: requestKeyId !== undefined,
                 })
               : [{ k: 'r', label: 'retry' }, { k: 'q', label: 'quit' }]
         }
@@ -1164,6 +1365,13 @@ interface HintState {
   marked: boolean;
   /** kman is answering, with an error. */
   answered: boolean;
+  /** How many panels there are, and whether the requests one is among them. */
+  panels: number;
+  requests: boolean;
+  /** The requests table shows one key. */
+  oneKey: boolean;
+  /** The selected Status row is a canary's incident, whose key is not listed. */
+  canary: boolean;
   offline: boolean;
   /** A change is being sent: another cannot start. */
   working: boolean;
@@ -1183,7 +1391,8 @@ interface HintState {
  * missed go first (`rank`): scrolling and the panel keys, then selecting, and last the
  * actions on the selected row, which stay unless nothing else can.
  */
-function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, offline, working, canCreate, hasKeys, scrollable, detail, openable, incident, marked, answered }: HintState): HintItem[] {
+function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, offline, working, canCreate, hasKeys, scrollable, detail, openable, incident, marked, answered, panels, requests, oneKey, canary }: HintState): HintItem[] {
+  const jump = `1-${panels}`;
   const canChange = !offline && !working;
   if (mode === 'confirm' || mode === 'reset') return [{ k: 'y', label: 'yes' }, { k: 'n', label: 'cancel' }];
   if (mode === 'resolve' || mode === 'thisWasMe') return [{ k: 'Esc', label: 'cancel', always: true }];
@@ -1214,7 +1423,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, of
       ...(scrollable ? [{ k: '↑↓', label: 'scroll', rank: 3.3 }] : []),
       { k: 'Esc', label: 'back', always: true },
       { k: 'r', label: offline ? 'retry' : 'refresh', always: offline, rank: 2 },
-      { k: '1-4', label: 'panels', rank: 1 },
+      { k: jump, label: 'panels', rank: 1 },
       { k: '?', label: 'help', always: true },
       { k: 'q', label: 'quit', always: true },
     ];
@@ -1225,7 +1434,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, of
       { k: 'PgUp/PgDn', label: 'page', rank: 1 },
       { k: 'g/G', label: 'top/bottom', rank: 0 },
       { k: 'Esc', label: 'back to list', always: true },
-      { k: '1-4', label: 'panels', rank: 0 },
+      { k: jump, label: 'panels', rank: 0 },
       { k: '?', label: 'help', always: true },
       { k: 'q', label: 'quit', always: true },
     ];
@@ -1234,7 +1443,7 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, of
     { k: 'r', label: offline ? 'retry' : 'refresh', always: offline, rank: 2 },
     // The detail's border already says how to scroll, so this is the first of these to go.
     ...(scrollable ? [{ k: 'J/K', label: 'scroll', rank: 2.9 }] : []),
-    { k: '1-4', label: 'panels', rank: 3.2 },
+    { k: jump, label: 'panels', rank: 3.2 },
     { k: '?', label: 'help', always: true },
     { k: 'q', label: 'quit', always: true },
   ];
@@ -1255,13 +1464,31 @@ function hintsFor({ tab, mode, key, filtered, selectable, movable, nameReady, of
       ...open,
       // Keep the selected key’s actions visible before the global create shortcut.
       ...(canChange ? [...create, ...act, ...(key && key.status !== 'revoked' ? [{ k: 'x', label: 'revoke', rank: 4.5 }] : [])] : []),
+      ...(key && requests ? [{ k: 'v', label: 'requests', rank: 2.95 }] : []),
       ...(key && !offline ? [{ k: 'c', label: 'IPs', rank: 3 }] : []),
       ...(filtered ? [{ k: 'Esc', label: 'clear filter', always: true }] : hasKeys ? [{ k: '/', label: 'filter', rank: 6 }] : []),
       ...common,
     ];
   }
   if (tab === 'status') {
-    return [...select, ...(openable ? [{ k: 'Enter', label: marked ? 'incident' : 'open', rank: 5 }] : []), ...create, ...common];
+    return [
+      ...select,
+      ...(openable ? [{ k: 'Enter', label: marked ? 'incident' : 'open', rank: 5 }] : []),
+      ...(requests && (key || canary) ? [{ k: 'v', label: 'requests', rank: 2.95 }] : []),
+      ...create,
+      ...common,
+    ];
+  }
+  if (tab === 'requests') {
+    return [
+      ...select,
+      ...(selectable ? [{ k: 'Enter', label: 'open', rank: 5 }] : []),
+      { k: 'f', label: 'filter', rank: 4.5 },
+      { k: 'g', label: 'newest', rank: 4 },
+      ...(oneKey ? [{ k: 'Esc', label: 'all keys', always: true }] : []),
+      // J and K have nothing to scroll here.
+      ...common.filter((h) => h.k !== 'J/K'),
+    ];
   }
   return [...select, ...open, ...create, ...common];
 }

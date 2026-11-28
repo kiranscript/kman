@@ -118,6 +118,16 @@ describe('wrapLines', () => {
   it('splits a word longer than the width', () => {
     expect(wrapLines('abcdefghij', 4, 5)).toEqual(['abcd', 'efgh', 'ij']);
   });
+
+  it('counts the cells a wide character takes, wrapping and cutting', () => {
+    expect(wrapLines('ab 界界界界tail', 5, 9)).toEqual(['ab', '界界', '界界t', 'ail']);
+    expect(wrapLines('界界 界界', 5, 9)).toEqual(['界界', '界界']);
+    const cut = wrapLines('界界界界界界', 5, 2);
+    expect(cut).toEqual(['界界', '界界…']);
+    expect(cut.every((l) => textWidth(l) <= 5)).toBe(true);
+    // One too wide for the line is still taken, alone.
+    expect(wrapLines('界a', 1, 5)).toEqual(['界', 'a']);
+  });
 });
 
 describe('terminal cells', () => {

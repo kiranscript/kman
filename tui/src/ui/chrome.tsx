@@ -6,12 +6,14 @@ import { color, okGlyph, severityGlyph } from './theme.js';
 import type { Link } from '../useAdmin.js';
 
 /** The panels on the left, in order. The number is the key that jumps to each. */
-export type Tab = 'status' | 'keys' | 'upstreams' | 'audit';
+export type Tab = 'status' | 'keys' | 'upstreams' | 'audit' | 'requests';
 export const TABS: { id: Tab; label: string }[] = [
   { id: 'status', label: 'Status' },
   { id: 'keys', label: 'Keys' },
   { id: 'upstreams', label: 'Upstreams' },
   { id: 'audit', label: 'Audit' },
+  // Last, so that a kman without events, which leaves it out, keeps the others' numbers.
+  { id: 'requests', label: 'Requests' },
 ];
 
 /** "live", "offline", "token refused": the connection in one word, with a glyph. */
@@ -46,6 +48,8 @@ export function useTick(ms: number): number {
 
 export interface Notice {
   untilReconnect?: boolean;
+  /** About the requests table on screen: it goes when that table does. */
+  ofTable?: boolean;
   text: string;
   tone: 'ok' | 'error' | 'info';
 }
