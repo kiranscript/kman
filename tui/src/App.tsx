@@ -97,8 +97,9 @@ const maybeRotated = (label: string) => `If ${label} was rotated, run ${cli.rota
 /**
  * What to say when the incident that ended records a rotation of the key, whose new secret
  * is not on this screen; `how` says what ended the incident. Another rotation is advised
- * only when this screen's own answer was lost and the rotation is this operator's (`me`):
- * after anyone else's, one more would end the secret they were given. kman records the
+ * only when this screen's own answer was lost and the rotation is known to be this
+ * operator's (`me`): after anyone else's, one more would end the secret they were given. So
+ * while `me` is unknown, whoever is recorded is to be asked first. kman records the
  * rotation in the same step as it resolves the incident, so none recorded is none made.
  */
 function rotationSaid(
@@ -109,9 +110,9 @@ function rotationSaid(
 ): string | undefined {
   const done = ended.actions?.find((x) => x.action === 'key.rotate' && x.target_id === key.id);
   if (!done) return undefined;
-  if (lost && (!me || done.actor === me)) {
-    return `${key.label} was rotated by ${done.actor}, but no new secret arrived here: run ${cli.rotate(key.label)} for one you can see. ${how}`;
-  }
+  const gone = `${key.label} was rotated by ${done.actor}, but no new secret arrived here`;
+  if (lost && !me) return `${gone}: check with ${done.actor} before rotating it again. ${how}`;
+  if (lost && done.actor === me) return `${gone}: run ${cli.rotate(key.label)} for one you can see. ${how}`;
   return `${how} ${key.label} was rotated by ${done.actor}, and the new secret did not come here: another rotation would end it.`;
 }
 
@@ -434,6 +435,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
       return err instanceof Error ? err.message : String(err);
     } finally {
       acting.current = false;
+      incident.outdate();
       setWorking(undefined);
     }
   }
@@ -454,6 +456,8 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
         throw err;
       }
     });
+    // What was read after a failure is the newest there is: drawn whether or not a poll follows.
+    if (after) incident.show(after);
     void refresh();
     if (!error) return {};
     resolving.current.delete(id);
@@ -495,7 +499,11 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     setNotice(
       by && data.actor && by !== data.actor
         ? { tone: 'error', text: `Incident #${id} was already resolved by ${by} as ${resolutionWord(as)}.` }
-        : { tone: 'ok', text: `Resolved incident #${id} as ${resolutionWord(as)}.` },
+        : {
+            tone: 'ok',
+            // Not knowing who this is, whoever kman records is named.
+            text: by && !data.actor ? `Incident #${id} is resolved as ${resolutionWord(as)}, by ${by}.` : `Resolved incident #${id} as ${resolutionWord(as)}.`,
+          },
     );
   }
 
@@ -535,7 +543,7 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     setNotice(
       by && data.actor && by !== data.actor
         ? { tone: 'error', text: `Incident #${id} was already resolved by ${by} as false positive.${said}` }
-        : { tone: 'ok', text: `#${id} resolved: false positive.${said}` },
+        : { tone: 'ok', text: `#${id} resolved: false positive${by && !data.actor ? `, by ${by}` : ''}.${said}` },
     );
   }
 

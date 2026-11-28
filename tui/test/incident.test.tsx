@@ -1,6 +1,6 @@
 // The incident view: opening it, what it shows, each answer it can send and the safeguard
 // each one has.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api.js';
 import { App } from '../src/App.js';
 import { detection, fakeClient, incident, key, leak, NOW, tick, until } from './fakes.js';
@@ -74,7 +74,8 @@ describe('opening an incident', () => {
     const m = mount(leaked(), WIDE);
     await opened(m);
     const s = m.screen();
-    expect(s).toContain('! HIGH · OPEN · opened 10d ago · last fired 10d ago · 3 detections');
+    // The app reads the real clock, so how long ago the fixtures were grows.
+    expect(s).toMatch(/! HIGH · OPEN · opened \d+d ago · last fired \d+d ago · 3 detections/);
     expect(s).toMatch(/new country +NL +usually US \(9100 requests\)/);
     expect(s).toMatch(/new ASN +AS60729 Stiftung/);
     expect(s).toMatch(/new client +curl\/8 +usually openai-python\/1/);
@@ -601,6 +602,19 @@ describe('safety', () => {
     m.unmount();
   });
 
+  it('takes keys though the wall clock is stepped back', async () => {
+    const m = mount();
+    await opened(m);
+    // As a time sync does, to before the view appeared.
+    const wall = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 60_000);
+    await m.press('d');
+    expect(m.screen()).toContain('Disable this key?');
+    await m.press('y');
+    wall.mockRestore();
+    expect(changes(m.client)).toEqual(['disable k_prod 12']);
+    m.unmount();
+  });
+
   it('ignores a choice, a y, a tick and Enter in a dialog just shown, but not Esc', async () => {
     const m = mount(leaked(), SMALL, 600);
     await opened(m);
@@ -751,6 +765,86 @@ describe('safety', () => {
       expect(said, failure.message).not.toContain('kman key rotate prod-api');
       m.unmount();
     }
+  });
+
+  it('advises no rotation over one recorded while who this is is unknown', async () => {
+    const client = leaked();
+    client.whoami = async () => {
+      throw new ApiError('internal', 'database is locked', 500);
+    };
+    const rotate = client.rotateKey.bind(client);
+    client.rotateKey = async (id, n) => {
+      await rotate(id, n);
+      for (const x of client.recorded[12]!.actions!) x.actor = 'alice';
+      throw new ApiError('internal', 'the admin API answered 502', 502);
+    };
+    const m = mount(client, WIDE);
+    await opened(m);
+    await m.press('o', 'prod-api', ENTER);
+    const said = m.screen().replace(/\s+/g, ' ');
+    expect(said).toContain('prod-api was rotated by alice, but no new secret arrived here: check with alice before rotating it again');
+    expect(said).not.toContain('kman key rotate prod-api');
+    m.unmount();
+  });
+
+  it('names who is recorded as resolving it while who this is is unknown', async () => {
+    const client = leaked();
+    client.whoami = async () => {
+      throw new ApiError('internal', 'database is locked', 500);
+    };
+    const wasMe = client.thisWasMe.bind(client);
+    client.thisWasMe = async (id, input) => {
+      const got = await wasMe(id, input);
+      return { ...got, incident: { ...got.incident, resolved_by: 'alice' } };
+    };
+    const m = mount(client, WIDE);
+    await opened(m);
+    await m.press('m', ' ', ENTER);
+    const said = m.screen().replace(/\s+/g, ' ');
+    expect(said).toContain('#12 resolved: false positive, by alice. Added 1 known source.');
+    m.unmount();
+  });
+
+  it('shows an incident whose read takes longer than the polls', async () => {
+    const client = leaked();
+    const read = client.incident.bind(client);
+    client.incident = async (id) => {
+      await tick(320);
+      return read(id);
+    };
+    const m = mount(client, WIDE, 0, 100);
+    await loaded(m);
+    await m.press('j', ENTER);
+    await until(() => m.screen().includes('WHAT FIRED'), 'the incident');
+    m.unmount();
+  });
+
+  it('shows it resolved once that is read, though no poll follows and an older read comes after', async () => {
+    const client = leaked();
+    const read = client.incident.bind(client);
+    const m = mount(client, WIDE, 0, 100);
+    await opened(m);
+    // A read from before it was resolved, answered only at the end.
+    const before = await read(12);
+    let release: (() => void) | undefined;
+    client.incident = async () => new Promise((r) => (release = () => r(before)));
+    await until(() => release !== undefined, 'the slow read');
+    client.incident = read;
+    const acknowledge = client.acknowledgeIncident.bind(client);
+    client.acknowledgeIncident = async (id) => {
+      Object.assign(client.incidents[0]!, { state: 'resolved', resolution: 'confirmed', resolved_by: 'alice', resolved_at: new Date(NOW).toISOString() });
+      client.listKeys = async () => {
+        throw new ApiError('internal', 'database is locked', 500);
+      };
+      return acknowledge(id);
+    };
+    await m.press('a');
+    expect(m.screen()).toContain('Resolved by alice as confirmed');
+    release!();
+    await m.settle();
+    expect(m.screen()).toContain('Resolved by alice as confirmed');
+    expect(m.screen()).not.toContain('HIGH · OPEN');
+    m.unmount();
   });
 
   it('takes a proxy’s 502 after a rotation for a rotation, not a failure', async () => {
