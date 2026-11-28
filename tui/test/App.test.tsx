@@ -354,7 +354,6 @@ describe('App', () => {
       const s = m.screen();
       // ci-evals (90% of its cap) and uncapped (no cap): two rows, so two everywhere.
       expect(s).toContain('NEEDS ATTENTION');
-      expect(s).toContain('[1] Status ▲1');
       expect(s).toContain('1 of 2');
       expect(s).toContain('uncapped');
       expect(s).toContain('no cap');
@@ -803,9 +802,9 @@ describe('App', () => {
       const m = mount(client, { columns: 80, rows: 24 });
       await loaded(m);
       // The spend is the last part of the detail: scroll down to it.
-      for (let i = 0; i < 10 && !m.screen().includes('12k reqs'); i++) await m.press('J');
+      for (let i = 0; i < 10 && !m.screen().includes('12k requests'); i++) await m.press('J');
       expect(m.screen()).toContain('424 requests');
-      expect(m.screen()).toContain('12k reqs');
+      expect(m.screen()).toContain('12k requests');
       m.unmount();
     });
 
@@ -1519,7 +1518,7 @@ describe('App', () => {
       const m = mount(client, { columns: 120, rows: 40 });
       await loaded(m);
       await m.press('2');
-      expect(m.screen()).toContain('123k reqs');
+      expect(m.screen()).toContain('123k requests');
       m.unmount();
     });
 
@@ -1852,9 +1851,9 @@ describe('review round 1', () => {
     for (const [size, text] of [
       // One line is all the strip has: the price goes before the address, and shows when there is room.
       [SMALL, /owner @ 127\.0\.0\.1:8081/],
-      [{ columns: 100, rows: 24 }, /price (3d|data 3 days old)/],
+      [{ columns: 100, rows: 24 }, /prices 3d old/],
       // A fresh price joins the first line, in its short form.
-      [SIZE, /updated .* · price 3d/],
+      [SIZE, /updated .* · prices 3d old/],
     ] as const) {
       const m = mount(fakeClient(), size);
       await loaded(m);
@@ -2207,7 +2206,6 @@ describe('review round 2', () => {
     const m = mount(client, { columns: 100, rows: 30 });
     await loaded(m);
     expect(m.screen()).not.toContain('every key is capped and current');
-    expect(m.screen()).toMatch(/Status !1 ▲1/);
     const row = lines(m).find((l) => l.includes('! ollama'))!;
     expect(row).toContain('no credential');
     // The worst comes first, so the upstream with no credential is the selected row.
@@ -2350,12 +2348,12 @@ describe('review round 3', () => {
     m.unmount();
   });
 
-  it('counts what needs a look by how much, and the border says the same number', async () => {
+  it('says on the border how many need a look, with no marks in the title', async () => {
     const client = fakeClient();
     client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
     const m = mount(client, { columns: 140, rows: 40 });
     await loaded(m);
-    expect(lines(m)[0]).toMatch(/Status !1 ▲1/);
+    expect(lines(m)[0]).toMatch(/\[1\] Status [─━]/);
     expect(m.screen()).toContain('1 of 2');
     expect(m.screen()).not.toContain('need attention');
     m.unmount();
@@ -2509,7 +2507,7 @@ describe('review round 4', () => {
     client.upstreams.push({ ...upstream, id: 'up_2', name: 'ollama', host: 'ollama.internal', port: 11434, tls: false, credentials: [] });
     const m = mount(client, { columns: 140, rows: 40 });
     await loaded(m);
-    expect(lines(m).find((l) => l.includes('ollama'))).toContain('!');
+    expect(lines(m).find((l) => l.includes('! ollama'))).toBeDefined();
     await m.press('3');
     await m.press('j');
     expect(lines(m).find((l) => /^[│┃] ollama/.test(l))).toContain('! no credential');
@@ -2874,7 +2872,7 @@ describe('review round 10', () => {
   it('puts the price on the first line of Status at 80x24 when it is fresh', async () => {
     const m = mount(fakeClient(), { columns: 80, rows: 24 });
     await loaded(m);
-    expect(lines(m).find((l) => l.includes('updated'))).toMatch(/price 3d/);
+    expect(lines(m).find((l) => l.includes('updated'))).toMatch(/prices 3d old/);
     m.unmount();
   });
 
@@ -3051,7 +3049,8 @@ describe('who and where come first', () => {
     const first = lines(m).findIndex((l) => l.includes('NEEDS ATTENTION'));
     expect(lines(m)[first + 1]).toMatch(/! checkout +new country \+1/);
     // Its detail names the incident and the command that shows it.
-    expect(m.screen()).toContain('incident #7 (high): new country, new ASN');
+    expect(m.screen()).toContain('! incident #7 · Enter to answer');
+    expect(m.screen()).toContain('high: new country, new ASN');
     expect(m.screen()).toContain('kman incident show 7');
     m.unmount();
   });

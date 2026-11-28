@@ -57,10 +57,19 @@ describe('layout', () => {
     expect(stacked.mainH).toBeGreaterThanOrEqual(30);
   });
 
-  it('gives the panels about two fifths of a wide screen', () => {
-    expect(layout(100, 30, 'keys').leftW).toBe(44);
-    expect(layout(140, 40, 'keys').leftW).toBe(56);
-    expect(layout(200, 40, 'keys').leftW).toBe(56);
+  it('keeps the panels narrow on a wide screen, so the main panel gets the width', () => {
+    expect([100, 140, 150, 160, 200, 300].map((c) => layout(c, 40, 'keys').leftW)).toEqual([44, 44, 45, 48, 48, 48]);
+    expect(layout(200, 40, 'keys').mainW).toBe(152);
+  });
+
+  it('widens the panels for a long address, only where the screen can give enough', () => {
+    const left = (columns: number, address: number) => layout(columns, 40, 'keys', Infinity, { address }).leftW;
+    expect([30, 44, 49, 56].map((a) => left(140, a))).toEqual([44, 44, 49, 56]);
+    // Widening that would not fit it is no use.
+    expect(left(140, 57)).toBe(44);
+    expect(left(100, 49)).toBe(44);
+    expect(left(120, 49)).toBe(49);
+    expect(left(80, 49)).toBe(80);
   });
 
   it('gives each wide panel what it can use, two lines at least, and the rest to the log so both columns end together', () => {

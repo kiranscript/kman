@@ -1,4 +1,5 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { fakeClient, incident, key, tick, until } from './fakes.js';
 import { render } from './render.js';
 
 // The colours the selected line is drawn with. Ink only writes them when told the output
@@ -42,6 +43,49 @@ const BLUE_BG = `${esc}44m`;
 const DIM = `${esc}2m`;
 const INVERSE = `${esc}7m`;
 const plain = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, '');
+
+describe.each([{ NO_COLOR: '' }, { NO_COLOR: '1' }])('what is dim, with NO_COLOR=$NO_COLOR', ({ NO_COLOR }) => {
+  it('in Keys is the active ones, mark and word, and nothing of the others', async () => {
+    vi.resetModules();
+    vi.stubEnv('NO_COLOR', NO_COLOR);
+    const { KeysPanel } = await import('../src/views/panels.js');
+    const keys = [
+      key({ id: 'a', name: 'working' }),
+      key({ id: 'b', name: 'paused', status: 'disabled' }),
+      key({ id: 'c', name: 'ended', status: 'revoked' }),
+      key({ id: 'd', name: 'lapsed', expired: true }),
+    ];
+    const app = render(
+      <KeysPanel width={60} height={10} focused={false} keys={keys} all={keys} total={4} filter="" filtering={false} hasUpstreams now={0} />,
+      60,
+    );
+    // The line between the panel's borders, which are dim themselves when it is not focused.
+    const inside = (name: string) =>
+      (app.lastFrame() ?? '').split('\n').find((l) => l.includes(name))!.replace(/^[^│]*│(\u001b\[[0-9;]*m)*/, '').replace(/(\u001b\[[0-9;]*m)*│[^│]*$/, '');
+    // The mark itself is dim, not only the word after it.
+    expect(inside('working')).toMatch(/\u001b\[2m(\u001b\[[0-9;]*m)*●/);
+    // And the word: no end of dim between where it starts and the word.
+    expect(inside('working')).toMatch(/\u001b\[2m(?:(?!\u001b\[22m).)*active/);
+    for (const name of ['paused', 'ended', 'lapsed']) expect(inside(name), name).not.toContain(DIM);
+    app.unmount();
+  });
+
+  it('in a key’s detail is the command under its incident', async () => {
+    vi.resetModules();
+    vi.stubEnv('NO_COLOR', NO_COLOR);
+    const { App } = await import('../src/App.js');
+    const client = fakeClient();
+    client.incidents = [incident({ id: 12, key_id: 'k_checkout', key_name: 'checkout' })];
+    const app = render(<App client={client} url="http://127.0.0.1:8081" size={{ columns: 140, rows: 40 }} intervalMs={60_000} />, 140);
+    await until(() => plain(app.lastFrame() ?? '').includes('live'), 'the first load');
+    app.stdin.write('2');
+    await tick(150);
+    const line = (text: string) => (app.lastFrame() ?? '').split('\n').find((l) => plain(l).includes(text))!;
+    expect(line('kman incident show 12')).toMatch(/\u001b\[2m(\u001b\[[0-9;]*m)*kman incident show 12/);
+    expect(line('Enter to answer')).not.toMatch(/\u001b\[2m(\u001b\[[0-9;]*m)*[!▲] incident/);
+    app.unmount();
+  });
+});
 
 describe('the selected line', () => {
   it('is drawn in the default foreground on the bar of the focused panel', async () => {

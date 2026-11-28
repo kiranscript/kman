@@ -5,6 +5,7 @@ import type { DOMElement } from 'ink';
 import { useEffect, useRef, useState } from 'react';
 import type { AuditEntry, Incident, Key, Place, PlaceKind, Upstream } from '../api.js';
 import { ago, capMoney, clock, dateTime, fit, fitMiddle, money, padEnd, plural, requestsText, shortCount, textWidth, until } from '../format.js';
+import { incidentFor } from '../incidents.js';
 import { keyLabel } from '../keys.js';
 import { incidentRisk, keyRisks, neverExpires, ruleText, unknowns } from '../risk.js';
 import type { Risk, Unknown, Watch } from '../risk.js';
@@ -160,25 +161,33 @@ function ScrollFrame({
 
 // ---- Key ------------------------------------------------------------------
 
-/** "today  ████░░░░ $0.9 / $1" and, when there is room, its request count under it. */
-function SpendRow({ which, k, barW, roomy }: { which: 'today' | 'month'; k: Key; barW: number; roomy: boolean }) {
+/**
+ * "today  ████░░░░ $0.9 / $1", with its request count beside it on a narrow screen where
+ * there is room, and otherwise under it: nothing is cut for the count.
+ */
+function SpendRow({ which, k, barW, roomy, width }: { which: 'today' | 'month'; k: Key; barW: number; roomy: boolean; width: number }) {
   const s = k.spend?.[which];
   if (!s) return null;
   const amount = s.cap_micro ? `${money(s.cost_micro)} / ${capMoney(s.cap_micro)}` : `${money(s.cost_micro)}, no cap`;
   const remaining = s.cap_micro && k.status === 'active' ? Math.max(0, s.cap_micro - s.cost_micro - (s.reserved_micro ?? 0)) : undefined;
   const requests = `${requestsText(s.requests)}${s.unmetered_requests ? `, ${s.unmetered_requests} unmetered` : ''}`;
+  const spent = `${amount}${remaining === undefined ? '' : ` · ${money(remaining)} left`}`;
+  // The frame's two borders and two spaces, the label, the bar and the gaps around them.
+  const under = roomy || 6 + barW + 1 + textWidth(spent) + 2 + textWidth(requests) > width - 4;
   return (
     <Box flexDirection="column">
       <Box>
-        <Text dimColor>{padEnd(which, 6)}</Text>
-        <Meter period={s} width={barW} muted={k.status === 'revoked'} />
+        <Box flexShrink={0}>
+          <Text dimColor>{padEnd(which, 6)}</Text>
+          <Meter period={s} width={barW} muted={k.status === 'revoked'} />
+        </Box>
         <Text wrap="truncate-end">
           {' '}
-          {amount}{remaining === undefined ? '' : ` · ${money(remaining)} left`}
-          {roomy ? '' : <Text dimColor>{`  ${requests}`}</Text>}
+          {spent}
+          {under ? '' : <Text dimColor>{`  ${requests}`}</Text>}
         </Text>
       </Box>
-      {roomy ? (
+      {under ? (
         <Text dimColor>
           {'      '}
           {requests}
@@ -240,21 +249,28 @@ function Places({ state, k, width, perKind, now }: { state: PlacesState | undefi
     })),
   );
   // The value column is what the longest value needs, beside the longest counts. Where that
-  // would cut values short, the counts go on a line of their own under each.
+  // would leave it too narrow, every row's counts go on a line of their own under it; and a
+  // single value too long to stand beside them, such as an AS's organisation, takes its
+  // whole line, with its counts under, rather than be cut.
   const room = Math.max(6, width - 12);
-  const longest = Math.min(34, Math.max(0, ...rows.map((r) => textWidth(placeName(r.p)))));
+  const wide = (r: (typeof rows)[number]) => textWidth(placeName(r.p));
   const counts = Math.max(0, ...rows.map((r) => 1 + textWidth(r.seen + r.forwarded + r.refused)));
-  const split = room - counts < Math.min(longest, 24);
-  const valueW = Math.min(longest, split ? room : room - counts);
+  const split = room - counts < Math.min(Math.max(0, ...rows.map(wide)), 24);
+  const beside = split ? room : room - counts;
+  const under = (r: (typeof rows)[number]) => split || wide(r) > beside;
+  const valueW = Math.min(beside, Math.max(0, ...rows.filter((r) => wide(r) <= beside).map(wide)));
   // Left to right the same on one line or two.
   const stats = (r: (typeof rows)[number]) => (
     <Text wrap="truncate-end">
-      <Text dimColor>{`${split ? '' : ' '}${r.seen}${r.forwarded}`}</Text>
+      <Text dimColor>{`${under(r) ? '' : ' '}${r.seen}${r.forwarded}`}</Text>
       {r.refused ? <Text color={color.warn}>{r.refused}</Text> : null}
     </Text>
   );
   // A network's end says how wide it is, so it is cut in the middle.
-  const value = (r: (typeof rows)[number]) => (r.kind === 'network' ? fitMiddle(placeName(r.p), valueW) : fit(placeName(r.p), valueW));
+  const value = (r: (typeof rows)[number]) => {
+    const w = under(r) ? room : valueW;
+    return r.kind === 'network' ? fitMiddle(placeName(r.p), w) : fit(placeName(r.p), w);
+  };
   // An id still names a revoked key, whose name no longer does.
   const ref = k.status === 'revoked' || !k.name ? k.id : k.name;
   return (
@@ -264,10 +280,10 @@ function Places({ state, k, width, perKind, now }: { state: PlacesState | undefi
       {rows.map((r) => (
         <Box key={`${r.kind}:${r.p.value}:${r.p.other ? 'o' : ''}`} flexDirection="column">
           <Field label={r.label}>
-            <Text>{padEnd(value(r), valueW)}</Text>
-            {split ? null : stats(r)}
+            <Text>{under(r) ? value(r) : padEnd(value(r), valueW)}</Text>
+            {under(r) ? null : stats(r)}
           </Field>
-          {split ? <Field label="">{stats(r)}</Field> : null}
+          {under(r) ? <Field label="">{stats(r)}</Field> : null}
         </Box>
       ))}
       {more > 0 ? <Text dimColor wrap="wrap">{`+${more} more: kman key places ${ref}`}</Text> : null}
@@ -313,9 +329,12 @@ export function KeyMain({
       </Frame>
     );
   }
-  // The badge already says "expired", so that risk is not said twice.
+  const incident = incidentFor(watch?.incidents, k.id);
+  const incidentMark = incident ? incidentRisk(incident) : undefined;
+  // The badge already says "expired", and the head of the detail the incident, so neither
+  // risk is said twice.
   const risks = [
-    ...keyRisks(k, now, watch).filter((r) => !(k.expired && k.status === 'active' && r.label === 'expired')),
+    ...keyRisks(k, now, watch).filter((r) => !r.incident && !(k.expired && k.status === 'active' && r.label === 'expired')),
     // Without these, no warning here does not mean there is none.
     ...unknowns(watch ?? {}).map((u) => u.risk),
   ];
@@ -340,6 +359,25 @@ export function KeyMain({
           <Text bold wrap="wrap">
             {label}
           </Text>
+        ) : null}
+        {incident && incidentMark ? (
+          // First, whatever else there is to say: it is what is to be done about this key.
+          <Box flexDirection="column" marginBottom={gap}>
+            <Text color={severityColor[incidentMark.severity]} bold wrap="wrap">
+              {severityGlyph[incidentMark.severity]} incident #{incident.id} · Enter to answer
+            </Text>
+            {/* Short of rows, what fired shares the command's line. */}
+            <Box paddingLeft={2} flexDirection={compact ? 'row' : 'column'} columnGap={3} flexWrap="wrap">
+              <Text dimColor wrap="wrap">
+                {incidentMark.fix}
+              </Text>
+              <Text wrap="wrap">
+                {incident.severity}
+                {incident.state === 'acknowledged' ? ', acknowledged' : ''}
+                {incident.quiet ? ', quiet' : ''}: {incident.rules.map(ruleText).join(', ') || 'a detection'}
+              </Text>
+            </Box>
+          </Box>
         ) : null}
         <Text wrap="wrap">
           <StatusBadge status={k.status} expired={k.expired} />
@@ -414,8 +452,8 @@ export function KeyMain({
         {k.spend ? (
           <Box flexDirection="column" marginTop={gap}>
             {compact ? null : <SectionTitle>SPEND</SectionTitle>}
-            <SpendRow which="today" k={k} barW={barW} roomy={!compact} />
-            <SpendRow which="month" k={k} barW={barW} roomy={!compact} />
+            <SpendRow which="today" k={k} barW={barW} roomy={!compact} width={width} />
+            <SpendRow which="month" k={k} barW={barW} roomy={!compact} width={width} />
           </Box>
         ) : null}
       </Body>

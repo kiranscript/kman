@@ -277,9 +277,9 @@ export function shortCount(n: number): string {
   return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
 }
 
-/** "424 requests", or "12k reqs" once the count would not fit a card. */
+/** "424 requests", or "12k requests": a long count is shortened, never the word. */
 export function requestsText(n: number): string {
-  return n < 1000 ? plural(n, 'request') : `${shortCount(n)} reqs`;
+  return n < 1000 ? plural(n, 'request') : `${shortCount(n)} requests`;
 }
 
 export function plural(n: number, one: string, many = `${one}s`): string {

@@ -31,7 +31,7 @@ import { AUDIT_LIMIT, useAdmin, useIncident, useFlags, useIncidentDetails, useKe
 import { AuditMain, IncidentMain, KeyMain, StartMain, StatusMain, UnknownMain, UpstreamMain } from './views/detail.js';
 import type { Scroll } from './views/detail.js';
 import { IncidentView } from './views/incident.js';
-import { attentionItems, AuditPanel, KeysPanel, RequestsPanel, StatusPanel, UpstreamsPanel } from './views/panels.js';
+import { attentionItems, AuditPanel, KeysPanel, RequestsPanel, StatusPanel, UpstreamsPanel, addressWidth } from './views/panels.js';
 import { RequestsMain } from './views/requests.js';
 
 export interface AppProps {
@@ -320,8 +320,12 @@ export function App({ client, url, configDir, tokenFromEnv, intervalMs, size, co
     requests: 2,
   };
   const panels = tabs.map((t) => t.id);
-  const beside = layout(columns, bodyRows, tab, wants, { panels });
-  const lay = tab === 'requests' && !(beside.wide && beside.mainW >= (exposed ? ADDRESS_TABLE_WIDTH : TABLE_WIDTH)) ? layout(columns, bodyRows, tab, wants, { panels, stacked: true }) : beside;
+  const address = addressWidth(url);
+  const beside = layout(columns, bodyRows, tab, wants, { panels, address });
+  const lay =
+    tab === 'requests' && !(beside.wide && beside.mainW >= (exposed ? ADDRESS_TABLE_WIDTH : TABLE_WIDTH))
+      ? layout(columns, bodyRows, tab, wants, { panels, address, stacked: true })
+      : beside;
   const loaded = link.state === 'ok' || data.keys.length > 0 || data.upstreams.length > 0 || data.audit.length > 0;
   const usable = loaded && link.state !== 'denied';
 

@@ -3,13 +3,13 @@
 // blue bar; the others shrink until only their selected line shows.
 import { Box, Text } from 'ink';
 import type { AuditEntry, Incident, Key, PriceDataStatus, Upstream } from '../api.js';
-import { clock, fitMiddle, padEnd, since, tailCells, textWidth } from '../format.js';
+import { clock, fitMiddle, padEnd, plural, since, tailCells, textWidth } from '../format.js';
 import { keyLabel } from '../keys.js';
 import { compareTop, incidentRisk, keyRisks, topRisk, unknowns, upstreamRisks } from '../risk.js';
 import { hasFilterRow, listArea } from '../layout.js';
 import type { Attention, Severity, Risk, Unknown, UpstreamAttention, Watch } from '../risk.js';
 import { linkBadge, useTick } from '../ui/chrome.js';
-import { Frame, Strip, stripLabelWidth, subtitleFits } from '../ui/frame.js';
+import { Frame, Strip, stripLabelWidth, subtitleFits, subtitleWidth } from '../ui/frame.js';
 import type { ReactNode } from 'react';
 import { Row } from '../ui/row.js';
 import type { Seg } from '../ui/row.js';
@@ -91,7 +91,9 @@ function withoutLeadingSeparator(segs: Seg[]): Seg[] {
 function fitParts(parts: Seg[][], max: number): Seg[] {
   const out: Seg[] = [];
   let used = 0;
-  for (const part of parts) {
+  for (const whole of parts) {
+    // What opens the line takes no room for a separator.
+    const part = out.length ? whole : withoutLeadingSeparator(whole);
     const need = segLen(part) + (out.length ? 1 : 0);
     if (used + need > max) continue;
     if (out.length) out.push({ t: ' ' });
@@ -103,6 +105,41 @@ function fitParts(parts: Seg[][], max: number): Seg[] {
 
 /** The address without the scheme a local admin API always has: "127.0.0.1:8081". https stays, as it says something. */
 const shortUrl = (url: string) => url.replace(/^http:\/\//, '').replace(/\/$/, '');
+
+const STATUS_TITLE = '[1] Status';
+
+/** How wide Status must be for its top border to carry the address. */
+export const addressWidth = (url: string) => subtitleWidth(shortUrl(url), STATUS_TITLE);
+
+/**
+ * "owner @ address" in `room` cells. The scheme goes first, then the owner and the host
+ * are each cut in the middle, the host keeping the larger share: it says which install.
+ */
+function whoWhere(actor: string | undefined, address: string, room: number): string {
+  const whole = actor ? `${actor} @ ${address}` : address;
+  if (textWidth(whole) <= room) return whole;
+  const host = address.replace(/^https:\/\//, '');
+  if (!actor) return fitMiddle(host, room);
+  const both = room - 3;
+  const forHost = Math.min(textWidth(host), Math.max(Math.ceil(both * 0.65), both - textWidth(actor)));
+  return `${fitMiddle(actor, both - forHost)} @ ${fitMiddle(host, forHost)}`;
+}
+
+/**
+ * As many of `lines` as there are `rows`, in their order. Those in `spare` give up their
+ * row first, in that order, and then the last that `must` does not hold.
+ */
+function intoRows(lines: Seg[][], rows: number, spare: (Seg[] | undefined)[], must: (line: Seg[]) => boolean): Seg[][] {
+  let out = lines;
+  for (const line of spare) if (out.length > rows) out = out.filter((l) => l !== line);
+  while (out.length > Math.max(0, rows)) {
+    let at = out.length - 1;
+    while (at >= 0 && must(out[at]!)) at--;
+    const gone = out[at < 0 ? out.length - 1 : at];
+    out = out.filter((l) => l !== gone);
+  }
+  return out;
+}
 
 export interface Item {
   id: string;
@@ -186,21 +223,20 @@ export function StatusPanel({
   const missing = unknowns(watch);
   const incidentsMissing = missing.some((u) => u.what === 'incidents');
   const exposed = new Set((watch.findings ?? []).map((f) => f.key_id)).size;
-  const title = '[1] Status';
-  // How many need a look, by how much: "!1 ▲3 ·1". The border counts the same rows.
-  const count =
-    (['danger', 'warn', 'info'] as const)
-      .map((sev) => ({ sev, n: items.filter((i) => i.top === sev).length }))
-      .filter((c) => c.n > 0)
-      .map((c) => `${severityGlyph[c.sev]}${c.n}`)
-      .join(' ') || undefined;
+  const title = STATUS_TITLE;
   const strip = height <= 1;
+  const urlOnly = shortUrl(url);
+  // The incidents, in words. A strip's own line says them, so its label does not too, and
+  // how many rows need a look is on the bottom border. Where the words would push the
+  // address off the border they give way: a line of the panel says the incidents too.
+  const words = !strip && open ? `${plural(open, 'incident')}${incidentsMissing ? ' (old)' : ''}` : undefined;
+  const count = words && subtitleFits(urlOnly, title, words, width) === subtitleFits(urlOnly, title, undefined, width) ? words : undefined;
   const inner = innerWidth(width, height, title, count);
   const lead: Seg[] = strip ? [] : [{ t: ' ' }];
   // Who this is and where: in the top border when it fits, else a line of the summary.
   const where = `${actor ? `${actor} @ ` : ''}${shortUrl(url)}`;
-  // The whole of it if the border has room, else just the address; a line of the summary then says the rest.
-  const urlOnly = shortUrl(url);
+  // The whole of it if the border has room, else just the address; the rest is then said
+  // by a line of the summary, or else by the bottom border.
   const inBorder = !strip && subtitleFits(where, title, count, width);
   const borderText = inBorder ? where : !strip && subtitleFits(urlOnly, title, count, width) ? urlOnly : undefined;
 
@@ -212,11 +248,12 @@ export function StatusPanel({
         : link.state === 'denied'
           ? link.error
           : '';
+  /** `compact` shortens the warning of stale prices. */
   const priceSeg = (compact: boolean): Seg[] =>
     price
       ? price.stale
         ? [{ t: compact ? `${severityGlyph.warn} price stale` : `${severityGlyph.warn} price stale (${price.age_days}d) · upgrade kman`, color: color.warn }]
-        : [{ t: `price ${compact ? `${price.age_days}d` : `data ${price.age_days} days old`}`, dim: true }]
+        : [{ t: `prices ${price.age_days}d old`, dim: true }]
       : [{ t: 'price data unknown', dim: true }];
   const badgeSeg: Seg = { t: `${badge.glyph} ${badge.word}`, color: badge.color, dim: badge.color === undefined };
   // The connection is in the footer: here it is only said when it is not simply live.
@@ -286,7 +323,10 @@ export function StatusPanel({
   const compactLine: Seg[] =
     inBorder || withFullWhere.some((x) => x.t.includes(where)) ? withFullWhere : buildCompact(whereShort).some((x) => x.t.includes(urlOnly)) ? buildCompact(whereShort) : withFullWhere;
   // When the border carries the address the line says only who: not the address twice.
-  const whereLine: Seg[] = [{ t: borderText === urlOnly && actor ? `signed in as ${actor}` : where, dim: true }];
+  // It stops a cell short of the border, as the line starts one in.
+  const whereLine: Seg[] = [
+    { t: borderText === urlOnly && actor ? fitMiddle(`signed in as ${actor}`, inner - 2) : whoWhere(actor, urlOnly, inner - 2), dim: true },
+  ];
   // Zeros tell nothing, and Keys and the detail already say there are no keys: no counts then.
   const countsLine: Seg[] = noKeys
     ? []
@@ -300,9 +340,14 @@ export function StatusPanel({
   // A fresh price joins the first line; a stale or unknown one keeps a line to itself.
   const priceJoins = price !== undefined && !price.stale;
   const fullLines: Seg[][] = [
-    link.state === 'ok'
-      ? [{ t: linkText, dim: true }, ...(priceJoins ? [{ t: ' ' }, SEPARATOR, { t: ' ' }, ...priceSeg(true)] : [])]
-      : [badgeSeg, { t: linkText ? ` · ${linkText}` : '', dim: true }, ...(priceJoins ? [{ t: ' ' }, SEPARATOR, { t: ' ' }, ...priceSeg(true)] : [])],
+    // Whole parts only: the price, and then how old the data is, give way to a narrow panel.
+    fitParts(
+      [
+        ...(link.state === 'ok' ? [[{ t: linkText, dim: true }]] : [[badgeSeg], ...(linkText ? [[SEPARATOR, { t: ` ${linkText}`, dim: true }]] : [])]),
+        ...(priceJoins ? [[SEPARATOR, { t: ' ' }, ...priceSeg(true)]] : []),
+      ],
+      inner - 1,
+    ),
     countsLine,
     watchFitted,
     // Who and where come after the numbers: the border carries the address when it fits.
@@ -342,7 +387,23 @@ export function StatusPanel({
   // as fits; otherwise it is the summary alone.
   const list = focused ? listArea(height, { tab: 'status', items: items.length, noKeys }) : { header: 0, rows: 0 };
   const summaryHeight = rows - list.header - list.rows;
-  const base = (summaryHeight >= fullLines.length ? fullLines : tierFor(summaryHeight)).filter((l) => l.length > 0);
+  const chosen = (summaryHeight >= fullLines.length ? fullLines : tierFor(summaryHeight)).filter((l) => l.length > 0);
+  // The incidents' line says nothing the screen lacks when the title counts them, or there
+  // are none, and it carries no warning of exposed keys.
+  const isWatch = (l: Seg[]) => watchFitted.length > 0 && l.includes(watchFitted[0]!);
+  const watchSpare = exposureSegs.length === 0 && (open ? count !== undefined : !incidentsMissing);
+  const staleLine = (l: Seg[]) => l.some((x) => x.t.includes('price stale'));
+  // What must keep its row, as far as rows go: the first line, what only a line says, and an
+  // address the top border cannot carry.
+  const must = (l: Seg[]) => l === chosen[0] || (!borderText && l === whereLine) || (isWatch(l) && !watchSpare) || staleLine(l);
+  const spare = (lines: Seg[][]) => {
+    const watch = watchSpare ? lines.find(isWatch) : undefined;
+    // With incidents open their line is worth more than the counts of keys, which the Keys panel gives too.
+    return open ? [countsLine, watch] : [watch, countsLine];
+  };
+  // Such an address takes a row where one can be had, even one the shorter summaries leave it out of.
+  const wanted = !borderText && !strip && summaryHeight >= 2 && !chosen.includes(whereLine) ? [...chosen, whereLine] : chosen;
+  const base = borderText || strip ? chosen : intoRows(wanted, summaryHeight, spare(wanted), must);
   // A tall summary with a row to spare says what the list would: the first thing to look at.
   const first = items[0];
   const reason = ` · ${first ? topRisk(first.risks)!.short : ''}${items.length > 1 ? ` · +${items.length - 1} more` : ''}`;
@@ -356,14 +417,14 @@ export function StatusPanel({
   // Unfocused, the last line of the summary is the first thing to look at, whatever it has to
   // replace: a problem must not be hidden behind the price.
   // A stale price keeps its line, though: it too is something to act on.
-  const staleLast = base.length > 0 && base[base.length - 1]!.some((x) => x.t.includes('price stale'));
+  const replaced = (): Seg[][] => {
+    const kept = intoRows(base, summaryHeight - 1, spare(base), must);
+    const last = kept[kept.length - 1];
+    return last && staleLine(last) ? [...kept.slice(0, -1), attentionLine, last] : [...kept, attentionLine];
+  };
   const lines =
     !focused && !strip && items.length > 0 && summaryHeight >= 3
-      ? summaryHeight > base.length
-        ? [...base, attentionLine]
-        : staleLast
-          ? [...base.slice(0, summaryHeight - 2), attentionLine, base[base.length - 1]!]
-          : [...base.slice(0, summaryHeight - 1), attentionLine]
+      ? replaced()
       : !focused && summaryHeight > base.length && summaryHeight >= fullLines.length
         ? [...base, attentionLine]
         : base;
@@ -371,22 +432,29 @@ export function StatusPanel({
   const start = windowStart(sel, items.length, Math.max(1, list.rows));
   const shown = items.slice(start, start + list.rows);
   const nameW = Math.min(24, Math.max(4, ...shown.map((n) => textWidth(n.name))));
+  const standing = focused && items.length > 1 ? `${sel + 1} of ${items.length}` : items.length > 0 ? `${items.length} to review` : undefined;
+  // What neither the top border nor a row says of who and where rides on the bottom one,
+  // beside the position, which always stays whole.
+  const visible = lines.slice(0, summaryHeight);
+  const rowSays = (text: string) => visible.some((l) => l.some((s) => s.t.includes(text)));
+  const bottom = (): string | undefined => {
+    if (strip || inBorder) return standing;
+    const room = width - 6 - (standing ? textWidth(standing) + 3 : 0);
+    // With no address in the top border, the line of who and where holds it, cut or whole.
+    const whereShown = visible.includes(whereLine);
+    if (borderText || whereShown || rowSays(urlOnly)) {
+      const named = !actor || whereShown || rowSays(`${actor} @ `);
+      return [named ? undefined : fitMiddle(actor, room), standing].filter(Boolean).join(' · ') || undefined;
+    }
+    return [whoWhere(actor, urlOnly, room), standing].filter(Boolean).join(' · ');
+  };
 
   return (
     <Shell
       title={title}
       count={count}
       subtitle={borderText}
-      position={
-        focused && items.length > 1
-          ? `${sel + 1} of ${items.length}`
-          : // Who is signed in rides on the bottom border when no row has room for it.
-            items.length > 0
-            ? `${actor && !inBorder ? `${actor} · ` : ''}${items.length} to review`
-            : inBorder
-              ? undefined
-              : actor
-      }
+      position={bottom()}
       focused={focused}
       width={width}
       height={height}
@@ -479,9 +547,12 @@ export function KeysPanel({
     const risk = topRisk(lapsed0(k) ? risks.filter((r) => r.label !== 'expired') : risks);
     const lapsed = k.expired && k.status === 'active';
     const st = statusStyle[k.status];
+    // Active is the usual state and is dim, so that the others stand out from it.
+    const usual = k.status === 'active' && !lapsed;
+    const tone = lapsed ? color.danger : usual ? st.color : k.status === 'disabled' ? color.warn : undefined;
     const status: Seg[] = [
-      { t: lapsed ? severityGlyph.danger : st.glyph, color: lapsed ? color.danger : st.color, dim: st.dim },
-      { t: ` ${lapsed ? 'expired' : k.status}`, color: lapsed ? color.danger : undefined, dim: !lapsed },
+      { t: lapsed ? severityGlyph.danger : st.glyph, color: tone, dim: usual },
+      { t: ` ${lapsed ? 'expired' : k.status}`, color: usual ? undefined : tone, dim: usual },
     ];
     const warn: Seg[] = risk ? [{ t: `${severityGlyph[risk.severity]} ${risk.short}`, color: severityColor[risk.severity], dim: risk.severity === 'info' }] : [];
     return { label: keyLabel(k), status, risk: warn };
@@ -542,7 +613,7 @@ export function KeysPanel({
         return (
           <Row
             key={k.id}
-            left={[...lead, { t: fitMiddle(p.label, Math.max(6, inner - 3 - segLen(right))), dim: k.status === 'revoked' }]}
+            left={[...lead, { t: fitMiddle(p.label, Math.max(6, inner - 3 - segLen(right))) }]}
             right={[...right, { t: ' ' }]}
             width={inner}
             selected={k.id === selectedId}
