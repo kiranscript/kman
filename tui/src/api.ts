@@ -449,7 +449,7 @@ export function createClient(conn: Connection): AdminClient {
     async rotateKey(id, incident) {
       const got = await request<RotatedKey | null>('POST', `${keyPath(id)}/rotate`, forIncident(incident));
       // The secret is given only this once: a reply without it is no success.
-      if (!got?.secret || !got.key) throw new ApiError('internal', 'the admin API sent no new secret', 200);
+      if (typeof got?.secret !== 'string' || !got.secret.trim() || !got.key) throw new ApiError('internal', 'the admin API sent no new secret', 200);
       return got;
     },
     async incident(id) {
